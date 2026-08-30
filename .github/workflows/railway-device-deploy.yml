@@ -1,0 +1,281 @@
+name: SARA-OMEGA V3.2.1 Railway device deployment
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/railway-device-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sara-omega-v321-railway-device-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install Railway CLI and acceptance dependencies
+        run: |
+          npm install --global @railway/cli
+          python -m pip install --quiet httpx
+          railway --version
+
+      - name: Authorize Railway account
+        shell: bash
+        run: |
+          echo '=== RAILWAY AUTHORIZATION REQUIRED ==='
+          echo 'Open the URL printed below and approve the short-lived pairing code.'
+          echo 'No Railway API token or password will be stored in GitHub.'
+          railway login --browserless
+          railway whoami --json
+
+      - name: Provision and deploy SARA-OMEGA V3.2.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROJECT_NAME='SARA-OMEGA-V3.2.1'
+          SERVICE_NAME='sara-omega'
+          REPO='mrsmith1638ta-design/sara-omega'
+
+          echo '[SARA] Resolving Railway workspace'
+          WHOAMI="$(railway whoami --json)"
+          export WHOAMI
+          WORKSPACE_ID="$(python3 - <<'PY'
+          import json, os, sys
+          d=json.loads(os.environ['WHOAMI'])
+          ws=d.get('workspaces') or []
+          if len(ws) != 1:
+              print('')
+              sys.exit(2)
+          print(ws[0]['id'])
+          PY
+          )" || {
+            echo 'ERROR: Railway account has multiple workspaces. Refusing to guess a billing/workspace target.' >&2
+            railway whoami --json >&2
+            exit 22
+          }
+
+          echo '[SARA] Reusing project if present, otherwise creating it'
+          PROJECTS="$(railway list --json)"
+          export PROJECTS PROJECT_NAME
+          PROJECT_ID="$(python3 - <<'PY'
+          import json, os
+          d=json.loads(os.environ['PROJECTS'])
+          name=os.environ['PROJECT_NAME']
+          found=[]
+          def walk(v):
+              if isinstance(v, dict):
+                  if v.get('name') == name and isinstance(v.get('id'), str):
+                      found.append(v['id'])
+                  for x in v.values(): walk(x)
+              elif isinstance(v, list):
+                  for x in v: walk(x)
+          walk(d)
+          print(found[0] if found else '')
+          PY
+          )"
+
+          if [ -n "$PROJECT_ID" ]; then
+            railway link --project "$PROJECT_ID" --environment production >/dev/null
+            echo "[SARA] Existing project retained: $PROJECT_ID"
+          else
+            INIT_JSON="$(railway init --name "$PROJECT_NAME" --workspace "$WORKSPACE_ID" --json)"
+            export INIT_JSON
+            PROJECT_ID="$(python3 - <<'PY'
+          import json, os, sys
+          d=json.loads(os.environ['INIT_JSON'])
+          def find(v):
+              if isinstance(v, dict):
+                  for k in ('id','projectId','project_id'):
+                      x=v.get(k)
+                      if isinstance(x,str) and x: return x
+                  for x in v.values():
+                      y=find(x)
+                      if y: return y
+              elif isinstance(v,list):
+                  for x in v:
+                      y=find(x)
+                      if y: return y
+              return None
+          x=find(d)
+          if not x: sys.exit(1)
+          print(x)
+          PY
+          )"
+            echo "[SARA] Created project: $PROJECT_ID"
+          fi
+
+          railway environment production >/dev/null 2>&1 || true
+
+          echo '[SARA] Ensuring application service exists'
+          SERVICES="$(railway service list --json 2>/dev/null || printf '[]')"
+          export SERVICES SERVICE_NAME
+          SERVICE_EXISTS="$(python3 - <<'PY'
+          import json, os
+          try: d=json.loads(os.environ['SERVICES'])
+          except Exception: d=[]
+          name=os.environ['SERVICE_NAME']
+          found=False
+          def walk(v):
+              global found
+              if isinstance(v,dict):
+                  if v.get('name')==name: found=True
+                  for x in v.values(): walk(x)
+              elif isinstance(v,list):
+                  for x in v: walk(x)
+          walk(d)
+          print('yes' if found else 'no')
+          PY
+          )"
+          if [ "$SERVICE_EXISTS" != yes ]; then
+            railway add --service "$SERVICE_NAME" --json >/dev/null
+          fi
+          railway service "$SERVICE_NAME" >/dev/null
+
+          echo '[SARA] Installing production authority and fail-safe variables'
+          OWNER_TOKEN="$(openssl rand -hex 48)"
+          FAILSAFE_KEY="$(openssl rand -hex 64)"
+          printf '%s' "$OWNER_TOKEN" | railway variable set OWNER_TOKEN --stdin --skip-deploys --service "$SERVICE_NAME" >/dev/null
+          printf '%s' "$FAILSAFE_KEY" | railway variable set SARA_FAILSAFE_MASTER_KEY_HEX --stdin --skip-deploys --service "$SERVICE_NAME" >/dev/null
+          railway variable set \
+            SARA_FAILSAFE_REQUIRED=true \
+            SARA_FAILSAFE_ROOT=/data/sara-failsafe \
+            SARA_FAILSAFE_REQUIRE_DEDICATED_MOUNT=true \
+            SARA_FAILSAFE_MIN_FREE_BYTES=67108864 \
+            SARA_RELEASE_VERSION=3.2.1 \
+            --skip-deploys --service "$SERVICE_NAME" >/dev/null
+
+          echo '[SARA] Ensuring persistent /data volume exists'
+          VOLUMES="$(railway volume list --service "$SERVICE_NAME" --json 2>/dev/null || printf '[]')"
+          export VOLUMES
+          if ! python3 - <<'PY'
+          import json, os, sys
+          try: d=json.loads(os.environ['VOLUMES'])
+          except Exception: sys.exit(1)
+          def ok(v):
+              if isinstance(v,dict):
+                  for k,x in v.items():
+                      if str(k).lower().replace('_','') in {'mount','mountpath'} and x == '/data': return True
+                  return any(ok(x) for x in v.values())
+              if isinstance(v,list): return any(ok(x) for x in v)
+              return False
+          sys.exit(0 if ok(d) else 1)
+          PY
+          then
+            railway volume add --service "$SERVICE_NAME" --mount-path /data --json >/dev/null
+          fi
+
+          echo '[SARA] Deploying checked-out V3.2.1 source to Railway'
+          railway up --service "$SERVICE_NAME" --ci
+
+          wait_success() {
+            for _ in $(seq 1 90); do
+              DEP="$(railway deployment list --service "$SERVICE_NAME" --limit 1 --json 2>/dev/null || printf '[]')"
+              STATUS="$(DEP="$DEP" python3 - <<'PY'
+          import json, os
+          try:d=json.loads(os.environ['DEP'])
+          except Exception: print('UNKNOWN'); raise SystemExit
+          x=d[0] if isinstance(d,list) and d else d
+          print(str((x.get('status') if isinstance(x,dict) else None) or 'UNKNOWN').upper())
+          PY
+              )"
+              case "$STATUS" in
+                SUCCESS) return 0 ;;
+                FAILED|CRASHED|REMOVED) echo "$DEP" >&2; return 1 ;;
+              esac
+              sleep 4
+            done
+            return 1
+          }
+          wait_success
+
+          echo '[SARA] Generating public Railway domain'
+          DOMAIN_JSON="$(railway domain --service "$SERVICE_NAME" --json 2>/dev/null || railway domain list --service "$SERVICE_NAME" --json)"
+          export DOMAIN_JSON
+          DOMAIN="$(python3 - <<'PY'
+          import json, os, re, sys
+          d=json.loads(os.environ['DOMAIN_JSON'])
+          vals=[]
+          def walk(v):
+              if isinstance(v,dict):
+                  for k,x in v.items():
+                      if isinstance(x,str) and ('domain' in k.lower() or 'url' in k.lower() or 'host' in k.lower()): vals.append(x)
+                      walk(x)
+              elif isinstance(v,list):
+                  for x in v: walk(x)
+              elif isinstance(v,str): vals.append(v)
+          walk(d)
+          for v in vals:
+              v=re.sub(r'^https?://','',v).strip('/ ')
+              if v.endswith('.up.railway.app'):
+                  print(v); break
+          else: sys.exit(1)
+          PY
+          )"
+          BASE_URL="https://${DOMAIN}"
+          echo "[SARA] Public domain: ${BASE_URL}"
+
+          echo '[SARA] Waiting for first bootstrap and then proving cross-boot persistence'
+          for _ in $(seq 1 60); do
+            if curl -fsS --max-time 10 "$BASE_URL/health/production-acceptance" > /tmp/acceptance.json 2>/dev/null; then
+              break
+            fi
+            sleep 4
+          done
+          cat /tmp/acceptance.json || true
+
+          railway service restart --service "$SERVICE_NAME" --yes --json >/dev/null
+          sleep 8
+
+          export SARA_OWNER_TOKEN="$OWNER_TOKEN"
+          ACCEPTED=false
+          for _ in $(seq 1 75); do
+            if python tools/railway_runtime_acceptance.py "$BASE_URL" > railway-activation-report.json 2>/tmp/accept.err; then
+              ACCEPTED=true
+              break
+            fi
+            sleep 4
+          done
+          unset SARA_OWNER_TOKEN OWNER_TOKEN FAILSAFE_KEY
+          if [ "$ACCEPTED" != true ]; then
+            cat /tmp/accept.err >&2 || true
+            cat railway-activation-report.json >&2 || true
+            exit 31
+          fi
+
+          python3 - <<PY
+          import json
+          p='railway-activation-report.json'
+          d=json.load(open(p))
+          d['release_version']='3.2.1'
+          d['project_id']='$PROJECT_ID'
+          d['service']='$SERVICE_NAME'
+          d['public_url']='$BASE_URL'
+          d['owner_token_storage']='Railway service variable only; not printed or exported as an artifact'
+          open(p,'w').write(json.dumps(d,indent=2,sort_keys=True)+'\n')
+          PY
+          echo "SARA_RAILWAY_PUBLIC_URL=$BASE_URL" >> "$GITHUB_ENV"
+          echo "### SARA-OMEGA V3.2.1 Railway deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "Production acceptance: **PASS**" >> "$GITHUB_STEP_SUMMARY"
+          echo "Public URL: $BASE_URL" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish non-secret deployment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sara-omega-v321-railway-acceptance
+          path: railway-activation-report.json
+          if-no-files-found: ignore
+          retention-days: 30
