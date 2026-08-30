@@ -2,12 +2,13 @@ name: SARA-OMEGA V3.2.1 Railway zero-to-production
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '23 * * * *'
   push:
     branches: [main]
     paths:
-      - 'tools/railway_zero_to_production.sh'
+      - 'tools/railway_account_provision.sh'
+      - 'tools/railway_runtime_acceptance.py'
+      - 'sara_production_bootstrap.py'
+      - 'Procfile'
       - '.github/workflows/railway-production-activate.yml'
 
 permissions:
@@ -22,10 +23,6 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     env:
-      # Accept the current account-token name and the earlier protected-token name.
-      # The job targets the production GitHub environment so either an environment
-      # secret or a repository secret with these names can be used. Values remain
-      # protected GitHub Actions secrets and are never printed.
       RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN || secrets.RAILWAY_TOKEN }}
     steps:
       - uses: actions/checkout@v4
@@ -38,8 +35,8 @@ jobs:
             echo 'available=false' >> "$GITHUB_OUTPUT"
             {
               echo '## SARA-OMEGA V3.2.1 zero-to-production'
-              echo 'Automation is installed. No Railway project is required beforehand.'
-              echo 'Waiting for protected `RAILWAY_API_TOKEN` or `RAILWAY_TOKEN` in the production environment or repository secrets.'
+              echo 'Deployment controller is valid and ready.'
+              echo 'Railway authentication is not available to this GitHub runner.'
               echo 'No Railway changes were attempted.'
             } >> "$GITHUB_STEP_SUMMARY"
           else
@@ -60,14 +57,17 @@ jobs:
 
       - name: Provision, deploy, restart, and verify SARA-OMEGA V3.2.1
         if: steps.credential.outputs.available == 'true'
-        run: bash tools/railway_zero_to_production.sh
+        run: bash tools/railway_account_provision.sh
 
       - name: Publish production evidence
         if: steps.credential.outputs.available == 'true' && always()
         uses: actions/upload-artifact@v4
         with:
           name: sara-omega-v321-railway-production
-          path: railway-activation-report.json
+          path: |
+            railway-activation-report.json
+            railway-public-url.txt
+            first-boot-acceptance.json
           if-no-files-found: ignore
           retention-days: 30
 
@@ -83,6 +83,6 @@ jobs:
               cat railway-activation-report.json
               echo '```'
             else
-              echo 'Provisioning did not reach the final acceptance report. Review the failed step above; protected tokens are never printed.'
+              echo 'Provisioning did not reach the final acceptance report. Protected credentials are never printed.'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
