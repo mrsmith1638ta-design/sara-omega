@@ -1,4 +1,4 @@
-name: SARA-OMEGA V3.2 Railway zero-to-production
+name: SARA-OMEGA V3.2.1 Railway zero-to-production
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: sara-omega-v32-railway-zero-to-production
+  group: sara-omega-v321-railway-zero-to-production
   cancel-in-progress: false
 
 jobs:
@@ -34,7 +34,7 @@ jobs:
           if [ -z "${RAILWAY_API_TOKEN:-}" ]; then
             echo 'available=false' >> "$GITHUB_OUTPUT"
             {
-              echo '## SARA-OMEGA V3.2 zero-to-production'
+              echo '## SARA-OMEGA V3.2.1 zero-to-production'
               echo 'Automation is installed. No Railway project is required beforehand.'
               echo 'Waiting for protected repository secret `RAILWAY_API_TOKEN` or `RAILWAY_TOKEN`.'
               echo 'No Railway changes were attempted.'
@@ -55,7 +55,7 @@ jobs:
           npm install --global @railway/cli
           python -m pip install --quiet httpx
 
-      - name: Provision, deploy, restart, and verify SARA-OMEGA V3.2
+      - name: Provision, deploy, restart, and verify SARA-OMEGA V3.2.1
         if: steps.credential.outputs.available == 'true'
         run: bash tools/railway_zero_to_production.sh
 
@@ -63,7 +63,7 @@ jobs:
         if: steps.credential.outputs.available == 'true' && always()
         uses: actions/upload-artifact@v4
         with:
-          name: sara-omega-v32-railway-production
+          name: sara-omega-v321-railway-production
           path: railway-activation-report.json
           if-no-files-found: ignore
           retention-days: 30
@@ -73,7 +73,7 @@ jobs:
         shell: bash
         run: |
           {
-            echo '## SARA-OMEGA V3.2 zero-to-production'
+            echo '## SARA-OMEGA V3.2.1 zero-to-production'
             if [ -f railway-activation-report.json ]; then
               echo 'Railway provisioning completed and produced a production acceptance report.'
               echo '```json'
