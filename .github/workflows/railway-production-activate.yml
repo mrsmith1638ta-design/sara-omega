@@ -1,4 +1,4 @@
-name: SARA-OMEGA V3.2 Railway production activation
+name: SARA-OMEGA V3.2 Railway zero-to-production
 
 on:
   workflow_dispatch:
@@ -7,33 +7,36 @@ on:
   push:
     branches: [main]
     paths:
-      - 'tools/railway_ci_activate.sh'
+      - 'tools/railway_zero_to_prod.sh'
+      - 'tools/railway_runtime_acceptance.py'
       - '.github/workflows/railway-production-activate.yml'
 
 permissions:
   contents: read
 
 concurrency:
-  group: sara-omega-v32-railway-production-activation
+  group: sara-omega-v32-railway-zero-to-production
   cancel-in-progress: false
 
 jobs:
   activate:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
-      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check protected Railway credential
+      - name: Check Railway account credential
         id: credential
         shell: bash
         run: |
-          if [ -z "${RAILWAY_TOKEN:-}" ]; then
+          if [ -z "${RAILWAY_API_TOKEN:-}" ]; then
             echo 'available=false' >> "$GITHUB_OUTPUT"
             {
-              echo '## SARA-OMEGA V3.2 Railway activation'
-              echo 'Automation is installed and waiting only for the protected repository secret `RAILWAY_TOKEN`.'
+              echo '## SARA-OMEGA V3.2 zero-to-production'
+              echo 'Automation is installed. No Railway project is required beforehand.'
+              echo 'Waiting only for the protected repository secret `RAILWAY_API_TOKEN`.'
               echo 'No Railway changes were attempted.'
             } >> "$GITHUB_STEP_SUMMARY"
           else
@@ -46,35 +49,39 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Railway CLI
+      - name: Install Railway CLI and acceptance dependency
         if: steps.credential.outputs.available == 'true'
-        run: npm install --global @railway/cli
+        run: |
+          npm install --global @railway/cli
+          python -m pip install --quiet httpx
 
-      - name: Activate and verify SARA-OMEGA V3.2
+      - name: Provision, deploy, restart, and verify SARA-OMEGA V3.2
         if: steps.credential.outputs.available == 'true'
-        run: bash tools/railway_ci_activate.sh
+        run: bash tools/railway_zero_to_prod.sh
 
-      - name: Publish activation evidence
+      - name: Publish production evidence
         if: steps.credential.outputs.available == 'true' && always()
         uses: actions/upload-artifact@v4
         with:
-          name: sara-omega-v32-railway-activation
-          path: railway-activation-report.json
+          name: sara-omega-v32-railway-production-evidence
+          path: |
+            railway-activation-report.json
+            railway-url.txt
           if-no-files-found: ignore
           retention-days: 30
 
-      - name: Activation summary
+      - name: Production summary
         if: steps.credential.outputs.available == 'true' && always()
         shell: bash
         run: |
           {
-            echo '## SARA-OMEGA V3.2 Railway activation'
+            echo '## SARA-OMEGA V3.2 Railway production activation'
+            if [ -f railway-url.txt ]; then
+              echo "Production URL: $(cat railway-url.txt)"
+            fi
             if [ -f railway-activation-report.json ]; then
-              echo 'Railway automation completed and produced an acceptance report.'
-              echo '```json'
-              cat railway-activation-report.json
-              echo '```'
+              echo 'Final live acceptance report was produced.'
             else
-              echo 'Railway automation did not produce an acceptance report. Review the failed step above; secrets are never printed.'
+              echo 'Production acceptance did not complete. Review the failed step; credentials are never printed.'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
