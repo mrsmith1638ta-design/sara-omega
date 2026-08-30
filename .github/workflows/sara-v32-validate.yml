@@ -1,0 +1,26 @@
+name: SARA-OMEGA V3.2 validation
+
+on:
+  push:
+    branches: [main, sios-v32-failsafe-20260830]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install validation dependencies
+        run: python -m pip install --upgrade pip pytest httpx cryptography uvicorn
+      - name: Compile
+        run: python -m py_compile main.py sara_v32_hardening.py sara_production_bootstrap.py tools/*.py
+      - name: Production bootstrap tests
+        run: pytest -q
+      - name: Focused adversarial gate
+        run: python tools/adversarial_gate.py
