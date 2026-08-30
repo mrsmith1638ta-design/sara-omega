@@ -33,17 +33,6 @@ jobs:
           PROJECT = 'SARA-OMEGA V.3.2.1'
           PROJECT_SLUG = 'SARA-OMEGA-V3.2.1'
 
-          def replace_required(path: str, old: str, new: str, count: int | None = None):
-              p = Path(path)
-              text = p.read_text(encoding='utf-8')
-              if old not in text:
-                  if new in text:
-                      return
-                  raise SystemExit(f'required text not found in {path}: {old!r}')
-              text = text.replace(old, new, -1 if count is None else count)
-              p.write_text(text, encoding='utf-8')
-
-          # Runtime-visible release identity. Preserve v2.5.2 as provenance only.
           p = Path('main.py')
           text = p.read_text(encoding='utf-8')
           text = text.replace(
@@ -69,7 +58,6 @@ jobs:
           )
           p.write_text(text, encoding='utf-8')
 
-          # Production bootstrap and acceptance evidence.
           p = Path('sara_production_bootstrap.py')
           text = p.read_text(encoding='utf-8')
           text = text.replace('PROJECT_NAME = "SARA-OMEGA V.3.2"', 'PROJECT_NAME = "SARA-OMEGA V.3.2.1"')
@@ -92,7 +80,6 @@ jobs:
           )
           p.write_text(text, encoding='utf-8')
 
-          # Railway zero-to-production identity.
           for fname in ['tools/railway_zero_to_production.sh', 'tools/railway_ci_activate.sh', 'tools/railway_secure_activate.sh']:
               p = Path(fname)
               if p.exists():
@@ -102,7 +89,6 @@ jobs:
                   text = text.replace('SARA-OMEGA V.3.2', 'SARA-OMEGA V.3.2.1')
                   p.write_text(text, encoding='utf-8')
 
-          # CI display names; filenames stay stable to preserve integrations.
           for fname in ['.github/workflows/railway-production-activate.yml', '.github/workflows/sara-v32-validate.yml']:
               p = Path(fname)
               if p.exists():
@@ -112,53 +98,57 @@ jobs:
                   p.write_text(text, encoding='utf-8')
 
           Path('VERSION').write_text(RELEASE + '\n', encoding='utf-8')
-
           release_dir = Path(PROJECT_SLUG)
           release_dir.mkdir(exist_ok=True)
-          release_dir.joinpath('PROJECT_MANIFEST.md').write_text(f'''# {PROJECT} — Project Manifest
 
-**Canonical release:** {PROJECT}  
-**Release version:** `{RELEASE}`  
-**Repository:** `mrsmith1638ta-design/sara-omega`  
-**Runtime provenance retained:** SARA OMEGA v2.5.2  
-**Hardening lineage:** SIOS-V3.2-FAILSAFE-1
+          project_manifest_lines = [
+              f'# {PROJECT} — Project Manifest',
+              '',
+              f'**Canonical release:** {PROJECT}  ',
+              f'**Release version:** `{RELEASE}`  ',
+              '**Repository:** `mrsmith1638ta-design/sara-omega`  ',
+              '**Runtime provenance retained:** SARA OMEGA v2.5.2  ',
+              '**Hardening lineage:** SIOS-V3.2-FAILSAFE-1',
+              '',
+              '## What changed in V3.2.1',
+              '',
+              'V3.2.1 promotes the V3.2 hardening architecture into a zero-to-production deployment release. It adds automated Railway account provisioning, project/service creation, persistent `/data` volume provisioning, fail-safe secret generation, production bootstrap enforcement, two-boot persistence proof, live production acceptance evidence, and automated CI validation.',
+              '',
+              'The V3.2 cryptographic and epistemic hardening lineage is retained. V3.2.1 is a patch release, not a replacement architecture.',
+              '',
+              '## Version semantics',
+              '',
+              '- **3.2** — SIOS fail-safe and epistemic hardening architecture.',
+              '- **3.2.1** — production automation, deployment acceptance, persistence proof, and visible release identity.',
+              '- **2.5.2** — historical runtime base provenance only; it is no longer the public release version.',
+              '',
+              '## Production status rule',
+              '',
+              'The release must not be represented as live-production accepted until the Railway service passes health, readiness, encrypted checkpoint, retained-chain verification, and cross-boot persistence checks.',
+          ]
+          release_dir.joinpath('PROJECT_MANIFEST.md').write_text('\n'.join(project_manifest_lines) + '\n', encoding='utf-8')
 
-## What changed in V3.2.1
-
-V3.2.1 promotes the V3.2 hardening architecture into a zero-to-production deployment release. It adds automated Railway account provisioning, project/service creation, persistent `/data` volume provisioning, fail-safe secret generation, production bootstrap enforcement, two-boot persistence proof, live production acceptance evidence, and automated CI validation.
-
-The V3.2 cryptographic and epistemic hardening lineage is retained. V3.2.1 is a patch release, not a replacement architecture.
-
-## Version semantics
-
-- **3.2** — SIOS fail-safe and epistemic hardening architecture.
-- **3.2.1** — production automation, deployment acceptance, persistence proof, and visible release identity.
-- **2.5.2** — historical runtime base provenance only; it is no longer the public release version.
-
-## Production status rule
-
-The release must not be represented as live-production accepted until the Railway service passes health, readiness, encrypted checkpoint, retained-chain verification, and cross-boot persistence checks.
-''', encoding='utf-8')
-
-          release_dir.joinpath('RELEASE_NOTES.md').write_text('''# SARA-OMEGA V3.2.1 Release Notes
-
-## Added
-
-- Railway zero-to-production provisioning from an empty Railway account.
-- Automated project and service creation.
-- Automated persistent `/data` volume creation.
-- Automated fail-safe master-key generation without printing the key.
-- Production bootstrap controller before Uvicorn startup.
-- Encrypted checkpoint self-test and retained-chain verification.
-- Two-boot persistence proof before production acceptance.
-- Public and owner-only production-acceptance endpoints.
-- GitHub Actions validation and deployment automation.
-- Runtime-visible `3.2.1` release identity while preserving v2.5.2 provenance.
-
-## Security posture
-
-All mandatory security gates remain fail-closed. Provider or deployment automation does not create epistemic or execution authority. Restored state does not bypass current authentication or execution policy.
-''', encoding='utf-8')
+          release_notes_lines = [
+              '# SARA-OMEGA V3.2.1 Release Notes',
+              '',
+              '## Added',
+              '',
+              '- Railway zero-to-production provisioning from an empty Railway account.',
+              '- Automated project and service creation.',
+              '- Automated persistent `/data` volume creation.',
+              '- Automated fail-safe master-key generation without printing the key.',
+              '- Production bootstrap controller before Uvicorn startup.',
+              '- Encrypted checkpoint self-test and retained-chain verification.',
+              '- Two-boot persistence proof before production acceptance.',
+              '- Public and owner-only production-acceptance endpoints.',
+              '- GitHub Actions validation and deployment automation.',
+              '- Runtime-visible `3.2.1` release identity while preserving v2.5.2 provenance.',
+              '',
+              '## Security posture',
+              '',
+              'All mandatory security gates remain fail-closed. Provider or deployment automation does not create epistemic or execution authority. Restored state does not bypass current authentication or execution policy.',
+          ]
+          release_dir.joinpath('RELEASE_NOTES.md').write_text('\n'.join(release_notes_lines) + '\n', encoding='utf-8')
 
           manifest = {
               'project_name': PROJECT,
@@ -171,7 +161,7 @@ All mandatory security gates remain fail-closed. Provider or deployment automati
               'production_acceptance_required': True,
               'railway_zero_to_production': True,
               'persistent_volume_mount': '/data',
-              'failsafe_root': '/data/sara-failsafe'
+              'failsafe_root': '/data/sara-failsafe',
           }
           release_dir.joinpath('INFRASTRUCTURE_MANIFEST.json').write_text(
               json.dumps(manifest, indent=2, sort_keys=True) + '\n', encoding='utf-8'
