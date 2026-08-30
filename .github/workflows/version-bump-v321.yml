@@ -1,0 +1,204 @@
+name: SARA-OMEGA V3.2.1 release identity update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/version-bump-v321.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sara-omega-v321-version-bump
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply V3.2.1 release identity
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          RELEASE = '3.2.1'
+          PROJECT = 'SARA-OMEGA V.3.2.1'
+          PROJECT_SLUG = 'SARA-OMEGA-V3.2.1'
+
+          def replace_required(path: str, old: str, new: str, count: int | None = None):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              if old not in text:
+                  if new in text:
+                      return
+                  raise SystemExit(f'required text not found in {path}: {old!r}')
+              text = text.replace(old, new, -1 if count is None else count)
+              p.write_text(text, encoding='utf-8')
+
+          # Runtime-visible release identity. Preserve v2.5.2 as provenance only.
+          p = Path('main.py')
+          text = p.read_text(encoding='utf-8')
+          text = text.replace(
+              '"""SARA OMEGA v2.5.2 + SIOS V3.2 fail-safe hardening - Railway Production."""',
+              '"""SARA-OMEGA V3.2.1 - SIOS V3.2 fail-safe + Railway zero-to-production release."""'
+          )
+          if 'RELEASE_VERSION = "3.2.1"' not in text:
+              text = text.replace(
+                  'BASE_VERSION = "2.5.2"\nHARDENING_PROFILE = "SIOS-V3.2-FAILSAFE-1"\nDISPLAY_VERSION = f"{BASE_VERSION}+{HARDENING_PROFILE.lower()}"',
+                  'BASE_VERSION = "2.5.2"\nRELEASE_VERSION = "3.2.1"\nHARDENING_PROFILE = "SIOS-V3.2-FAILSAFE-1"\nDISPLAY_VERSION = RELEASE_VERSION'
+              )
+          text = text.replace(
+              '"base_version": BASE_VERSION,\n        "hardening_profile": HARDENING_PROFILE,',
+              '"base_version": BASE_VERSION,\n        "release_version": RELEASE_VERSION,\n        "hardening_profile": HARDENING_PROFILE,'
+          )
+          text = text.replace(
+              '"version": BASE_VERSION,\n        "hardening_profile": HARDENING_PROFILE,',
+              '"version": RELEASE_VERSION,\n        "base_runtime_version": BASE_VERSION,\n        "hardening_profile": HARDENING_PROFILE,'
+          )
+          text = text.replace(
+              'return {"ready": True, "failsafe": FAILSAFE.status(), "hardening_profile": HARDENING_PROFILE}',
+              'return {"ready": True, "version": RELEASE_VERSION, "base_runtime_version": BASE_VERSION, "failsafe": FAILSAFE.status(), "hardening_profile": HARDENING_PROFILE}'
+          )
+          p.write_text(text, encoding='utf-8')
+
+          # Production bootstrap and acceptance evidence.
+          p = Path('sara_production_bootstrap.py')
+          text = p.read_text(encoding='utf-8')
+          text = text.replace('PROJECT_NAME = "SARA-OMEGA V.3.2"', 'PROJECT_NAME = "SARA-OMEGA V.3.2.1"')
+          if 'RELEASE_VERSION = "3.2.1"' not in text:
+              text = text.replace(
+                  'PROJECT_NAME = "SARA-OMEGA V.3.2.1"\nHARDENING_PROFILE = "SIOS-V3.2-FAILSAFE-1"',
+                  'PROJECT_NAME = "SARA-OMEGA V.3.2.1"\nRELEASE_VERSION = "3.2.1"\nHARDENING_PROFILE = "SIOS-V3.2-FAILSAFE-1"'
+              )
+          text = text.replace(
+              '"project_name": PROJECT_NAME,\n            "hardening_profile": HARDENING_PROFILE,',
+              '"project_name": PROJECT_NAME,\n            "release_version": RELEASE_VERSION,\n            "hardening_profile": HARDENING_PROFILE,'
+          )
+          text = text.replace(
+              '"project_name": PROJECT_NAME,\n        "hardening_profile": HARDENING_PROFILE,',
+              '"project_name": PROJECT_NAME,\n        "release_version": RELEASE_VERSION,\n        "hardening_profile": HARDENING_PROFILE,'
+          )
+          text = text.replace(
+              '"project_name",\n            "hardening_profile",',
+              '"project_name",\n            "release_version",\n            "hardening_profile",'
+          )
+          p.write_text(text, encoding='utf-8')
+
+          # Railway zero-to-production identity.
+          for fname in ['tools/railway_zero_to_production.sh', 'tools/railway_ci_activate.sh', 'tools/railway_secure_activate.sh']:
+              p = Path(fname)
+              if p.exists():
+                  text = p.read_text(encoding='utf-8')
+                  text = text.replace('SARA-OMEGA-V3.2', 'SARA-OMEGA-V3.2.1')
+                  text = text.replace('SARA-OMEGA V3.2', 'SARA-OMEGA V3.2.1')
+                  text = text.replace('SARA-OMEGA V.3.2', 'SARA-OMEGA V.3.2.1')
+                  p.write_text(text, encoding='utf-8')
+
+          # CI display names; filenames stay stable to preserve integrations.
+          for fname in ['.github/workflows/railway-production-activate.yml', '.github/workflows/sara-v32-validate.yml']:
+              p = Path(fname)
+              if p.exists():
+                  text = p.read_text(encoding='utf-8')
+                  text = text.replace('SARA-OMEGA V3.2 ', 'SARA-OMEGA V3.2.1 ')
+                  text = text.replace('SARA-OMEGA V3.2\n', 'SARA-OMEGA V3.2.1\n')
+                  p.write_text(text, encoding='utf-8')
+
+          Path('VERSION').write_text(RELEASE + '\n', encoding='utf-8')
+
+          release_dir = Path(PROJECT_SLUG)
+          release_dir.mkdir(exist_ok=True)
+          release_dir.joinpath('PROJECT_MANIFEST.md').write_text(f'''# {PROJECT} — Project Manifest
+
+**Canonical release:** {PROJECT}  
+**Release version:** `{RELEASE}`  
+**Repository:** `mrsmith1638ta-design/sara-omega`  
+**Runtime provenance retained:** SARA OMEGA v2.5.2  
+**Hardening lineage:** SIOS-V3.2-FAILSAFE-1
+
+## What changed in V3.2.1
+
+V3.2.1 promotes the V3.2 hardening architecture into a zero-to-production deployment release. It adds automated Railway account provisioning, project/service creation, persistent `/data` volume provisioning, fail-safe secret generation, production bootstrap enforcement, two-boot persistence proof, live production acceptance evidence, and automated CI validation.
+
+The V3.2 cryptographic and epistemic hardening lineage is retained. V3.2.1 is a patch release, not a replacement architecture.
+
+## Version semantics
+
+- **3.2** — SIOS fail-safe and epistemic hardening architecture.
+- **3.2.1** — production automation, deployment acceptance, persistence proof, and visible release identity.
+- **2.5.2** — historical runtime base provenance only; it is no longer the public release version.
+
+## Production status rule
+
+The release must not be represented as live-production accepted until the Railway service passes health, readiness, encrypted checkpoint, retained-chain verification, and cross-boot persistence checks.
+''', encoding='utf-8')
+
+          release_dir.joinpath('RELEASE_NOTES.md').write_text('''# SARA-OMEGA V3.2.1 Release Notes
+
+## Added
+
+- Railway zero-to-production provisioning from an empty Railway account.
+- Automated project and service creation.
+- Automated persistent `/data` volume creation.
+- Automated fail-safe master-key generation without printing the key.
+- Production bootstrap controller before Uvicorn startup.
+- Encrypted checkpoint self-test and retained-chain verification.
+- Two-boot persistence proof before production acceptance.
+- Public and owner-only production-acceptance endpoints.
+- GitHub Actions validation and deployment automation.
+- Runtime-visible `3.2.1` release identity while preserving v2.5.2 provenance.
+
+## Security posture
+
+All mandatory security gates remain fail-closed. Provider or deployment automation does not create epistemic or execution authority. Restored state does not bypass current authentication or execution policy.
+''', encoding='utf-8')
+
+          manifest = {
+              'project_name': PROJECT,
+              'release_version': RELEASE,
+              'release_type': 'patch',
+              'previous_release': '3.2',
+              'runtime_base_provenance': '2.5.2',
+              'hardening_profile': 'SIOS-V3.2-FAILSAFE-1',
+              'update': 'Railway zero-to-production automation and production acceptance enforcement',
+              'production_acceptance_required': True,
+              'railway_zero_to_production': True,
+              'persistent_volume_mount': '/data',
+              'failsafe_root': '/data/sara-failsafe'
+          }
+          release_dir.joinpath('INFRASTRUCTURE_MANIFEST.json').write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          PY
+
+      - name: Syntax sanitation
+        shell: bash
+        run: |
+          python -m py_compile main.py sara_production_bootstrap.py sara_v32_hardening.py tools/*.py
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          for path in ['main.py', 'sara_production_bootstrap.py']:
+              ast.parse(Path(path).read_text(encoding='utf-8'), filename=path)
+          print('SARA-OMEGA V3.2.1 syntax sanitation PASS')
+          PY
+
+      - name: Commit release identity
+        shell: bash
+        run: |
+          if git diff --quiet && [ -z "$(git status --porcelain)" ]; then
+            echo 'V3.2.1 release identity already applied.'
+            exit 0
+          fi
+          git config user.name 'sara-omega-release-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add main.py sara_production_bootstrap.py tools .github/workflows VERSION SARA-OMEGA-V3.2.1
+          git commit -m 'Release SARA-OMEGA V3.2.1 production automation update'
+          git push origin HEAD:main
