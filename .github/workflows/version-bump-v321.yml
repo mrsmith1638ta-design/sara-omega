@@ -89,14 +89,6 @@ jobs:
                   text = text.replace('SARA-OMEGA V.3.2', 'SARA-OMEGA V.3.2.1')
                   p.write_text(text, encoding='utf-8')
 
-          for fname in ['.github/workflows/railway-production-activate.yml', '.github/workflows/sara-v32-validate.yml']:
-              p = Path(fname)
-              if p.exists():
-                  text = p.read_text(encoding='utf-8')
-                  text = text.replace('SARA-OMEGA V3.2 ', 'SARA-OMEGA V3.2.1 ')
-                  text = text.replace('SARA-OMEGA V3.2\n', 'SARA-OMEGA V3.2.1\n')
-                  p.write_text(text, encoding='utf-8')
-
           Path('VERSION').write_text(RELEASE + '\n', encoding='utf-8')
           release_dir = Path(PROJECT_SLUG)
           release_dir.mkdir(exist_ok=True)
@@ -183,12 +175,16 @@ jobs:
       - name: Commit release identity
         shell: bash
         run: |
+          rm -rf tools/__pycache__ __pycache__
           if git diff --quiet && [ -z "$(git status --porcelain)" ]; then
             echo 'V3.2.1 release identity already applied.'
             exit 0
           fi
           git config user.name 'sara-omega-release-bot'
           git config user.email 'actions@users.noreply.github.com'
-          git add main.py sara_production_bootstrap.py tools .github/workflows VERSION SARA-OMEGA-V3.2.1
+          git add main.py sara_production_bootstrap.py VERSION SARA-OMEGA-V3.2.1
+          for f in tools/railway_zero_to_production.sh tools/railway_ci_activate.sh tools/railway_secure_activate.sh; do
+            [ -f "$f" ] && git add "$f"
+          done
           git commit -m 'Release SARA-OMEGA V3.2.1 production automation update'
           git push origin HEAD:main
