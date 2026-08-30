@@ -1,0 +1,28 @@
+{
+  "project_name": "SARA-OMEGA V.3.2",
+  "repository": "mrsmith1638ta-design/sara-omega",
+  "deployment_platform": "Railway",
+  "runtime_base_version": "2.5.2",
+  "hardening_profile": "SIOS-V3.2-FAILSAFE-1",
+  "components": [
+    "FastAPI runtime",
+    "Railway Nixpacks deployment",
+    "SARA-SIOS hardened relay",
+    "epistemic authority gate",
+    "encrypted fail-safe checkpoint controller",
+    "verified restore controller",
+    "audit/checkpoint integration",
+    "security regression tests",
+    "adversarial gate"
+  ],
+  "required_runtime_secrets": [
+    "OWNER_TOKEN",
+    "OPENAI_API_KEY",
+    "SARA_FAILSAFE_MASTER_KEY_HEX or SARA_FAILSAFE_MASTER_KEY_B64"
+  ],
+  "recommended_runtime_settings": {
+    "SARA_FAILSAFE_REQUIRED": "true",
+    "SARA_FAILSAFE_ROOT": "/data/sara-failsafe"
+  },
+  "runtime_acceptance": "PENDING_LIVE_RAILWAY_ENDPOINT_VERIFICATION"
+}
