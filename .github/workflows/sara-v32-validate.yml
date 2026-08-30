@@ -29,3 +29,5 @@ jobs:
         run: pytest -q
       - name: Focused adversarial gate
         run: python tools/adversarial_gate.py
+      - name: Railway container build
+        run: docker build --pull -t sara-omega:v3.2.1 .
