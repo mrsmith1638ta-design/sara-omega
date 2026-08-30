@@ -1,0 +1,80 @@
+name: SARA-OMEGA V3.2 Railway production activation
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 * * * *'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/railway_ci_activate.sh'
+      - '.github/workflows/railway-production-activate.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sara-omega-v32-railway-production-activation
+  cancel-in-progress: false
+
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check protected Railway credential
+        id: credential
+        shell: bash
+        run: |
+          if [ -z "${RAILWAY_TOKEN:-}" ]; then
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            {
+              echo '## SARA-OMEGA V3.2 Railway activation'
+              echo 'Automation is installed and waiting only for the protected repository secret `RAILWAY_TOKEN`.'
+              echo 'No Railway changes were attempted.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Node
+        if: steps.credential.outputs.available == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Railway CLI
+        if: steps.credential.outputs.available == 'true'
+        run: npm install --global @railway/cli
+
+      - name: Activate and verify SARA-OMEGA V3.2
+        if: steps.credential.outputs.available == 'true'
+        run: bash tools/railway_ci_activate.sh
+
+      - name: Publish activation evidence
+        if: steps.credential.outputs.available == 'true' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sara-omega-v32-railway-activation
+          path: railway-activation-report.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Activation summary
+        if: steps.credential.outputs.available == 'true' && always()
+        shell: bash
+        run: |
+          {
+            echo '## SARA-OMEGA V3.2 Railway activation'
+            if [ -f railway-activation-report.json ]; then
+              echo 'Railway automation completed and produced an acceptance report.'
+              echo '```json'
+              cat railway-activation-report.json
+              echo '```'
+            else
+              echo 'Railway automation did not produce an acceptance report. Review the failed step above; secrets are never printed.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
