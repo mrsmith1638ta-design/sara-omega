@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# SARA-OMEGA V.3.2 Railway secure activation.
+# SARA-OMEGA V.3.2.1 Railway secure activation.
 # Requires a Railway CLI session linked to the intended SARA project/service.
 # It never prints OWNER_TOKEN or the generated fail-safe master key.
 
@@ -92,6 +92,6 @@ else
 fi
 
 railway service redeploy -y >/dev/null
-echo 'Requested Railway redeploy through SARA-OMEGA V.3.2 production bootstrap.'
+echo 'Requested Railway redeploy through SARA-OMEGA V.3.2.1 production bootstrap.'
 echo 'After the service boots again, check /health/production-acceptance.'
 echo 'A subsequent restart/redeploy is required for cross-boot persistence proof.'

@@ -21,7 +21,8 @@ import uvicorn
 
 from sara_v32_hardening import BackupError, FailSafeEvent, RuntimeFailSafe
 
-PROJECT_NAME = "SARA-OMEGA V.3.2"
+PROJECT_NAME = "SARA-OMEGA V.3.2.1"
+RELEASE_VERSION = "3.2.1"
 HARDENING_PROFILE = "SIOS-V3.2-FAILSAFE-1"
 DEFAULT_FAILSAFE_ROOT = "/data/sara-failsafe"
 MARKER_NAME = "runtime-persistence-marker.json"
@@ -160,6 +161,7 @@ def run_preflight() -> dict[str, Any]:
     receipt = runtime.checkpoint(
         {
             "project_name": PROJECT_NAME,
+            "release_version": RELEASE_VERSION,
             "hardening_profile": HARDENING_PROFILE,
             "bootstrap_probe": True,
             "boot_id": boot_id,
@@ -181,6 +183,7 @@ def run_preflight() -> dict[str, Any]:
     persistence_observed = bool(previous_marker and previous_marker.get("boot_id") != boot_id)
     marker = {
         "project_name": PROJECT_NAME,
+        "release_version": RELEASE_VERSION,
         "hardening_profile": HARDENING_PROFILE,
         "boot_id": boot_id,
         "created_at_epoch": int(time.time()),
@@ -191,6 +194,7 @@ def run_preflight() -> dict[str, Any]:
 
     evidence: dict[str, Any] = {
         "project_name": PROJECT_NAME,
+        "release_version": RELEASE_VERSION,
         "hardening_profile": HARDENING_PROFILE,
         "bootstrap_ready": True,
         "failsafe_required": required,
@@ -222,6 +226,7 @@ def run_preflight() -> dict[str, Any]:
 def failed_evidence(exc: BaseException) -> dict[str, Any]:
     return {
         "project_name": PROJECT_NAME,
+        "release_version": RELEASE_VERSION,
         "hardening_profile": HARDENING_PROFILE,
         "bootstrap_ready": False,
         "production_accepted": False,
@@ -240,6 +245,7 @@ def register_acceptance_routes(main_module: Any, evidence: dict[str, Any]) -> No
     def production_acceptance_health():
         public_keys = {
             "project_name",
+            "release_version",
             "hardening_profile",
             "bootstrap_ready",
             "production_accepted",

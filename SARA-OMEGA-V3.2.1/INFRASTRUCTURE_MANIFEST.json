@@ -1,0 +1,13 @@
+{
+  "failsafe_root": "/data/sara-failsafe",
+  "hardening_profile": "SIOS-V3.2-FAILSAFE-1",
+  "persistent_volume_mount": "/data",
+  "previous_release": "3.2",
+  "production_acceptance_required": true,
+  "project_name": "SARA-OMEGA V.3.2.1",
+  "railway_zero_to_production": true,
+  "release_type": "patch",
+  "release_version": "3.2.1",
+  "runtime_base_provenance": "2.5.2",
+  "update": "Railway zero-to-production automation and production acceptance enforcement"
+}

@@ -1,4 +1,4 @@
-"""SARA OMEGA v2.5.2 + SIOS V3.2 fail-safe hardening - Railway Production."""
+"""SARA-OMEGA V3.2.1 - SIOS V3.2 fail-safe + Railway zero-to-production release."""
 from __future__ import annotations
 
 import hashlib
@@ -20,8 +20,9 @@ from openai import OpenAI
 from sara_v32_hardening import BackupError, FailSafeEvent, RuntimeFailSafe
 
 BASE_VERSION = "2.5.2"
+RELEASE_VERSION = "3.2.1"
 HARDENING_PROFILE = "SIOS-V3.2-FAILSAFE-1"
-DISPLAY_VERSION = f"{BASE_VERSION}+{HARDENING_PROFILE.lower()}"
+DISPLAY_VERSION = RELEASE_VERSION
 
 logging.basicConfig(level=logging.INFO, format='{"time":"%(asctime)s","level":"%(levelname)s","message":"%(message)s"}')
 logger = logging.getLogger(__name__)
@@ -91,6 +92,7 @@ def runtime_state() -> Dict:
         "audit": AUDIT,
         "rate_limit": {key: list(values) for key, values in RATE_LIMIT.items()},
         "base_version": BASE_VERSION,
+        "release_version": RELEASE_VERSION,
         "hardening_profile": HARDENING_PROFILE,
     }
 
@@ -214,7 +216,8 @@ def shutdown_checkpoint():
 def root():
     return {
         "name": "SARA OMEGA",
-        "version": BASE_VERSION,
+        "version": RELEASE_VERSION,
+        "base_runtime_version": BASE_VERSION,
         "hardening_profile": HARDENING_PROFILE,
         "status": "online" if not KILL_SWITCH else "disabled",
         "platform": "Railway",
@@ -225,7 +228,8 @@ def root():
 def health():
     return {
         "status": "healthy",
-        "version": BASE_VERSION,
+        "version": RELEASE_VERSION,
+        "base_runtime_version": BASE_VERSION,
         "hardening_profile": HARDENING_PROFILE,
         "platform": "Railway",
         "timestamp": utc_iso(),
@@ -249,7 +253,7 @@ def readiness():
         FAILSAFE.ensure_ready()
     except BackupError as exc:
         raise HTTPException(503, f"Fail-safe unavailable: {type(exc).__name__}") from exc
-    return {"ready": True, "failsafe": FAILSAFE.status(), "hardening_profile": HARDENING_PROFILE}
+    return {"ready": True, "version": RELEASE_VERSION, "base_runtime_version": BASE_VERSION, "failsafe": FAILSAFE.status(), "hardening_profile": HARDENING_PROFILE}
 
 
 @app.get("/health/live")
@@ -342,7 +346,8 @@ def admin_stats(req: Request):
     if authorize(req) != "owner":
         raise HTTPException(403, "Owner only")
     return {
-        "version": BASE_VERSION,
+        "version": RELEASE_VERSION,
+        "base_runtime_version": BASE_VERSION,
         "hardening_profile": HARDENING_PROFILE,
         "platform": "Railway",
         "uptime": int(time.time() - startup_time),

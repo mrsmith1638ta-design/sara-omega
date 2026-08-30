@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-log(){ printf '[SARA-OMEGA V3.2] %s\n' "$*"; }
-fail(){ printf '[SARA-OMEGA V3.2] ERROR: %s\n' "$*" >&2; exit 1; }
+log(){ printf '[SARA-OMEGA V3.2.1] %s\n' "$*"; }
+fail(){ printf '[SARA-OMEGA V3.2.1] ERROR: %s\n' "$*" >&2; exit 1; }
 
 for cmd in railway python3 curl openssl; do
   command -v "$cmd" >/dev/null 2>&1 || fail "$cmd is required"
