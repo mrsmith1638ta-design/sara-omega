@@ -17,7 +17,7 @@ RUN python -m pip install --upgrade pip \
 
 COPY . .
 
-RUN python -m py_compile main.py sara_production_bootstrap.py sara_v32_hardening.py \
+RUN python -m py_compile main.py sara_production_bootstrap.py sara_v32_hardening.py sara_web.py \
     && python - <<'PY'
 from pathlib import Path
 assert Path('VERSION').read_text(encoding='utf-8').strip() == '3.2.1'
@@ -28,4 +28,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD sh -c 'curl -fsS "http://127.0.0.1:${PORT:-8000}/health/live" >/dev/null || exit 1'
 
-CMD ["python", "sara_production_bootstrap.py"]
+CMD ["python", "sara_web.py"]
