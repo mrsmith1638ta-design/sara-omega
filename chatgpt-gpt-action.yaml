@@ -1,0 +1,49 @@
+openapi: 3.1.0
+info:
+  title: SARA-OMEGA V3.2.1 Runtime Attestation
+  version: 3.2.1
+  description: Read-only actions that let the SARA-OMEGA custom GPT verify the live Railway runtime, readiness, and production acceptance state without exposing secrets.
+servers:
+  - url: https://sara-omega-production.up.railway.app
+paths:
+  /:
+    get:
+      operationId: getSaraOmegaIdentity
+      summary: Get live SARA-OMEGA runtime identity
+      description: Returns the live release version, base-runtime provenance, hardening profile, status, and platform.
+      responses:
+        '200':
+          description: Live runtime identity
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /health/ready:
+    get:
+      operationId: getSaraOmegaReadiness
+      summary: Verify fail-closed runtime readiness
+      description: Returns readiness only when the fail-safe runtime is ready.
+      responses:
+        '200':
+          description: Runtime is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '503':
+          description: Runtime is not ready and remains fail-closed
+  /health/production-acceptance:
+    get:
+      operationId: getSaraOmegaProductionAcceptance
+      summary: Get V3.2.1 production acceptance evidence
+      description: Returns non-secret production evidence including persistence proof, dedicated mount status, checkpoint self-test, chain integrity, and production_accepted state.
+      responses:
+        '200':
+          description: Production acceptance evidence
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
