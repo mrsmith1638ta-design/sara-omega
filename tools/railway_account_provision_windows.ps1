@@ -14,30 +14,93 @@ function Write-SaraLog {
     Write-Host "[SARA-OMEGA V3.2.1] $Message"
 }
 
+function Resolve-RailwayNativeCommand {
+    # npm installs both railway.ps1 and railway.cmd on Windows. The .ps1 shim
+    # invokes node.exe inside PowerShell, so benign CLI stderr warnings become
+    # NativeCommandError records when the caller is fail-closed. Bypass that
+    # shim and execute the native .cmd/.exe entry point directly.
+    $candidates = New-Object System.Collections.Generic.List[string]
+
+    $railwayCmd = Get-Command railway.cmd -ErrorAction SilentlyContinue
+    if ($null -ne $railwayCmd -and -not [string]::IsNullOrWhiteSpace($railwayCmd.Source)) {
+        $candidates.Add($railwayCmd.Source)
+    }
+
+    $railwayExe = Get-Command railway.exe -ErrorAction SilentlyContinue
+    if ($null -ne $railwayExe -and -not [string]::IsNullOrWhiteSpace($railwayExe.Source)) {
+        $candidates.Add($railwayExe.Source)
+    }
+
+    $railwayAny = Get-Command railway -ErrorAction SilentlyContinue
+    if ($null -ne $railwayAny -and -not [string]::IsNullOrWhiteSpace($railwayAny.Source)) {
+        $source = $railwayAny.Source
+        $dir = Split-Path -Parent $source
+        if (-not [string]::IsNullOrWhiteSpace($dir)) {
+            $cmdSibling = Join-Path $dir "railway.cmd"
+            $exeSibling = Join-Path $dir "railway.exe"
+            if (Test-Path $cmdSibling) { $candidates.Add($cmdSibling) }
+            if (Test-Path $exeSibling) { $candidates.Add($exeSibling) }
+        }
+        if ([System.IO.Path]::GetExtension($source) -ne ".ps1") {
+            $candidates.Add($source)
+        }
+    }
+
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        if (Test-Path $candidate) {
+            return (Resolve-Path $candidate).Path
+        }
+    }
+
+    throw "A native Railway CLI entry point (railway.cmd or railway.exe) was not found. The railway.ps1 npm shim is intentionally rejected."
+}
+
+$script:RailwayCommand = Resolve-RailwayNativeCommand
+Write-SaraLog "Railway native entry point VERIFIED: $([System.IO.Path]::GetFileName($script:RailwayCommand))"
+
 function Invoke-RailwayCapture {
     param([Parameter(Mandatory = $true)][string[]]$Arguments)
 
-    # Railway's Node wrapper can write notices/prompts to stderr even when the
-    # underlying command succeeds. Suppress stderr for machine-readable calls
-    # and use the process exit code as the authority.
-    $output = & railway @Arguments 2>$null
-    if ($LASTEXITCODE -ne 0) {
+    # Keep PowerShell fail-closed globally, but do not let benign native stderr
+    # notices become terminating PowerShell errors. The external process exit
+    # code remains the authority for success/failure.
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $output = & $script:RailwayCommand @Arguments 2>$null
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+
+    if ($exitCode -ne 0) {
         $safeArgs = ($Arguments | ForEach-Object {
             if ($_ -match 'TOKEN|KEY|SECRET') { '<redacted>' } else { $_ }
         }) -join ' '
-        throw "Railway command failed: railway $safeArgs"
+        throw "Railway command failed with exit code $exitCode`: $safeArgs"
     }
     return ($output -join "`n")
 }
 
 function Invoke-RailwayWrite {
     param([Parameter(Mandatory = $true)][string[]]$Arguments)
-    $null = & railway @Arguments 2>$null
-    if ($LASTEXITCODE -ne 0) {
+
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $null = & $script:RailwayCommand @Arguments 2>$null
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+
+    if ($exitCode -ne 0) {
         $safeArgs = ($Arguments | ForEach-Object {
             if ($_ -match 'TOKEN|KEY|SECRET') { '<redacted>' } else { $_ }
         }) -join ' '
-        throw "Railway write failed: railway $safeArgs"
+        throw "Railway write failed with exit code $exitCode`: $safeArgs"
     }
 }
 
@@ -46,12 +109,22 @@ function Invoke-RailwayStdinWrite {
         [Parameter(Mandatory = $true)][string]$Value,
         [Parameter(Mandatory = $true)][string[]]$Arguments
     )
-    $Value | & railway @Arguments 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) {
+
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $Value | & $script:RailwayCommand @Arguments 2>$null | Out-Null
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+    }
+
+    if ($exitCode -ne 0) {
         $safeArgs = ($Arguments | ForEach-Object {
             if ($_ -match 'TOKEN|KEY|SECRET') { '<redacted>' } else { $_ }
         }) -join ' '
-        throw "Railway stdin write failed: railway $safeArgs"
+        throw "Railway stdin write failed with exit code $exitCode`: $safeArgs"
     }
 }
 
@@ -143,10 +216,6 @@ function Get-DeploymentStatus {
     return "UNKNOWN"
 }
 
-if (-not (Get-Command railway -ErrorAction SilentlyContinue)) {
-    throw "Railway CLI is required."
-}
-
 $pythonExe = $null
 $pythonPrefix = @()
 if (Get-Command python -ErrorAction SilentlyContinue) {
@@ -180,10 +249,9 @@ if ([string]::IsNullOrWhiteSpace($whoami)) {
 }
 Write-SaraLog "Railway authentication VERIFIED"
 
-# The production tuple is immutable for this controller. No `railway link`,
-# `railway service`, project creation, service creation, or workspace selection
-# is permitted. Every command below carries explicit project/environment/service
-# targeting so the CLI never consults or mutates linked context.
+# The production tuple is immutable for this controller. No Railway context
+# mutation or resource creation is permitted. Every command carries explicit
+# project/environment/service targeting.
 Write-SaraLog "Verifying canonical production identity before any write"
 $targetArgs = @("--project", $ProjectId, "--environment", $EnvironmentName, "--service", $ServiceName)
 $domainJson = Invoke-RailwayCapture (@("domain", "list") + $targetArgs + @("--json"))
@@ -192,8 +260,6 @@ if ($domainJson -notmatch [regex]::Escape($ProductionDomain)) {
 }
 Write-SaraLog "Canonical production identity VERIFIED: project=$ProjectId service=$ServiceName domain=$ProductionDomain"
 
-# Read-only preflight proves the installed CLI accepts explicit targeting for
-# the remaining command families before any variable or volume write occurs.
 Write-SaraLog "Running non-interactive Railway command-contract preflight"
 $kv = Invoke-RailwayCapture (@("variable", "list") + $targetArgs + @("--kv"))
 $volumeArgs = @("volume", "--project", $ProjectId, "--environment", $EnvironmentName, "--service", $ServiceName)
@@ -236,9 +302,6 @@ Invoke-RailwayWrite (@(
 
 Write-SaraLog "Verifying persistent /data volume"
 if (-not (Test-DataVolume -JsonText $volumeJson)) {
-    # In the installed CLI family, volume context belongs to the parent `volume`
-    # command. Put project/environment/service BEFORE the `add` subcommand so
-    # they cannot be parsed as add-specific arguments.
     Invoke-RailwayWrite ($volumeArgs + @("add", "--mount-path", "/data", "--json"))
     Write-SaraLog "Created persistent /data volume"
 }
