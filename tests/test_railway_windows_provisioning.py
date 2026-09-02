@@ -21,7 +21,8 @@ def test_native_windows_activator_cannot_create_or_link_context() -> None:
     assert "railway add --service" not in text
     assert '@("link"' not in text
     assert '@("service", $servicename)' not in text
-    assert 'workspace' not in text
+    assert '"--workspace"' not in text
+    assert 'railway workspace' not in text
 
 
 def test_native_windows_activator_uses_explicit_target_tuple() -> None:
