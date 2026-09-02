@@ -16,7 +16,10 @@ function Write-SaraLog {
 
 function Invoke-RailwayCapture {
     param([Parameter(Mandatory = $true)][string[]]$Arguments)
-    $output = & railway @Arguments 2>&1
+
+    # Railway can emit deprecation notices on stderr even when --json is used.
+    # Keep stderr out of machine-readable stdout so JSON/KV parsing is stable.
+    $output = & railway @Arguments 2>$null
     if ($LASTEXITCODE -ne 0) {
         $safeArgs = ($Arguments | ForEach-Object {
             if ($_ -match 'TOKEN|KEY|SECRET') { '<redacted>' } else { $_ }
@@ -87,6 +90,33 @@ function Test-DataVolume {
     return (Walk-Node $doc)
 }
 
+function Get-DeploymentStatus {
+    param([Parameter(Mandatory = $true)][string]$JsonText)
+    try {
+        $doc = $JsonText | ConvertFrom-Json -ErrorAction Stop
+        if ($doc -is [System.Array]) {
+            $latest = $doc | Select-Object -First 1
+        }
+        else {
+            $latest = $doc
+        }
+        if ($null -eq $latest) { return "UNKNOWN" }
+
+        if ($latest.PSObject.Properties.Name -contains "status") {
+            $value = [string]$latest.status
+            if (-not [string]::IsNullOrWhiteSpace($value)) { return $value.ToUpperInvariant() }
+        }
+        if ($latest.PSObject.Properties.Name -contains "state") {
+            $value = [string]$latest.state
+            if (-not [string]::IsNullOrWhiteSpace($value)) { return $value.ToUpperInvariant() }
+        }
+    }
+    catch {
+        return "UNKNOWN"
+    }
+    return "UNKNOWN"
+}
+
 if (-not (Get-Command railway -ErrorAction SilentlyContinue)) {
     throw "Railway CLI is required."
 }
@@ -121,6 +151,8 @@ Write-SaraLog "Verifying authenticated Railway identity"
 & railway whoami
 if ($LASTEXITCODE -ne 0) { throw "Railway authentication is not active." }
 
+# Identity is pinned from the accepted production record. Before any write,
+# prove that the exact project/service pair still owns the canonical domain.
 Write-SaraLog "Verifying canonical production identity before any write"
 $domainJson = Invoke-RailwayCapture @(
     "domain", "list",
@@ -138,6 +170,8 @@ Write-SaraLog "Canonical production identity VERIFIED: project=$ProjectId servic
 Invoke-RailwayCapture @("link", "--project", $ProjectId, "--environment", $EnvironmentName) | Out-Null
 Invoke-RailwayCapture @("service", $ServiceName) | Out-Null
 
+# No service creation is permitted in this controller. If the service cannot be
+# selected, Invoke-RailwayCapture fails immediately.
 $servicesJson = Invoke-RailwayCapture @("service", "list", "--json")
 if ($servicesJson -notmatch ('"name"\s*:\s*"' + [regex]::Escape($ServiceName) + '"')) {
     throw "Expected production service $ServiceName is missing from project $ProjectId. Refusing to create a replacement service."
@@ -180,6 +214,8 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to apply production fail-safe variables
 Write-SaraLog "Verifying persistent /data volume"
 $volumeJson = Invoke-RailwayCapture @("volume", "list", "--json")
 if (-not (Test-DataVolume -JsonText $volumeJson)) {
+    # Proven repository pattern: volume creation uses the already-selected
+    # project/service context and only passes the mount path.
     & railway volume add --mount-path /data --json | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Failed to create persistent /data volume." }
     Write-SaraLog "Created persistent /data volume"
@@ -196,16 +232,9 @@ Write-SaraLog "Waiting for Railway deployment SUCCESS"
 $deploymentSucceeded = $false
 for ($i = 0; $i -lt 90; $i++) {
     $deploymentJson = Invoke-RailwayCapture @("deployment", "list", "--service", $ServiceName, "--limit", "1", "--json")
-    try {
-        $doc = $deploymentJson | ConvertFrom-Json -ErrorAction Stop
-        $latest = if ($doc -is [System.Array]) { $doc | Select-Object -First 1 } else { $doc }
-        $status = [string]($latest.status ?? $latest.state ?? "UNKNOWN")
-    }
-    catch {
-        $status = "UNKNOWN"
-    }
+    $status = Get-DeploymentStatus -JsonText $deploymentJson
 
-    switch ($status.ToUpperInvariant()) {
+    switch ($status) {
         "SUCCESS" { $deploymentSucceeded = $true; break }
         "FAILED" { throw "Railway deployment ended in FAILED." }
         "CRASHED" { throw "Railway deployment ended in CRASHED." }
