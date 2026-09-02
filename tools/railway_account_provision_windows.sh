@@ -85,45 +85,49 @@ if [ -z "$TARGET_PROJECT_ID" ]; then
 fi
 
 log "Resolved production project ${TARGET_PROJECT_NAME} (${TARGET_PROJECT_ID})"
-export TARGET_PROJECT_ID
+
+# Link the exact project ID before the canonical controller starts. From this
+# point on, project creation is forbidden: a resolver failure must stop rather
+# than create a replacement production project.
+command railway link --project "$TARGET_PROJECT_ID" --environment "$ENVIRONMENT_NAME" >/dev/null \
+  || fail "Could not link resolved production project ${TARGET_PROJECT_ID}"
+
+# Feed the canonical controller the exact resolved project record instead of
+# depending on Railway CLI list JSON shape. This is deliberately minimal and
+# deterministic.
+export TARGET_PROJECT_ID TARGET_PROJECT_NAME
 FILTERED_PROJECTS_JSON="$(python3 - <<'PY'
 import json, os
-try:
-    data = json.loads(os.environ['ALL_PROJECTS_JSON'])
-except Exception:
-    data = []
-target = os.environ['TARGET_PROJECT_ID']
-matches = []
-def walk(v):
-    if isinstance(v, dict):
-        if v.get('id') == target:
-            matches.append(v)
-            return
-        for x in v.values():
-            walk(x)
-    elif isinstance(v, list):
-        for x in v:
-            walk(x)
-walk(data)
-print(json.dumps(matches[:1]))
+print(json.dumps([{
+    'id': os.environ['TARGET_PROJECT_ID'],
+    'name': os.environ['TARGET_PROJECT_NAME'],
+}]))
 PY
 )"
-[ "$FILTERED_PROJECTS_JSON" != '[]' ] || fail "Resolved production project disappeared from Railway project list"
 
-# Force the canonical controller to reuse the production project found above.
-# It still performs all service, variable, fail-safe, deployment, and live
-# acceptance checks unchanged.
 export SARA_RAILWAY_PROJECT_NAME="$TARGET_PROJECT_NAME"
 
-# Compatibility shim for Railway CLI releases where `volume add` rejects the
-# `--service` argument. The controller already links the target service before
-# volume creation, so removing only this redundant option preserves targeting.
+# Git Bash/MSYS rewrites Unix-looking arguments such as /data when invoking a
+# Windows executable. Railway requires literal container paths, so disable that
+# conversion for child processes in this activation shell.
+export MSYS_NO_PATHCONV=1
+export MSYS2_ARG_CONV_EXCL='*'
+
 railway(){
   if [ "${1:-}" = "list" ] && [ "${2:-}" = "--json" ]; then
     printf '%s\n' "$FILTERED_PROJECTS_JSON"
     return 0
   fi
 
+  # Fail closed: once the canonical production project is resolved, this
+  # wrapper must never create a replacement project.
+  if [ "${1:-}" = "init" ]; then
+    fail "Refusing railway init after production project resolution"
+  fi
+
+  # Railway CLI 5.x no longer accepts --service on volume add. The service is
+  # already selected by the canonical controller; remove only that redundant
+  # option and preserve the literal /data mount path.
   if [ "${1:-}" = "volume" ] && [ "${2:-}" = "add" ]; then
     shift 2
     args=()
@@ -139,11 +143,11 @@ railway(){
           ;;
       esac
     done
-    command railway volume add "${args[@]}"
+    MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' command railway volume add "${args[@]}"
     return $?
   fi
 
-  command railway "$@"
+  MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' command railway "$@"
 }
 export -f railway
 
