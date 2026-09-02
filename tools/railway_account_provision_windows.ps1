@@ -17,8 +17,9 @@ function Write-SaraLog {
 function Invoke-RailwayCapture {
     param([Parameter(Mandatory = $true)][string[]]$Arguments)
 
-    # Railway can emit deprecation notices on stderr even when --json is used.
-    # Keep stderr out of machine-readable stdout so JSON/KV parsing is stable.
+    # Railway's Node wrapper can write notices/prompts to stderr even when the
+    # underlying command succeeds. Suppress stderr for machine-readable calls
+    # and use the process exit code as the authority.
     $output = & railway @Arguments 2>$null
     if ($LASTEXITCODE -ne 0) {
         $safeArgs = ($Arguments | ForEach-Object {
@@ -27,6 +28,31 @@ function Invoke-RailwayCapture {
         throw "Railway command failed: railway $safeArgs"
     }
     return ($output -join "`n")
+}
+
+function Invoke-RailwayWrite {
+    param([Parameter(Mandatory = $true)][string[]]$Arguments)
+    $null = & railway @Arguments 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        $safeArgs = ($Arguments | ForEach-Object {
+            if ($_ -match 'TOKEN|KEY|SECRET') { '<redacted>' } else { $_ }
+        }) -join ' '
+        throw "Railway write failed: railway $safeArgs"
+    }
+}
+
+function Invoke-RailwayStdinWrite {
+    param(
+        [Parameter(Mandatory = $true)][string]$Value,
+        [Parameter(Mandatory = $true)][string[]]$Arguments
+    )
+    $Value | & railway @Arguments 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        $safeArgs = ($Arguments | ForEach-Object {
+            if ($_ -match 'TOKEN|KEY|SECRET') { '<redacted>' } else { $_ }
+        }) -join ' '
+        throw "Railway stdin write failed: railway $safeArgs"
+    }
 }
 
 function Get-KvValue {
@@ -148,37 +174,34 @@ if (-not (Select-String -Path "tools/railway_runtime_acceptance.py" -Pattern 're
 }
 
 Write-SaraLog "Verifying authenticated Railway identity"
-& railway whoami
-if ($LASTEXITCODE -ne 0) { throw "Railway authentication is not active." }
+$whoami = Invoke-RailwayCapture @("whoami")
+if ([string]::IsNullOrWhiteSpace($whoami)) {
+    throw "Railway authentication is not active."
+}
+Write-SaraLog "Railway authentication VERIFIED"
 
-# Identity is pinned from the accepted production record. Before any write,
-# prove that the exact project/service pair still owns the canonical domain.
+# The production tuple is immutable for this controller. No `railway link`,
+# `railway service`, project creation, service creation, or workspace selection
+# is permitted. Every command below carries explicit project/environment/service
+# targeting so the CLI never consults or mutates linked context.
 Write-SaraLog "Verifying canonical production identity before any write"
-$domainJson = Invoke-RailwayCapture @(
-    "domain", "list",
-    "--project", $ProjectId,
-    "--environment", $EnvironmentName,
-    "--service", $ServiceName,
-    "--json"
-)
+$targetArgs = @("--project", $ProjectId, "--environment", $EnvironmentName, "--service", $ServiceName)
+$domainJson = Invoke-RailwayCapture (@("domain", "list") + $targetArgs + @("--json"))
 if ($domainJson -notmatch [regex]::Escape($ProductionDomain)) {
     throw "Project $ProjectId does not currently own $ProductionDomain for service $ServiceName. No Railway changes were made."
 }
-
 Write-SaraLog "Canonical production identity VERIFIED: project=$ProjectId service=$ServiceName domain=$ProductionDomain"
 
-Invoke-RailwayCapture @("link", "--project", $ProjectId, "--environment", $EnvironmentName) | Out-Null
-Invoke-RailwayCapture @("service", $ServiceName) | Out-Null
-
-# No service creation is permitted in this controller. If the service cannot be
-# selected, Invoke-RailwayCapture fails immediately.
-$servicesJson = Invoke-RailwayCapture @("service", "list", "--json")
-if ($servicesJson -notmatch ('"name"\s*:\s*"' + [regex]::Escape($ServiceName) + '"')) {
-    throw "Expected production service $ServiceName is missing from project $ProjectId. Refusing to create a replacement service."
-}
+# Read-only preflight proves the installed CLI accepts explicit targeting for
+# the remaining command families before any variable or volume write occurs.
+Write-SaraLog "Running non-interactive Railway command-contract preflight"
+$kv = Invoke-RailwayCapture (@("variable", "list") + $targetArgs + @("--kv"))
+$volumeArgs = @("volume", "--project", $ProjectId, "--environment", $EnvironmentName, "--service", $ServiceName)
+$volumeJson = Invoke-RailwayCapture ($volumeArgs + @("list", "--json"))
+$deploymentJson = Invoke-RailwayCapture (@("deployment", "list") + $targetArgs + @("--limit", "1", "--json"))
+Write-SaraLog "Non-interactive Railway command contract VERIFIED"
 
 Write-SaraLog "Reading production variable inventory without printing secrets"
-$kv = Invoke-RailwayCapture @("variable", "list", "--service", $ServiceName, "--kv")
 $ownerToken = Get-KvValue -KvText $kv -Name "OWNER_TOKEN"
 $gptActionToken = Get-KvValue -KvText $kv -Name "GPT_ACTION_TOKEN"
 $failsafeHex = Get-KvValue -KvText $kv -Name "SARA_FAILSAFE_MASTER_KEY_HEX"
@@ -193,8 +216,7 @@ if ([string]::IsNullOrWhiteSpace($failsafeHex) -and [string]::IsNullOrWhiteSpace
 
 if ([string]::IsNullOrWhiteSpace($gptActionToken)) {
     $gptActionToken = New-SecureHex -Bytes 48
-    $gptActionToken | & railway variable set GPT_ACTION_TOKEN --stdin --skip-deploys --service $ServiceName | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Failed to install GPT_ACTION_TOKEN in canonical production." }
+    Invoke-RailwayStdinWrite -Value $gptActionToken -Arguments (@("variable", "set", "GPT_ACTION_TOKEN", "--stdin", "--skip-deploys") + $targetArgs)
     Write-SaraLog "Installed dedicated GPT Action token without printing it"
 }
 else {
@@ -202,22 +224,22 @@ else {
 }
 
 Write-SaraLog "Applying production fail-safe variables with literal Linux container paths"
-& railway variable set `
-    SARA_FAILSAFE_REQUIRED=true `
-    SARA_FAILSAFE_ROOT=/data/sara-failsafe `
-    SARA_FAILSAFE_REQUIRE_DEDICATED_MOUNT=true `
-    SARA_FAILSAFE_MIN_FREE_BYTES=67108864 `
-    SARA_RELEASE_VERSION=3.2.1 `
-    --skip-deploys --service $ServiceName | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "Failed to apply production fail-safe variables." }
+Invoke-RailwayWrite (@(
+    "variable", "set",
+    "SARA_FAILSAFE_REQUIRED=true",
+    "SARA_FAILSAFE_ROOT=/data/sara-failsafe",
+    "SARA_FAILSAFE_REQUIRE_DEDICATED_MOUNT=true",
+    "SARA_FAILSAFE_MIN_FREE_BYTES=67108864",
+    "SARA_RELEASE_VERSION=3.2.1",
+    "--skip-deploys"
+) + $targetArgs)
 
 Write-SaraLog "Verifying persistent /data volume"
-$volumeJson = Invoke-RailwayCapture @("volume", "list", "--json")
 if (-not (Test-DataVolume -JsonText $volumeJson)) {
-    # Proven repository pattern: volume creation uses the already-selected
-    # project/service context and only passes the mount path.
-    & railway volume add --mount-path /data --json | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Failed to create persistent /data volume." }
+    # In the installed CLI family, volume context belongs to the parent `volume`
+    # command. Put project/environment/service BEFORE the `add` subcommand so
+    # they cannot be parsed as add-specific arguments.
+    Invoke-RailwayWrite ($volumeArgs + @("add", "--mount-path", "/data", "--json"))
     Write-SaraLog "Created persistent /data volume"
 }
 else {
@@ -225,13 +247,12 @@ else {
 }
 
 Write-SaraLog "Deploying governed SARA-OMEGA V3.2.1 source to canonical production"
-& railway up --service $ServiceName --ci
-if ($LASTEXITCODE -ne 0) { throw "Railway source deployment failed." }
+Invoke-RailwayWrite (@("up", "--project", $ProjectId, "--environment", $EnvironmentName, "--service", $ServiceName, "--ci"))
 
 Write-SaraLog "Waiting for Railway deployment SUCCESS"
 $deploymentSucceeded = $false
 for ($i = 0; $i -lt 90; $i++) {
-    $deploymentJson = Invoke-RailwayCapture @("deployment", "list", "--service", $ServiceName, "--limit", "1", "--json")
+    $deploymentJson = Invoke-RailwayCapture (@("deployment", "list") + $targetArgs + @("--limit", "1", "--json"))
     $status = Get-DeploymentStatus -JsonText $deploymentJson
 
     switch ($status) {
