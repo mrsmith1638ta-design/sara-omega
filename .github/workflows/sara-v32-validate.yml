@@ -26,7 +26,22 @@ jobs:
         run: |
           bash -n tools/*.sh
           test -f tools/railway_account_provision.sh
+          test -f tools/railway_account_provision_windows.ps1
           grep -q 'tools/railway_account_provision.sh' .github/workflows/railway-production-activate.yml
+      - name: Native Windows activator syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "$PWD/tools/railway_account_provision_windows.ps1",
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
       - name: Production bootstrap tests
         run: pytest -q
       - name: Focused adversarial gate
