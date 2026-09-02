@@ -8,6 +8,7 @@ on:
       - 'main.py'
       - 'context_dev_resolver.py'
       - 'chatgpt-gpt-action.yaml'
+      - 'GPT_V321_CONFIG.md'
       - 'Context.Dev/**'
       - 'tests/test_context_dev_*.py'
       - 'tools/railway_account_provision.sh'
