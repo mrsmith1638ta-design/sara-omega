@@ -17,7 +17,9 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install validation dependencies
-        run: python -m pip install --upgrade pip pytest httpx cryptography uvicorn
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
       - name: Compile
         run: python -m py_compile main.py sara_v32_hardening.py sara_production_bootstrap.py sara_web.py tools/*.py
       - name: Deployment shell sanitation
