@@ -18,7 +18,7 @@ https://sara-omega-production.up.railway.app/gpt/action/openapi.yaml
 2. Add one Action.
 3. Import or paste `chatgpt-gpt-action.yaml`.
 4. Set authentication to API key / Bearer token.
-5. Use the Railway `OWNER_TOKEN` or a dedicated governed token from Railway variables.
+5. Use Railway `GPT_ACTION_TOKEN` for shared GPTs. `TEST_TOKEN` remains accepted as a limited fallback. Reserve `OWNER_TOKEN` for administrative operations only.
 
 Do not paste secrets into normal chat. The GPT Action secret belongs only in the GPT editor authentication field.
 
@@ -31,6 +31,12 @@ When the ChatGPT editor or browser path is unavailable, run the resolver before 
 ```
 
 The resolver verifies the local OpenAPI contract, the hosted Railway schema, local Git object database integrity, and the latest GitHub validation run. A passing resolver means the backend and schema are ready; only the manual GPT editor import remains.
+
+Before sharing the GPT, validate the Action authentication boundary with the dedicated governed token:
+
+- `POST /gpt/action/gateway` with `operation: status` must return HTTP 200.
+- `POST /gpt/action/gateway` with `operation: verify_output` and a known false live-module claim must return `BLOCK`.
+- Owner/admin endpoints such as `/admin/stats` must return HTTP 403 for the same token.
 
 ## Supported Gateway Operations
 

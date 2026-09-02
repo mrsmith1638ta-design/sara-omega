@@ -4,6 +4,7 @@ import argparse
 import json
 import re
 import subprocess
+import sys
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -210,7 +211,7 @@ def resolve_sync(schema_url: str = DEFAULT_SCHEMA_URL, include_github: bool = Tr
             "authentication": {
                 "type": "API key",
                 "auth_type": "Bearer",
-                "secret_source": "Railway OWNER_TOKEN or a dedicated governed Action token",
+                "secret_source": "Railway GPT_ACTION_TOKEN, or TEST_TOKEN as a limited fallback. Do not use OWNER_TOKEN for shared GPTs.",
             },
             "action_to_test": "saraOmegaGovernedGateway",
         },

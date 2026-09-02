@@ -61,6 +61,7 @@ logging.basicConfig(level=logging.INFO, format='{"time":"%(asctime)s","level":"%
 logger = logging.getLogger(__name__)
 
 OWNER_TOKEN = os.environ.get("OWNER_TOKEN", "")
+GPT_ACTION_TOKEN = os.environ.get("GPT_ACTION_TOKEN", "")
 TEST_TOKEN = os.environ.get("TEST_TOKEN", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 KILL_SWITCH = os.environ.get("KILL_SWITCH", "false").lower() == "true"
@@ -72,6 +73,7 @@ MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 RATE_LIMITS = {
     "owner": {"requests_per_day": None, "voice_per_day": None, "vision_per_day": None, "max_context": None},
+    "action": {"requests_per_day": 500, "voice_per_day": 0, "vision_per_day": 0, "max_context": 50},
     "tester": {"requests_per_day": 200, "voice_per_day": 30, "vision_per_day": 50, "max_context": 50},
 }
 
@@ -211,6 +213,8 @@ def authorize(req: Request) -> Optional[str]:
     auth = req.headers.get("Authorization", "")
     if OWNER_TOKEN and auth == f"Bearer {OWNER_TOKEN}":
         return "owner"
+    if GPT_ACTION_TOKEN and auth == f"Bearer {GPT_ACTION_TOKEN}":
+        return "action"
     if TEST_TOKEN and auth == f"Bearer {TEST_TOKEN}":
         return "tester"
     return None

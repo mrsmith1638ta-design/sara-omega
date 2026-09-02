@@ -13,9 +13,33 @@ def _auth(monkeypatch):
     return {"Authorization": "Bearer test-action-token"}
 
 
+def _gpt_action_auth(monkeypatch):
+    monkeypatch.setattr(main, "KILL_SWITCH", False)
+    monkeypatch.setattr(main, "GPT_ACTION_TOKEN", "dedicated-gpt-action-token")
+    monkeypatch.setenv("SARA_RUNTIME_ASSURANCE_SECRET", "unit-test-runtime-assurance-secret")
+    return {"Authorization": "Bearer dedicated-gpt-action-token"}
+
+
 def test_chatgpt_action_gateway_requires_bearer_token():
     response = client.post("/gpt/action/gateway", json={"operation": "status"})
     assert response.status_code == 401
+
+
+def test_chatgpt_action_gateway_accepts_dedicated_gpt_action_token(monkeypatch):
+    response = client.post(
+        "/gpt/action/gateway",
+        headers=_gpt_action_auth(monkeypatch),
+        json={"operation": "status"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["service"] == "sara-chatgpt-action-gateway"
+
+
+def test_dedicated_gpt_action_token_does_not_grant_owner_admin(monkeypatch):
+    response = client.get("/admin/stats", headers=_gpt_action_auth(monkeypatch))
+
+    assert response.status_code == 403
 
 
 def test_chatgpt_action_gateway_reports_runtime_status(monkeypatch):
