@@ -53,7 +53,7 @@ def test_native_windows_volume_context_precedes_subcommand() -> None:
 def test_native_windows_preflights_read_only_contract_before_writes() -> None:
     text = _text()
     preflight = text.index('Running non-interactive Railway command-contract preflight')
-    token_write = text.index('Invoke-RailwayStdinWrite')
+    token_write = text.index('Invoke-RailwayStdinWrite -RailwayCommand $railwayCommand -Value $gptActionToken')
     failsafe_write = text.index('Applying production fail-safe variables')
     assert preflight < token_write
     assert preflight < failsafe_write
