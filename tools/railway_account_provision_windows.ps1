@@ -15,10 +15,6 @@ function Write-SaraLog {
 }
 
 function Resolve-RailwayNativeCommand {
-    # npm installs both railway.ps1 and railway.cmd on Windows. The .ps1 shim
-    # invokes node.exe inside PowerShell, so benign CLI stderr warnings become
-    # NativeCommandError records when the caller is fail-closed. Bypass that
-    # shim and execute the native .cmd/.exe entry point directly.
     $candidates = New-Object System.Collections.Generic.List[string]
 
     $railwayCmd = Get-Command railway.cmd -ErrorAction SilentlyContinue
@@ -55,19 +51,16 @@ function Resolve-RailwayNativeCommand {
     throw "A native Railway CLI entry point (railway.cmd or railway.exe) was not found. The railway.ps1 npm shim is intentionally rejected."
 }
 
-$script:RailwayCommand = Resolve-RailwayNativeCommand
-Write-SaraLog "Railway native entry point VERIFIED: $([System.IO.Path]::GetFileName($script:RailwayCommand))"
-
 function Invoke-RailwayCapture {
-    param([Parameter(Mandatory = $true)][string[]]$Arguments)
+    param(
+        [Parameter(Mandatory = $true)][string]$RailwayCommand,
+        [Parameter(Mandatory = $true)][string[]]$Arguments
+    )
 
-    # Keep PowerShell fail-closed globally, but do not let benign native stderr
-    # notices become terminating PowerShell errors. The external process exit
-    # code remains the authority for success/failure.
     $previousPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = "Continue"
-        $output = & $script:RailwayCommand @Arguments 2>$null
+        $output = & $RailwayCommand @Arguments 2>$null
         $exitCode = $LASTEXITCODE
     }
     finally {
@@ -84,12 +77,15 @@ function Invoke-RailwayCapture {
 }
 
 function Invoke-RailwayWrite {
-    param([Parameter(Mandatory = $true)][string[]]$Arguments)
+    param(
+        [Parameter(Mandatory = $true)][string]$RailwayCommand,
+        [Parameter(Mandatory = $true)][string[]]$Arguments
+    )
 
     $previousPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = "Continue"
-        $null = & $script:RailwayCommand @Arguments 2>$null
+        $null = & $RailwayCommand @Arguments 2>$null
         $exitCode = $LASTEXITCODE
     }
     finally {
@@ -106,6 +102,7 @@ function Invoke-RailwayWrite {
 
 function Invoke-RailwayStdinWrite {
     param(
+        [Parameter(Mandatory = $true)][string]$RailwayCommand,
         [Parameter(Mandatory = $true)][string]$Value,
         [Parameter(Mandatory = $true)][string[]]$Arguments
     )
@@ -113,7 +110,7 @@ function Invoke-RailwayStdinWrite {
     $previousPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = "Continue"
-        $Value | & $script:RailwayCommand @Arguments 2>$null | Out-Null
+        $Value | & $RailwayCommand @Arguments 2>$null | Out-Null
         $exitCode = $LASTEXITCODE
     }
     finally {
@@ -189,45 +186,8 @@ function Test-DataVolume {
     return (Walk-Node $doc)
 }
 
-function Get-DeploymentStatus {
-    param([Parameter(Mandatory = $true)][string]$JsonText)
-    try {
-        $doc = $JsonText | ConvertFrom-Json -ErrorAction Stop
-        if ($doc -is [System.Array]) {
-            $latest = $doc | Select-Object -First 1
-        }
-        else {
-            $latest = $doc
-        }
-        if ($null -eq $latest) { return "UNKNOWN" }
-
-        if ($latest.PSObject.Properties.Name -contains "status") {
-            $value = [string]$latest.status
-            if (-not [string]::IsNullOrWhiteSpace($value)) { return $value.ToUpperInvariant() }
-        }
-        if ($latest.PSObject.Properties.Name -contains "state") {
-            $value = [string]$latest.state
-            if (-not [string]::IsNullOrWhiteSpace($value)) { return $value.ToUpperInvariant() }
-        }
-    }
-    catch {
-        return "UNKNOWN"
-    }
-    return "UNKNOWN"
-}
-
-$pythonExe = $null
-$pythonPrefix = @()
-if (Get-Command python -ErrorAction SilentlyContinue) {
-    $pythonExe = "python"
-}
-elseif (Get-Command py -ErrorAction SilentlyContinue) {
-    $pythonExe = "py"
-    $pythonPrefix = @("-3")
-}
-else {
-    throw "Python 3 is required for the live acceptance controller."
-}
+$railwayCommand = Resolve-RailwayNativeCommand
+Write-SaraLog "Railway native entry point VERIFIED: $([System.IO.Path]::GetFileName($railwayCommand))"
 
 if (-not (Test-Path "main.py")) {
     throw "Run this controller from the SARA-OMEGA repository root."
@@ -235,36 +195,29 @@ if (-not (Test-Path "main.py")) {
 if (-not (Select-String -Path "main.py" -Pattern 'GPT_ACTION_TOKEN' -Quiet)) {
     throw "Local main.py does not contain the governed GPT_ACTION_TOKEN lane. Refusing to deploy stale source."
 }
-if (-not (Test-Path "tools/railway_runtime_acceptance.py")) {
-    throw "tools/railway_runtime_acceptance.py is missing."
-}
-if (-not (Select-String -Path "tools/railway_runtime_acceptance.py" -Pattern 'require-gpt-action-token' -Quiet)) {
-    throw "Local acceptance controller does not support the GPT Action token gate. Refusing deployment."
+if (-not (Test-Path "tools/railway_finalize_windows.ps1")) {
+    throw "tools/railway_finalize_windows.ps1 is missing. Refusing an unverified deployment path."
 }
 
 Write-SaraLog "Verifying authenticated Railway identity"
-$whoami = Invoke-RailwayCapture @("whoami")
+$whoami = Invoke-RailwayCapture -RailwayCommand $railwayCommand -Arguments @("whoami")
 if ([string]::IsNullOrWhiteSpace($whoami)) {
     throw "Railway authentication is not active."
 }
 Write-SaraLog "Railway authentication VERIFIED"
 
-# The production tuple is immutable for this controller. No Railway context
-# mutation or resource creation is permitted. Every command carries explicit
-# project/environment/service targeting.
-Write-SaraLog "Verifying canonical production identity before any write"
 $targetArgs = @("--project", $ProjectId, "--environment", $EnvironmentName, "--service", $ServiceName)
-$domainJson = Invoke-RailwayCapture (@("domain", "list") + $targetArgs + @("--json"))
+Write-SaraLog "Verifying canonical production identity before any write"
+$domainJson = Invoke-RailwayCapture -RailwayCommand $railwayCommand -Arguments (@("domain", "list") + $targetArgs + @("--json"))
 if ($domainJson -notmatch [regex]::Escape($ProductionDomain)) {
     throw "Project $ProjectId does not currently own $ProductionDomain for service $ServiceName. No Railway changes were made."
 }
 Write-SaraLog "Canonical production identity VERIFIED: project=$ProjectId service=$ServiceName domain=$ProductionDomain"
 
 Write-SaraLog "Running non-interactive Railway command-contract preflight"
-$kv = Invoke-RailwayCapture (@("variable", "list") + $targetArgs + @("--kv"))
+$kv = Invoke-RailwayCapture -RailwayCommand $railwayCommand -Arguments (@("variable", "list") + $targetArgs + @("--kv"))
 $volumeArgs = @("volume", "--project", $ProjectId, "--environment", $EnvironmentName, "--service", $ServiceName)
-$volumeJson = Invoke-RailwayCapture ($volumeArgs + @("list", "--json"))
-$deploymentJson = Invoke-RailwayCapture (@("deployment", "list") + $targetArgs + @("--limit", "1", "--json"))
+$volumeJson = Invoke-RailwayCapture -RailwayCommand $railwayCommand -Arguments ($volumeArgs + @("list", "--json"))
 Write-SaraLog "Non-interactive Railway command contract VERIFIED"
 
 Write-SaraLog "Reading production variable inventory without printing secrets"
@@ -282,7 +235,7 @@ if ([string]::IsNullOrWhiteSpace($failsafeHex) -and [string]::IsNullOrWhiteSpace
 
 if ([string]::IsNullOrWhiteSpace($gptActionToken)) {
     $gptActionToken = New-SecureHex -Bytes 48
-    Invoke-RailwayStdinWrite -Value $gptActionToken -Arguments (@("variable", "set", "GPT_ACTION_TOKEN", "--stdin", "--skip-deploys") + $targetArgs)
+    Invoke-RailwayStdinWrite -RailwayCommand $railwayCommand -Value $gptActionToken -Arguments (@("variable", "set", "GPT_ACTION_TOKEN", "--stdin", "--skip-deploys") + $targetArgs)
     Write-SaraLog "Installed dedicated GPT Action token without printing it"
 }
 else {
@@ -290,7 +243,7 @@ else {
 }
 
 Write-SaraLog "Applying production fail-safe variables with literal Linux container paths"
-Invoke-RailwayWrite (@(
+Invoke-RailwayWrite -RailwayCommand $railwayCommand -Arguments (@(
     "variable", "set",
     "SARA_FAILSAFE_REQUIRED=true",
     "SARA_FAILSAFE_ROOT=/data/sara-failsafe",
@@ -302,7 +255,7 @@ Invoke-RailwayWrite (@(
 
 Write-SaraLog "Verifying persistent /data volume"
 if (-not (Test-DataVolume -JsonText $volumeJson)) {
-    Invoke-RailwayWrite ($volumeArgs + @("add", "--mount-path", "/data", "--json"))
+    Invoke-RailwayWrite -RailwayCommand $railwayCommand -Arguments ($volumeArgs + @("add", "--mount-path", "/data", "--json"))
     Write-SaraLog "Created persistent /data volume"
 }
 else {
@@ -310,48 +263,14 @@ else {
 }
 
 Write-SaraLog "Deploying governed SARA-OMEGA V3.2.1 source to canonical production"
-Invoke-RailwayWrite (@("up", "--project", $ProjectId, "--environment", $EnvironmentName, "--service", $ServiceName, "--ci"))
+Invoke-RailwayWrite -RailwayCommand $railwayCommand -Arguments @("up", "--project", $ProjectId, "--environment", $EnvironmentName, "--service", $ServiceName, "--ci")
+Write-SaraLog "Railway deploy command completed successfully; transferring authority to live HTTPS acceptance"
 
-Write-SaraLog "Waiting for Railway deployment SUCCESS"
-$deploymentSucceeded = $false
-for ($i = 0; $i -lt 90; $i++) {
-    $deploymentJson = Invoke-RailwayCapture (@("deployment", "list") + $targetArgs + @("--limit", "1", "--json"))
-    $status = Get-DeploymentStatus -JsonText $deploymentJson
-
-    switch ($status) {
-        "SUCCESS" { $deploymentSucceeded = $true; break }
-        "FAILED" { throw "Railway deployment ended in FAILED." }
-        "CRASHED" { throw "Railway deployment ended in CRASHED." }
-        "REMOVED" { throw "Railway deployment ended in REMOVED." }
-    }
-    Start-Sleep -Seconds 4
+& ".\tools\railway_finalize_windows.ps1" `
+    -ProjectId $ProjectId `
+    -ProductionDomain $ProductionDomain `
+    -ServiceName $ServiceName `
+    -EnvironmentName $EnvironmentName
+if ($LASTEXITCODE -ne 0) {
+    throw "Live production finalization failed."
 }
-if (-not $deploymentSucceeded) { throw "Railway deployment did not reach SUCCESS." }
-
-$baseUrl = "https://$ProductionDomain"
-Write-SaraLog "Running live production acceptance with owner and limited Action credentials"
-$oldOwner = $env:SARA_OWNER_TOKEN
-$oldAction = $env:SARA_GPT_ACTION_TOKEN
-try {
-    $env:SARA_OWNER_TOKEN = $ownerToken
-    $env:SARA_GPT_ACTION_TOKEN = $gptActionToken
-
-    $acceptanceArgs = @() + $pythonPrefix + @(
-        "tools/railway_runtime_acceptance.py",
-        $baseUrl,
-        "--require-gpt-action-token"
-    )
-    & $pythonExe @acceptanceArgs
-    if ($LASTEXITCODE -ne 0) { throw "Live GPT Action production acceptance failed." }
-}
-finally {
-    if ($null -eq $oldOwner) { Remove-Item Env:SARA_OWNER_TOKEN -ErrorAction SilentlyContinue } else { $env:SARA_OWNER_TOKEN = $oldOwner }
-    if ($null -eq $oldAction) { Remove-Item Env:SARA_GPT_ACTION_TOKEN -ErrorAction SilentlyContinue } else { $env:SARA_GPT_ACTION_TOKEN = $oldAction }
-    $ownerToken = $null
-    $gptActionToken = $null
-    $kv = $null
-}
-
-$baseUrl | Set-Content -Path "railway-public-url.txt" -Encoding ascii
-Write-SaraLog "PRODUCTION ACCEPTANCE PASS $baseUrl"
-Write-SaraLog "GPT_ACTION_TOKEN is live with limited Action authority; OWNER_TOKEN remains owner/admin only"
