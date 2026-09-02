@@ -134,6 +134,15 @@ else
   log "Existing owner authority token retained"
 fi
 
+if ! has_variable GPT_ACTION_TOKEN; then
+  GPT_ACTION_TOKEN_GENERATED="$(openssl rand -hex 48)"
+  printf '%s' "$GPT_ACTION_TOKEN_GENERATED" | railway variable set GPT_ACTION_TOKEN --stdin --skip-deploys --service "$SERVICE_NAME" >/dev/null
+  log "Generated dedicated GPT Action token without printing it"
+else
+  GPT_ACTION_TOKEN_GENERATED=''
+  log "Existing dedicated GPT Action token retained"
+fi
+
 if ! has_variable SARA_FAILSAFE_MASTER_KEY_HEX && ! has_variable SARA_FAILSAFE_MASTER_KEY_B64; then
   FAILSAFE_KEY="$(openssl rand -hex 64)"
   printf '%s' "$FAILSAFE_KEY" | railway variable set SARA_FAILSAFE_MASTER_KEY_HEX --stdin --skip-deploys --service "$SERVICE_NAME" >/dev/null
@@ -297,16 +306,48 @@ PY
 )" || fail "Unable to resolve OWNER_TOKEN for acceptance test"
 fi
 
+if [ -n "$GPT_ACTION_TOKEN_GENERATED" ]; then
+  GPT_ACTION_TOKEN_VALUE="$GPT_ACTION_TOKEN_GENERATED"
+else
+  VAR_JSON="$(railway variable list --service "$SERVICE_NAME" --json)"
+  export VAR_JSON
+  GPT_ACTION_TOKEN_VALUE="$(python3 - <<'PY'
+import json, os, sys
+try: data=json.loads(os.environ['VAR_JSON'])
+except Exception: sys.exit(1)
+if isinstance(data,dict) and isinstance(data.get('GPT_ACTION_TOKEN'),str):
+    print(data['GPT_ACTION_TOKEN']); raise SystemExit
+
+def walk(v):
+    if isinstance(v,dict):
+        if v.get('name') == 'GPT_ACTION_TOKEN' and isinstance(v.get('value'),str):
+            return v['value']
+        for x in v.values():
+            y=walk(x)
+            if y: return y
+    elif isinstance(v,list):
+        for x in v:
+            y=walk(x)
+            if y: return y
+    return None
+x=walk(data)
+if not x: sys.exit(1)
+print(x)
+PY
+)" || fail "Unable to resolve GPT_ACTION_TOKEN for acceptance test"
+fi
+
 export SARA_OWNER_TOKEN="$OWNER_TOKEN_VALUE"
+export SARA_GPT_ACTION_TOKEN="$GPT_ACTION_TOKEN_VALUE"
 ACCEPTED=false
 for _ in $(seq 1 75); do
-  if python3 tools/railway_runtime_acceptance.py "$BASE_URL" > railway-activation-report.json 2>railway-acceptance.err; then
+  if python3 tools/railway_runtime_acceptance.py "$BASE_URL" --require-gpt-action-token > railway-activation-report.json 2>railway-acceptance.err; then
     ACCEPTED=true
     break
   fi
   sleep 4
 done
-unset SARA_OWNER_TOKEN OWNER_TOKEN_VALUE OWNER_TOKEN_GENERATED
+unset SARA_OWNER_TOKEN SARA_GPT_ACTION_TOKEN OWNER_TOKEN_VALUE OWNER_TOKEN_GENERATED GPT_ACTION_TOKEN_VALUE GPT_ACTION_TOKEN_GENERATED
 [ "$ACCEPTED" = true ] || {
   cat railway-acceptance.err >&2 || true
   cat railway-activation-report.json >&2 || true
@@ -323,6 +364,7 @@ d['project_name']='$PROJECT_NAME'
 d['service']='$SERVICE_NAME'
 d['public_url']='$BASE_URL'
 d['owner_token_storage']='Railway service variable only; never printed or included in artifacts'
+d['gpt_action_token_storage']='Railway service variable only; never printed or included in artifacts'
 open(p,'w',encoding='utf-8').write(json.dumps(d,indent=2,sort_keys=True)+'\n')
 PY
 

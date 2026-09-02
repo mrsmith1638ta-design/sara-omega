@@ -47,7 +47,9 @@ Protected gateway:
 POST https://sara-omega-production.up.railway.app/gpt/action/gateway
 ```
 
-The gateway requires the Railway owner bearer token and exposes:
+The gateway requires a Railway bearer token. Shared GPTs must use the dedicated
+limited `GPT_ACTION_TOKEN`; `OWNER_TOKEN` is reserved for owner/admin operations.
+It exposes:
 
 - `status`
 - `production_acceptance`
