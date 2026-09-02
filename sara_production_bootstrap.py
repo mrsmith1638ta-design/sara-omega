@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import uvicorn
+from fastapi import Request
 
 from sara_v32_hardening import BackupError, FailSafeEvent, RuntimeFailSafe
 
@@ -76,11 +77,12 @@ def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
             os.chmod(path, 0o600)
         except OSError:
             pass
-        directory_fd = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+        if os.name != "nt":
+            directory_fd = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
     except Exception:
         try:
             os.unlink(tmp_name)
@@ -264,7 +266,7 @@ def register_acceptance_routes(main_module: Any, evidence: dict[str, Any]) -> No
         return {key: evidence.get(key) for key in public_keys if key in evidence}
 
     @app.get("/admin/production-acceptance")
-    def production_acceptance_admin(req: main_module.Request):
+    def production_acceptance_admin(req: Request):
         if main_module.authorize(req) != "owner":
             raise main_module.HTTPException(403, "Owner only")
         live = dict(evidence)

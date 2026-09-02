@@ -1,0 +1,26 @@
+{
+  "name": "SARA-OMEGA Full Architecture",
+  "version": "1.0.0",
+  "built": "2026-08-28",
+  "architecture": [
+    "SARA Core",
+    "OMEGA Protocol",
+    "Governance Core",
+    "Authority Engine",
+    "Problem Engine",
+    "OMEGA Router",
+    "OMEGA Mesh",
+    "OMEGA Council",
+    "Evidence Verification",
+    "SARA Synthesis",
+    "OMEGA Verdict",
+    "Decision Ledger",
+    "OMEGA Memory/Outcome Learning"
+  ],
+  "original_docs_preserved": [
+    "docs/original/MASTER_DOCUMENTATION_INDEX.md",
+    "docs/original/SARA_OMEGA_COMPLETE_DOCUMENTATION.md",
+    "docs/original/SARA_OMEGA_COMPLETE_SECURITY_MANIFESTO.md"
+  ],
+  "accuracy_boundary": "Provider integrations were aligned to official documentation available on 2026-08-28; live credentials and entitlements are not embedded."
+}
