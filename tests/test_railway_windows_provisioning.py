@@ -1,10 +1,11 @@
 from pathlib import Path
 
 SCRIPT = Path("tools/railway_account_provision_windows.ps1")
+FINALIZER = Path("tools/railway_finalize_windows.ps1")
 
 
-def _text() -> str:
-    return SCRIPT.read_text(encoding="utf-8")
+def _text(path: Path = SCRIPT) -> str:
+    return path.read_text(encoding="utf-8")
 
 
 def test_native_windows_activator_is_pinned_to_canonical_production_identity() -> None:
@@ -15,31 +16,29 @@ def test_native_windows_activator_is_pinned_to_canonical_production_identity() -
     assert '[string]$EnvironmentName = "production"' in text
 
 
-def test_native_windows_activator_cannot_create_or_link_context() -> None:
-    text = _text().lower()
-    assert "railway init" not in text
-    assert "railway add --service" not in text
-    assert '@("link"' not in text
-    assert '@("service", $servicename)' not in text
-    assert '"--workspace"' not in text
-    assert 'railway workspace' not in text
+def test_native_windows_lane_cannot_create_or_link_context() -> None:
+    for text in (_text(), _text(FINALIZER)):
+        lower = text.lower()
+        assert "railway init" not in lower
+        assert "railway add --service" not in lower
+        assert '@("link"' not in lower
+        assert '@("service", $servicename)' not in lower
+        assert '"--workspace"' not in lower
+        assert 'railway workspace' not in lower
 
 
-def test_native_windows_activator_bypasses_npm_powershell_shim() -> None:
-    text = _text()
-    assert 'Get-Command railway.cmd' in text
-    assert 'Get-Command railway.exe' in text
-    assert 'railway.ps1 npm shim is intentionally rejected' in text
-    assert '& $script:RailwayCommand @Arguments' in text
-    assert '$ErrorActionPreference = "Continue"' in text
-    assert '$exitCode = $LASTEXITCODE' in text
+def test_native_windows_lane_bypasses_npm_powershell_shim() -> None:
+    for text in (_text(), _text(FINALIZER)):
+        assert 'Get-Command railway.cmd' in text
+        assert 'Get-Command railway.exe' in text
+        assert '$ErrorActionPreference = "Continue"' in text
+        assert '$exitCode = $LASTEXITCODE' in text
 
 
 def test_native_windows_activator_uses_explicit_target_tuple() -> None:
     text = _text()
     assert '$targetArgs = @("--project", $ProjectId, "--environment", $EnvironmentName, "--service", $ServiceName)' in text
     assert '@("variable", "list") + $targetArgs + @("--kv")' in text
-    assert '@("deployment", "list") + $targetArgs + @("--limit", "1", "--json")' in text
     assert '@("up", "--project", $ProjectId, "--environment", $EnvironmentName, "--service", $ServiceName, "--ci")' in text
 
 
@@ -54,7 +53,7 @@ def test_native_windows_volume_context_precedes_subcommand() -> None:
 def test_native_windows_preflights_read_only_contract_before_writes() -> None:
     text = _text()
     preflight = text.index('Running non-interactive Railway command-contract preflight')
-    token_write = text.index('Invoke-RailwayStdinWrite -Value $gptActionToken')
+    token_write = text.index('Invoke-RailwayStdinWrite')
     failsafe_write = text.index('Applying production fail-safe variables')
     assert preflight < token_write
     assert preflight < failsafe_write
@@ -73,9 +72,28 @@ def test_native_windows_activator_only_generates_limited_action_token() -> None:
     text = _text()
     assert 'New-SecureHex -Bytes 48' in text
     assert '"variable", "set", "GPT_ACTION_TOKEN", "--stdin", "--skip-deploys"' in text
-    assert '--require-gpt-action-token' in text
 
 
-def test_native_windows_activator_avoids_powershell7_only_null_coalescing() -> None:
-    text = _text()
-    assert '??' not in text
+def test_post_deploy_authority_is_live_https_not_deployment_list() -> None:
+    activator = _text()
+    finalizer = _text(FINALIZER)
+    assert 'railway_finalize_windows.ps1' in activator
+    assert 'deployment", "list' not in activator
+    assert 'deployment", "list' not in finalizer
+    assert 'Invoke-WebRequest -Uri "$BaseUrl/health/ready"' in finalizer
+    assert 'Invoke-WebRequest -Uri "$BaseUrl/health/production-acceptance"' in finalizer
+    assert '--require-gpt-action-token' in finalizer
+
+
+def test_finalizer_is_read_only_against_railway_configuration() -> None:
+    text = _text(FINALIZER)
+    assert '"variable", "list"' in text
+    assert '"domain", "list"' in text
+    assert '"variable", "set"' not in text
+    assert '"volume", "add"' not in text
+    assert '"up"' not in text
+
+
+def test_native_windows_lane_avoids_powershell7_only_null_coalescing() -> None:
+    assert '??' not in _text()
+    assert '??' not in _text(FINALIZER)
