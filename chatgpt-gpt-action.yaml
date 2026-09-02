@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
-  title: SARA-OMEGA V3.2.1 Runtime Attestation
+  title: SARA-OMEGA V3.2.1 Runtime and Vendor Governance
   version: 3.2.1
-  description: Read-only actions that let the SARA-OMEGA custom GPT verify the live Railway runtime, readiness, and production acceptance state without exposing secrets.
+  description: Read-only actions that let the SARA-OMEGA custom GPT verify the live Railway runtime, production acceptance, and sanitized Context.dev commercial authorization state without exposing secrets.
 servers:
   - url: https://sara-omega-production.up.railway.app
 paths:
@@ -47,3 +47,56 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+  /context-dev/status:
+    get:
+      operationId: getContextDevAuthorizationStatus
+      summary: Get Context.dev commercial authorization status
+      description: Returns the sanitized fail-closed Context.dev vendor authorization state. This endpoint does not execute Context.dev, expose credentials, or grant commercial permission.
+      responses:
+        '200':
+          description: Sanitized Context.dev authorization status
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - vendor
+                  - service
+                  - policy_id
+                  - commercial_authorization
+                  - monetized_runtime
+                  - fail_mode
+                  - credentials_configured
+                  - vendor_transport_enabled
+                  - production_authorization
+                properties:
+                  vendor:
+                    type: string
+                  service:
+                    type: string
+                  policy_id:
+                    type: string
+                  terms_version_reviewed:
+                    type: string
+                  commercial_authorization:
+                    type: string
+                    enum:
+                      - UNVERIFIED
+                      - PENDING_WRITTEN_AUTHORIZATION
+                      - VERIFIED
+                      - REVALIDATION_REQUIRED
+                      - SUSPENDED
+                  monetized_runtime:
+                    type: string
+                    enum: [ALLOWED, BLOCKED]
+                  fail_mode:
+                    type: string
+                    enum: [CLOSED]
+                  credentials_configured:
+                    type: boolean
+                  vendor_transport_enabled:
+                    type: boolean
+                  production_authorization:
+                    type: string
+                    enum: [BLOCKED, SCOPE_VERIFIED]
+                additionalProperties: false

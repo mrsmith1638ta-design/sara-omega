@@ -1,0 +1,32 @@
+vendor: "Context Dev Inc."
+service: "Context.dev"
+terms_version_reviewed: "2026-08-20"
+
+commercial_authorization:
+  state: "PENDING_WRITTEN_AUTHORIZATION"
+  monetized_runtime: false
+  fail_mode: "CLOSED"
+
+permissions:
+  commercial_saas: "UNVERIFIED"
+  automated_api_use: "UNVERIFIED_FOR_SARA_COMMERCIAL_USE"
+  derived_outputs: "UNVERIFIED"
+  evidence_retention: "UNVERIFIED"
+  monitoring: "UNVERIFIED"
+
+terms_monitoring:
+  enabled: true
+  material_change_state: "REVALIDATION_REQUIRED"
+  block_monetized_calls_during_revalidation: true
+
+security:
+  browser_api_credentials_allowed: false
+  server_side_credentials_only: true
+  sensitive_requests_require_verified_zdr: true
+
+deployment:
+  policy_design: "COMPLETE"
+  evidence_review: "COMPLETE"
+  written_authorization: "PENDING"
+  repository_implementation: "IN_PROGRESS"
+  production_authorization: "BLOCKED"

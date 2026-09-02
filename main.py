@@ -1,4 +1,5 @@
 """SARA-OMEGA V3.2.1 - SIOS V3.2 fail-safe + Railway zero-to-production release."""
+
 from __future__ import annotations
 
 import hashlib
@@ -9,14 +10,20 @@ import time
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from google.cloud import speech, texttospeech, vision, translate_v2 as translate
+from google.cloud import speech, texttospeech, vision
+from google.cloud import translate_v2 as translate
 from openai import OpenAI
+from pydantic import BaseModel, Field
 
+from context_dev_resolver import (
+    PENDING_CONTEXT_DEV_LICENSE,
+    RequestContext,
+    evaluate_request,
+)
 from sara_v32_hardening import BackupError, FailSafeEvent, RuntimeFailSafe
 
 BASE_VERSION = "2.5.2"
@@ -24,7 +31,10 @@ RELEASE_VERSION = "3.2.1"
 HARDENING_PROFILE = "SIOS-V3.2-FAILSAFE-1"
 DISPLAY_VERSION = RELEASE_VERSION
 
-logging.basicConfig(level=logging.INFO, format='{"time":"%(asctime)s","level":"%(levelname)s","message":"%(message)s"}')
+logging.basicConfig(
+    level=logging.INFO,
+    format='{"time":"%(asctime)s","level":"%(levelname)s","message":"%(message)s"}',
+)
 logger = logging.getLogger(__name__)
 
 OWNER_TOKEN = os.environ.get("OWNER_TOKEN", "")
@@ -37,12 +47,28 @@ MAX_AUDIO_BYTES = 5 * 1024 * 1024
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 RATE_LIMITS = {
-    "owner": {"requests_per_day": None, "voice_per_day": None, "vision_per_day": None, "max_context": None},
-    "tester": {"requests_per_day": 200, "voice_per_day": 30, "vision_per_day": 50, "max_context": 50},
+    "owner": {
+        "requests_per_day": None,
+        "voice_per_day": None,
+        "vision_per_day": None,
+        "max_context": None,
+    },
+    "tester": {
+        "requests_per_day": 200,
+        "voice_per_day": 30,
+        "vision_per_day": 50,
+        "max_context": 50,
+    },
 }
 
 app = FastAPI(title="SARA OMEGA", version=DISPLAY_VERSION)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 stt_client = tts_client = vision_client = translate_client = llm_client = None
 try:
@@ -53,14 +79,27 @@ try:
     if OPENAI_API_KEY:
         llm_client = OpenAI(api_key=OPENAI_API_KEY)
     logger.info("Clients initialized")
-except Exception as exc:
+except Exception as exc:  # noqa: BLE001 -- optional provider initialization is isolated
     logger.error("Init error: %s", type(exc).__name__)
 
-SESSION: Dict[str, List[Dict[str, str]]] = {}
-AUDIT: List[Dict] = []
+SESSION: dict[str, list[dict[str, str]]] = {}
+AUDIT: list[dict] = []
 RATE_LIMIT = defaultdict(list)
 startup_time = time.time()
 FAILSAFE = RuntimeFailSafe.from_env()
+CONTEXT_DEV_LICENSE = PENDING_CONTEXT_DEV_LICENSE
+
+
+class ContextDevEvaluationRequest(BaseModel):
+    request_id: str = Field(min_length=1, max_length=128)
+    monetized: bool = True
+    automated_use: bool = True
+    target_site_rights_valid: bool = False
+    sensitive: bool = False
+    requires_zdr: bool = False
+    zdr_entitlement_verified: bool = False
+    zdr_endpoint_verified: bool = False
+    requested_scopes: list[str] = Field(default_factory=list, max_length=32)
 
 
 def utc_iso() -> str:
@@ -72,10 +111,10 @@ def sha512_hash(data: str) -> str:
 
 
 def clean_text(text: str, max_length: int = 500) -> str:
-    return re.sub(r'[<>{}[\]\\`]', '', text)[:max_length].strip()
+    return re.sub(r"[<>{}[\]\\`]", "", text)[:max_length].strip()
 
 
-def authorize(req: Request) -> Optional[str]:
+def authorize(req: Request) -> str | None:
     if KILL_SWITCH:
         return None
     auth = req.headers.get("Authorization", "")
@@ -86,7 +125,7 @@ def authorize(req: Request) -> Optional[str]:
     return None
 
 
-def runtime_state() -> Dict:
+def runtime_state() -> dict:
     return {
         "session": SESSION,
         "audit": AUDIT,
@@ -97,9 +136,16 @@ def runtime_state() -> Dict:
     }
 
 
-def failsafe_checkpoint(event: FailSafeEvent, *, correlation_id: str = "", metadata: Optional[Dict] = None):
+def failsafe_checkpoint(
+    event: FailSafeEvent, *, correlation_id: str = "", metadata: dict | None = None
+):
     try:
-        return FAILSAFE.checkpoint(runtime_state(), event, correlation_id=correlation_id, metadata=metadata or {})
+        return FAILSAFE.checkpoint(
+            runtime_state(),
+            event,
+            correlation_id=correlation_id,
+            metadata=metadata or {},
+        )
     except BackupError:
         if FAILSAFE.required:
             raise
@@ -107,7 +153,7 @@ def failsafe_checkpoint(event: FailSafeEvent, *, correlation_id: str = "", metad
         return None
 
 
-def audit(event: str, details: Optional[Dict] = None):
+def audit(event: str, details: dict | None = None):
     timestamp = int(time.time())
     entry = {
         "timestamp": timestamp,
@@ -132,7 +178,11 @@ def check_rate_limit(identifier: str, role: str, limit_type: str = "requests") -
     else:
         daily_limit = limits["requests_per_day"]
     now = time.time()
-    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    today_start = (
+        datetime.now(timezone.utc)
+        .replace(hour=0, minute=0, second=0, microsecond=0)
+        .timestamp()
+    )
     key = f"{identifier}:{limit_type}"
     requests = [t for t in RATE_LIMIT[key] if t > today_start]
     if daily_limit and len(requests) >= daily_limit:
@@ -160,13 +210,19 @@ def think(session_id: str, text: str, role: str = "tester") -> str:
         ctx.append({"role": "user", "content": clean_text(text, 1000)})
         max_context = get_max_context(role)
         ctx = ctx[-max_context:] if max_context else ctx
-        response = llm_client.chat.completions.create(model="gpt-4o-mini", messages=ctx, temperature=0.6, max_tokens=500)
+        response = llm_client.chat.completions.create(
+            model="gpt-4o-mini", messages=ctx, temperature=0.6, max_tokens=500
+        )
         answer = response.choices[0].message.content or ""
         ctx.append({"role": "assistant", "content": answer})
         failsafe_checkpoint(
             FailSafeEvent.PRE_MUTATION,
             correlation_id=f"session-{uuid.uuid4()}",
-            metadata={"store": "session", "session_id": clean_text(session_id, 128), "role": role},
+            metadata={
+                "store": "session",
+                "session_id": clean_text(session_id, 128),
+                "role": role,
+            },
         )
         SESSION[session_id] = ctx
         audit(
@@ -183,7 +239,7 @@ def think(session_id: str, text: str, role: str = "tester") -> str:
     except BackupError as exc:
         logger.error("Fail-safe blocked session mutation: %s", type(exc).__name__)
         return "Request blocked because fail-safe state protection is unavailable."
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- provider failures must return a safe response
         logger.error("Think error: %s", type(exc).__name__)
         return "Error processing request."
 
@@ -197,7 +253,11 @@ async def failsafe_exception_boundary(request: Request, call_next):
             failsafe_checkpoint(
                 FailSafeEvent.UNHANDLED_EXCEPTION,
                 correlation_id=request.headers.get("X-Request-Id", str(uuid.uuid4())),
-                metadata={"method": request.method, "path": request.url.path, "exception_type": type(exc).__name__},
+                metadata={
+                    "method": request.method,
+                    "path": request.url.path,
+                    "exception_type": type(exc).__name__,
+                },
             )
         except Exception:
             logger.exception("Fail-safe exception checkpoint also failed")
@@ -207,7 +267,9 @@ async def failsafe_exception_boundary(request: Request, call_next):
 @app.on_event("shutdown")
 def shutdown_checkpoint():
     try:
-        failsafe_checkpoint(FailSafeEvent.SHUTDOWN, correlation_id=f"shutdown-{uuid.uuid4()}")
+        failsafe_checkpoint(
+            FailSafeEvent.SHUTDOWN, correlation_id=f"shutdown-{uuid.uuid4()}"
+        )
     except Exception:
         logger.exception("Shutdown fail-safe checkpoint failed")
 
@@ -238,8 +300,14 @@ def health():
             "google_cloud": stt_client is not None,
             "openai": llm_client is not None,
             "sios_configured": bool(SIOS_BASE_URL),
+            "context_dev_commercial_runtime": False,
         },
-        "features": {"voice": True, "vision": FEATURE_VISION},
+        "features": {
+            "voice": True,
+            "vision": FEATURE_VISION,
+            "context_dev_policy_gate": True,
+        },
+        "context_dev": CONTEXT_DEV_LICENSE.public_status(),
         "failsafe": FAILSAFE.status(),
         "kill_switch": KILL_SWITCH,
     }
@@ -252,13 +320,54 @@ def readiness():
     try:
         FAILSAFE.ensure_ready()
     except BackupError as exc:
-        raise HTTPException(503, f"Fail-safe unavailable: {type(exc).__name__}") from exc
-    return {"ready": True, "version": RELEASE_VERSION, "base_runtime_version": BASE_VERSION, "failsafe": FAILSAFE.status(), "hardening_profile": HARDENING_PROFILE}
+        raise HTTPException(
+            503, f"Fail-safe unavailable: {type(exc).__name__}"
+        ) from exc
+    return {
+        "ready": True,
+        "version": RELEASE_VERSION,
+        "base_runtime_version": BASE_VERSION,
+        "failsafe": FAILSAFE.status(),
+        "hardening_profile": HARDENING_PROFILE,
+    }
 
 
 @app.get("/health/live")
 def liveness():
     return {"alive": True}
+
+
+@app.get("/context-dev/status")
+def context_dev_status():
+    """Return non-secret authorization state; this endpoint never enables use."""
+    return CONTEXT_DEV_LICENSE.public_status()
+
+
+@app.post("/context-dev/evaluate")
+def context_dev_evaluate(payload: ContextDevEvaluationRequest, req: Request):
+    """Owner-only dry evaluation. No Context.dev network transport exists here."""
+    if authorize(req) != "owner":
+        raise HTTPException(403, "Owner only")
+    requested_scopes = frozenset(
+        clean_text(scope, 128)
+        for scope in payload.requested_scopes
+        if clean_text(scope, 128)
+    )
+    decision = evaluate_request(
+        RequestContext(
+            request_id=clean_text(payload.request_id, 128),
+            monetized=payload.monetized,
+            automated_use=payload.automated_use,
+            target_site_rights_valid=payload.target_site_rights_valid,
+            sensitive=payload.sensitive,
+            requires_zdr=payload.requires_zdr,
+            zdr_entitlement_verified=payload.zdr_entitlement_verified,
+            zdr_endpoint_verified=payload.zdr_endpoint_verified,
+            requested_scopes=requested_scopes,
+        ),
+        CONTEXT_DEV_LICENSE,
+    )
+    return decision.as_dict()
 
 
 @app.get("/metrics")
@@ -277,7 +386,10 @@ async def voice(req: Request, file: UploadFile, session_id: str, location: str =
     if not (role := authorize(req)):
         raise HTTPException(401, "Unauthorized")
     if not check_rate_limit(f"voice:{session_id}", role, "voice"):
-        raise HTTPException(429, f"Daily voice limit reached ({RATE_LIMITS[role]['voice_per_day']} per day)")
+        raise HTTPException(
+            429,
+            f"Daily voice limit reached ({RATE_LIMITS[role]['voice_per_day']} per day)",
+        )
     if not stt_client or not tts_client:
         raise HTTPException(503, "Voice unavailable")
     try:
@@ -294,13 +406,24 @@ async def voice(req: Request, file: UploadFile, session_id: str, location: str =
         stt_response = stt_client.recognize(config=cfg, audio=rec)
         if not stt_response.results:
             return JSONResponse(status_code=400, content={"error": "No speech"})
-        transcript = " ".join([r.alternatives[0].transcript for r in stt_response.results])
+        transcript = " ".join(
+            [r.alternatives[0].transcript for r in stt_response.results]
+        )
         reply = think(session_id, transcript, role)
         synthesis = texttospeech.SynthesisInput(text=reply)
-        voice_params = texttospeech.VoiceSelectionParams(language_code="en-GB", name="en-GB-Wavenet-C")
-        audio_cfg = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.MP3)
-        tts_response = tts_client.synthesize_speech(input=synthesis, voice=voice_params, audio_config=audio_cfg)
-        audit("voice_interaction", {"session_id": clean_text(session_id, 128), "role": role})
+        voice_params = texttospeech.VoiceSelectionParams(
+            language_code="en-GB", name="en-GB-Wavenet-C"
+        )
+        audio_cfg = texttospeech.AudioConfig(
+            audio_encoding=texttospeech.AudioEncoding.MP3
+        )
+        tts_response = tts_client.synthesize_speech(
+            input=synthesis, voice=voice_params, audio_config=audio_cfg
+        )
+        audit(
+            "voice_interaction",
+            {"session_id": clean_text(session_id, 128), "role": role},
+        )
         return Response(tts_response.audio_content, media_type="audio/mpeg")
     except HTTPException:
         raise
@@ -316,7 +439,10 @@ async def vision_read(req: Request, file: UploadFile, target_lang: str = "en"):
         raise HTTPException(403, "Vision disabled")
     identifier = f"vision:{req.client.host if req.client else 'unknown'}"
     if not check_rate_limit(identifier, role, "vision"):
-        raise HTTPException(429, f"Daily vision limit reached ({RATE_LIMITS[role]['vision_per_day']} per day)")
+        raise HTTPException(
+            429,
+            f"Daily vision limit reached ({RATE_LIMITS[role]['vision_per_day']} per day)",
+        )
     if not vision_client:
         raise HTTPException(503, "Vision unavailable")
     try:
@@ -329,12 +455,18 @@ async def vision_read(req: Request, file: UploadFile, target_lang: str = "en"):
             return {"original_text": "", "message": "No text"}
         text = response.text_annotations[0].description
         translated = (
-            translate_client.translate(text, target_language=target_lang)["translatedText"]
+            translate_client.translate(text, target_language=target_lang)[
+                "translatedText"
+            ]
             if target_lang != "en" and translate_client
             else text
         )
         audit("vision_ocr", {"role": role, "target_lang": clean_text(target_lang, 16)})
-        return {"original_text": text, "translated_text": translated, "target_language": target_lang}
+        return {
+            "original_text": text,
+            "translated_text": translated,
+            "target_language": target_lang,
+        }
     except HTTPException:
         raise
     except Exception as exc:
@@ -354,7 +486,10 @@ def admin_stats(req: Request):
         "sessions": len(SESSION),
         "audit": len(AUDIT),
         "rate_limits": RATE_LIMITS,
-        "features": {"voice": stt_client is not None, "vision": vision_client is not None},
+        "features": {
+            "voice": stt_client is not None,
+            "vision": vision_client is not None,
+        },
         "failsafe": FAILSAFE.status(),
         "kill_switch": KILL_SWITCH,
     }
@@ -386,7 +521,9 @@ def manual_failsafe_checkpoint(req: Request):
             metadata={"initiator": "owner"},
         )
     except BackupError as exc:
-        raise HTTPException(503, f"Fail-safe checkpoint unavailable: {type(exc).__name__}") from exc
+        raise HTTPException(
+            503, f"Fail-safe checkpoint unavailable: {type(exc).__name__}"
+        ) from exc
     if receipt is None:
         raise HTTPException(503, "Fail-safe controller is not configured")
     audit("failsafe_manual_checkpoint", {"snapshot_id": receipt.snapshot_id})
@@ -410,12 +547,18 @@ def restore_latest(req: Request):
         )
         result = FAILSAFE.restore_latest()
     except BackupError as exc:
-        raise HTTPException(503, f"Fail-safe restore unavailable: {type(exc).__name__}") from exc
+        raise HTTPException(
+            503, f"Fail-safe restore unavailable: {type(exc).__name__}"
+        ) from exc
     restored = result.state
     sessions = restored.get("session")
     audit_entries = restored.get("audit")
     rate_limit = restored.get("rate_limit")
-    if not isinstance(sessions, dict) or not isinstance(audit_entries, list) or not isinstance(rate_limit, dict):
+    if (
+        not isinstance(sessions, dict)
+        or not isinstance(audit_entries, list)
+        or not isinstance(rate_limit, dict)
+    ):
         raise HTTPException(409, "Snapshot runtime schema is invalid")
     SESSION.clear()
     SESSION.update(sessions)
@@ -423,11 +566,19 @@ def restore_latest(req: Request):
     AUDIT.extend(audit_entries[-1000:])
     RATE_LIMIT.clear()
     for key, values in rate_limit.items():
-        if isinstance(key, str) and isinstance(values, list) and all(isinstance(v, (int, float)) for v in values):
+        if (
+            isinstance(key, str)
+            and isinstance(values, list)
+            and all(isinstance(v, (int, float)) for v in values)
+        ):
             RATE_LIMIT[key] = list(values)
     audit(
         "failsafe_restore",
-        {"snapshot_id": result.snapshot_id, "fallback_used": result.fallback_used, "authority_revalidated": True},
+        {
+            "snapshot_id": result.snapshot_id,
+            "fallback_used": result.fallback_used,
+            "authority_revalidated": True,
+        },
     )
     return {
         "restored": True,
