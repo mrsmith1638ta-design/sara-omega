@@ -11,3 +11,5 @@ sara_omega.egg-info/
 *-live-smoke.json
 railway-activation-report.json
 railway-public-url.txt
+local-acceptance-report.json
+custom-gpt-action-sync-report.json
