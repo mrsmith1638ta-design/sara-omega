@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
-  title: SARA-OMEGA V3.2.1 Runtime and Vendor Governance
+  title: SARA-OMEGA V3.2.1 Runtime and Governed Action Gateway
   version: 3.2.1
-  description: Read-only actions that let the SARA-OMEGA custom GPT verify the live Railway runtime, production acceptance, and sanitized Context.dev commercial authorization state without exposing secrets.
+  description: One governed ChatGPT Action path into the live Railway SARA-OMEGA runtime for assurance, module truth, concentration control, Hawkins Chaos, TITAN health, fail-closed solving, and sanitized Context.dev authorization state.
 servers:
   - url: https://sara-omega-production.up.railway.app
 paths:
@@ -100,3 +100,93 @@ paths:
                     type: string
                     enum: [BLOCKED, SCOPE_VERIFIED]
                 additionalProperties: false
+  /gpt/action/gateway:
+    post:
+      operationId: saraOmegaGovernedGateway
+      summary: Route a governed SARA operation through Railway
+      description: Uses Railway V3.2.1 auth, fail-safe readiness, audit receipts, module awareness, concentration control, runtime assurance, Hawkins Chaos, and TITAN status.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaraOmegaGatewayRequest'
+      responses:
+        '200':
+          description: Governed SARA result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Missing required fields for the selected operation
+        '401':
+          description: Missing or invalid SARA Railway bearer token
+        '429':
+          description: SARA action gateway daily request limit reached
+        '503':
+          description: Runtime is fail-closed or a required assurance component is unavailable
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    SaraOmegaGatewayRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - operation
+      properties:
+        operation:
+          type: string
+          description: Selects the governed Railway backend operation.
+          enum:
+            - status
+            - production_acceptance
+            - module_awareness
+            - runtime_assurance
+            - concentration
+            - hawkins_chaos
+            - titan_health
+            - solve
+            - verify_output
+        query:
+          type: string
+          description: User request to reason over when operation is solve.
+        objective:
+          type: string
+          description: Optional target outcome for a solve operation.
+        requested_action:
+          type: string
+          description: Optional action intent checked by SARA governance.
+        module:
+          type: string
+          default: sara-chatgpt-action
+          description: Module name for audit receipts and output verification.
+        output:
+          type: string
+          description: Generated text to verify before ChatGPT repeats it.
+        context:
+          type: object
+          additionalProperties: true
+          description: Non-secret context, live module truth, or evidence hints.
+        evidence:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          description: Optional evidence objects supplied by ChatGPT or upstream tools.
+        fail_closed:
+          type: boolean
+          default: true
+          description: When true, unsupported checkable claims are suppressed.
+        council:
+          type: boolean
+          description: Optional request for SARA council routing.
+        session_id:
+          type: string
+          description: Optional stable session id for rate-limit grouping.

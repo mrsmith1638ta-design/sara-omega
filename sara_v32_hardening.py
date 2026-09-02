@@ -326,11 +326,12 @@ class FailSafeSaveController:
                 os.chmod(path, 0o600)
             except OSError:
                 pass
-            dir_fd = os.open(self.root, os.O_RDONLY)
-            try:
-                os.fsync(dir_fd)
-            finally:
-                os.close(dir_fd)
+            if os.name != "nt":
+                dir_fd = os.open(self.root, os.O_RDONLY)
+                try:
+                    os.fsync(dir_fd)
+                finally:
+                    os.close(dir_fd)
         except Exception:
             try:
                 os.unlink(tmp_name)

@@ -1,0 +1,13 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+data/*.db
+data/*.jsonl
+dist/
+sara_omega.egg-info/
+.cursor/
+*-live-smoke.json
+railway-activation-report.json
+railway-public-url.txt

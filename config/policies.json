@@ -1,0 +1,26 @@
+{
+  "version": "1.0",
+  "rules": [
+    {
+      "id": "P001",
+      "name": "Prohibited destructive or illegal execution",
+      "effect": "BLOCK",
+      "risk_tags": ["illegal", "weapon", "credential_theft", "malware", "destructive"],
+      "reason": "SARA must not execute prohibited harmful or illegal operations."
+    },
+    {
+      "id": "P002",
+      "name": "Sensitive external disclosure requires review",
+      "effect": "ESCALATE",
+      "risk_tags": ["pii", "secret", "credential", "regulated_data"],
+      "reason": "Potentially sensitive information must not be routed externally without authorization."
+    },
+    {
+      "id": "P003",
+      "name": "High-impact execution requires approval",
+      "effect": "ESCALATE",
+      "risk_tags": ["financial_high_impact", "production_write", "legal_commitment", "personnel_action"],
+      "reason": "High-impact actions require an authorized human."
+    }
+  ]
+}
