@@ -22,6 +22,16 @@ https://sara-omega-production.up.railway.app/gpt/action/openapi.yaml
 
 Do not paste secrets into normal chat. The GPT Action secret belongs only in the GPT editor authentication field.
 
+## Sync Resolver
+
+When the ChatGPT editor or browser path is unavailable, run the resolver before retrying the editor import:
+
+```powershell
+.\.venv\Scripts\python.exe tools\custom_gpt_action_sync_resolver.py
+```
+
+The resolver verifies the local OpenAPI contract, the hosted Railway schema, local Git object database integrity, and the latest GitHub validation run. A passing resolver means the backend and schema are ready; only the manual GPT editor import remains.
+
 ## Supported Gateway Operations
 
 - `status`: live Railway runtime, production acceptance summary, assurance domains, module awareness, TITAN health.
