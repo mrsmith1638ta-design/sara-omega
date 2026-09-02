@@ -10,10 +10,6 @@ PROVISION_SCRIPT="$SCRIPT_DIR/railway_account_provision.sh"
 [ -f "$PROVISION_SCRIPT" ] || fail "railway_account_provision.sh was not found"
 command -v railway >/dev/null 2>&1 || fail "railway is required"
 
-# The canonical provisioning script uses the Linux command name `python3`.
-# On Windows, Git Bash commonly inherits Python as `python` or the Windows
-# launcher as `py`. Provide a shell-local compatibility function without
-# changing system PATH, creating symlinks, or weakening any acceptance gate.
 if command -v python3 >/dev/null 2>&1; then
   log "Using python3"
 elif command -v python >/dev/null 2>&1; then
@@ -28,38 +24,36 @@ else
   fail "Python 3 was not found as python3, python, or py"
 fi
 
+# Prevent Git Bash/MSYS from rewriting Linux container paths such as /data and
+# /data/sara-failsafe before they reach railway.exe.
+export MSYS_NO_PATHCONV=1
+export MSYS2_ARG_CONV_EXCL='*'
+
 PRODUCTION_DOMAIN="${SARA_RAILWAY_PRODUCTION_DOMAIN:-sara-omega-production.up.railway.app}"
 SERVICE_NAME="${SARA_RAILWAY_SERVICE_NAME:-sara-omega}"
 ENVIRONMENT_NAME="${SARA_RAILWAY_ENVIRONMENT:-production}"
 
-# Resolve the already-live production project by its canonical public domain.
-# This avoids creating or selecting a duplicate project just because a project
-# display name changed. The scan is read-only and never prints secrets.
 log "Resolving existing Railway production project by domain ${PRODUCTION_DOMAIN}"
 ALL_PROJECTS_JSON="$(command railway list --json 2>/dev/null || printf '[]')"
 export ALL_PROJECTS_JSON
 PROJECT_ROWS="$(python3 - <<'PY'
 import json, os
 try:
-    data = json.loads(os.environ['ALL_PROJECTS_JSON'])
+    data=json.loads(os.environ['ALL_PROJECTS_JSON'])
 except Exception:
-    data = []
-seen = set()
-rows = []
+    data=[]
+seen=set()
+rows=[]
 def walk(v):
-    if isinstance(v, dict):
-        pid = v.get('id')
-        name = v.get('name')
-        if isinstance(pid, str) and pid and isinstance(name, str) and pid not in seen:
-            seen.add(pid)
-            rows.append((pid, name.replace('\t', ' ').replace('\n', ' ')))
-        for x in v.values():
-            walk(x)
-    elif isinstance(v, list):
-        for x in v:
-            walk(x)
+    if isinstance(v,dict):
+        pid=v.get('id'); name=v.get('name')
+        if isinstance(pid,str) and pid and isinstance(name,str) and pid not in seen:
+            seen.add(pid); rows.append((pid,name.replace('\t',' ').replace('\n',' ')))
+        for x in v.values(): walk(x)
+    elif isinstance(v,list):
+        for x in v: walk(x)
 walk(data)
-for pid, name in rows:
+for pid,name in rows:
     print(f"{pid}\t{name}")
 PY
 )"
@@ -80,84 +74,23 @@ while IFS=$'\t' read -r candidate_id candidate_name; do
   fi
 done <<< "$PROJECT_ROWS"
 
-if [ -z "$TARGET_PROJECT_ID" ]; then
-  fail "Could not resolve the existing production project for ${PRODUCTION_DOMAIN}; refusing to create or modify a duplicate project"
-fi
+[ -n "$TARGET_PROJECT_ID" ] || \
+  fail "Could not resolve existing production project for ${PRODUCTION_DOMAIN}; refusing all Railway writes"
 
 log "Resolved production project ${TARGET_PROJECT_NAME} (${TARGET_PROJECT_ID})"
-
-# Link the exact project ID before the canonical controller starts. From this
-# point on, project creation is forbidden: a resolver failure must stop rather
-# than create a replacement production project.
 command railway link --project "$TARGET_PROJECT_ID" --environment "$ENVIRONMENT_NAME" >/dev/null \
   || fail "Could not link resolved production project ${TARGET_PROJECT_ID}"
 
-# Feed the canonical controller the exact resolved project record instead of
-# depending on Railway CLI list JSON shape. This is deliberately minimal and
-# deterministic.
-export TARGET_PROJECT_ID TARGET_PROJECT_NAME
-FILTERED_PROJECTS_JSON="$(python3 - <<'PY'
-import json, os
-print(json.dumps([{
-    'id': os.environ['TARGET_PROJECT_ID'],
-    'name': os.environ['TARGET_PROJECT_NAME'],
-}]))
-PY
-)"
-
+# Exact project identity is now passed to the canonical provisioner. This skips
+# project-name discovery/creation entirely and makes duplicate project creation
+# impossible on the production activation path.
+export SARA_RAILWAY_PROJECT_ID="$TARGET_PROJECT_ID"
 export SARA_RAILWAY_PROJECT_NAME="$TARGET_PROJECT_NAME"
+export SARA_RAILWAY_SERVICE_NAME="$SERVICE_NAME"
+export SARA_RAILWAY_ENVIRONMENT="$ENVIRONMENT_NAME"
 
-# Git Bash/MSYS rewrites Unix-looking arguments such as /data when invoking a
-# Windows executable. Railway requires literal container paths, so disable that
-# conversion for child processes in this activation shell.
-export MSYS_NO_PATHCONV=1
-export MSYS2_ARG_CONV_EXCL='*'
-
-railway(){
-  if [ "${1:-}" = "list" ] && [ "${2:-}" = "--json" ]; then
-    printf '%s\n' "$FILTERED_PROJECTS_JSON"
-    return 0
-  fi
-
-  # Fail closed: once the canonical production project is resolved, this
-  # wrapper must never create a replacement project.
-  if [ "${1:-}" = "init" ]; then
-    fail "Refusing railway init after production project resolution"
-  fi
-
-  # Railway CLI 5.x no longer accepts --service on volume add. The service is
-  # already selected by the canonical controller; remove only that redundant
-  # option and preserve the literal /data mount path.
-  if [ "${1:-}" = "volume" ] && [ "${2:-}" = "add" ]; then
-    shift 2
-    args=()
-    while [ "$#" -gt 0 ]; do
-      case "$1" in
-        --service|-s)
-          [ "$#" -ge 2 ] || fail "volume add service option is missing a value"
-          shift 2
-          ;;
-        *)
-          args+=("$1")
-          shift
-          ;;
-      esac
-    done
-    MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' command railway volume add "${args[@]}"
-    return $?
-  fi
-
-  MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' command railway "$@"
-}
-export -f railway
-
-# Source in this shell so the compatibility functions remain available to every
-# command inside the canonical provisioning controller.
-# shellcheck source=tools/railway_account_provision.sh
 source "$PROVISION_SCRIPT"
 
-# Final target-integrity assertion: successful activation must remain attached
-# to the canonical production URL, never to an accidental replacement domain.
 if [ -f railway-public-url.txt ]; then
   resolved_url="$(tr -d '\r\n' < railway-public-url.txt)"
   [ "$resolved_url" = "https://${PRODUCTION_DOMAIN}" ] || \
