@@ -15,18 +15,39 @@ def test_native_windows_activator_is_pinned_to_canonical_production_identity() -
     assert '[string]$EnvironmentName = "production"' in text
 
 
-def test_native_windows_activator_cannot_create_projects_or_services() -> None:
+def test_native_windows_activator_cannot_create_or_link_context() -> None:
     text = _text().lower()
     assert "railway init" not in text
     assert "railway add --service" not in text
-    assert 'refusing to create a replacement service' in text
+    assert '@("link"' not in text
+    assert '@("service", $servicename)' not in text
+    assert 'workspace' not in text
 
 
-def test_native_windows_activator_uses_linked_context_volume_contract() -> None:
+def test_native_windows_activator_uses_explicit_target_tuple() -> None:
     text = _text()
-    assert '& railway volume add --mount-path /data --json' in text
-    assert 'railway volume add --service' not in text
+    assert '$targetArgs = @("--project", $ProjectId, "--environment", $EnvironmentName, "--service", $ServiceName)' in text
+    assert '@("variable", "list") + $targetArgs + @("--kv")' in text
+    assert '@("deployment", "list") + $targetArgs + @("--limit", "1", "--json")' in text
+    assert '@("up", "--project", $ProjectId, "--environment", $EnvironmentName, "--service", $ServiceName, "--ci")' in text
+
+
+def test_native_windows_volume_context_precedes_subcommand() -> None:
+    text = _text()
+    assert '$volumeArgs = @("volume", "--project", $ProjectId, "--environment", $EnvironmentName, "--service", $ServiceName)' in text
+    assert '$volumeArgs + @("add", "--mount-path", "/data", "--json")' in text
+    assert 'volume add --service' not in text.lower()
     assert 'SARA_FAILSAFE_ROOT=/data/sara-failsafe' in text
+
+
+def test_native_windows_preflights_read_only_contract_before_writes() -> None:
+    text = _text()
+    preflight = text.index('Running non-interactive Railway command-contract preflight')
+    token_write = text.index('Invoke-RailwayStdinWrite -Value $gptActionToken')
+    failsafe_write = text.index('Applying production fail-safe variables')
+    assert preflight < token_write
+    assert preflight < failsafe_write
+    assert 'Non-interactive Railway command contract VERIFIED' in text
 
 
 def test_native_windows_activator_preserves_owner_and_failsafe_authority() -> None:
@@ -40,7 +61,7 @@ def test_native_windows_activator_preserves_owner_and_failsafe_authority() -> No
 def test_native_windows_activator_only_generates_limited_action_token() -> None:
     text = _text()
     assert 'New-SecureHex -Bytes 48' in text
-    assert 'variable set GPT_ACTION_TOKEN --stdin' in text
+    assert '"variable", "set", "GPT_ACTION_TOKEN", "--stdin", "--skip-deploys"' in text
     assert '--require-gpt-action-token' in text
 
 
