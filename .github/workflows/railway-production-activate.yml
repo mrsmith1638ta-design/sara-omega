@@ -9,6 +9,7 @@ on:
       - 'context_dev_resolver.py'
       - 'chatgpt-gpt-action.yaml'
       - 'Context.Dev/**'
+      - 'tests/test_context_dev_*.py'
       - 'tools/railway_account_provision.sh'
       - 'tools/railway_runtime_acceptance.py'
       - 'sara_production_bootstrap.py'
