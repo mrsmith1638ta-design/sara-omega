@@ -8,17 +8,35 @@ for cmd in railway python3 curl openssl; do
   command -v "$cmd" >/dev/null 2>&1 || fail "$cmd is required"
 done
 
+# Git Bash/MSYS rewrites Unix-looking arguments before invoking Windows
+# executables. Railway variables and volume mount paths are Linux container
+# paths, so conversion must be disabled for the entire activation shell.
+case "${MSYSTEM:-}" in
+  MINGW*|MSYS*|UCRT*)
+    export MSYS_NO_PATHCONV=1
+    export MSYS2_ARG_CONV_EXCL='*'
+    log "Git Bash path conversion disabled for Railway container paths"
+    ;;
+esac
+
 PROJECT_NAME="${SARA_RAILWAY_PROJECT_NAME:-SARA-OMEGA-V3.2.1}"
+PROJECT_ID_OVERRIDE="${SARA_RAILWAY_PROJECT_ID:-}"
 SERVICE_NAME="${SARA_RAILWAY_SERVICE_NAME:-sara-omega}"
 ENVIRONMENT_NAME="${SARA_RAILWAY_ENVIRONMENT:-production}"
 
 log "Authenticated Railway identity"
 railway whoami || fail "Railway authentication not active"
 
-log "Looking for existing project named ${PROJECT_NAME}"
-PROJECTS_JSON="$(railway list --json 2>/dev/null || printf '[]')"
-export PROJECTS_JSON PROJECT_NAME
-PROJECT_ID="$(python3 - <<'PY'
+if [ -n "$PROJECT_ID_OVERRIDE" ]; then
+  PROJECT_ID="$PROJECT_ID_OVERRIDE"
+  log "Using explicit Railway production project ${PROJECT_ID}"
+  railway link --project "$PROJECT_ID" --environment "$ENVIRONMENT_NAME" >/dev/null \
+    || fail "Could not link explicit Railway project ${PROJECT_ID}"
+else
+  log "Looking for existing project named ${PROJECT_NAME}"
+  PROJECTS_JSON="$(railway list --json 2>/dev/null || printf '[]')"
+  export PROJECTS_JSON PROJECT_NAME
+  PROJECT_ID="$(python3 - <<'PY'
 import json, os
 try:
     data=json.loads(os.environ['PROJECTS_JSON'])
@@ -38,20 +56,19 @@ print(found[0] if found else '')
 PY
 )"
 
-if [ -n "$PROJECT_ID" ]; then
-  railway link --project "$PROJECT_ID" --environment "$ENVIRONMENT_NAME" >/dev/null
-  log "Reusing project ${PROJECT_ID}"
-else
-  log "Creating Railway project ${PROJECT_NAME}"
-  INIT_JSON="$(railway init --name "$PROJECT_NAME" --json)"
-  export INIT_JSON
-  PROJECT_ID="$(python3 - <<'PY'
+  if [ -n "$PROJECT_ID" ]; then
+    railway link --project "$PROJECT_ID" --environment "$ENVIRONMENT_NAME" >/dev/null
+    log "Reusing project ${PROJECT_ID}"
+  else
+    log "Creating Railway project ${PROJECT_NAME}"
+    INIT_JSON="$(railway init --name "$PROJECT_NAME" --json)"
+    export INIT_JSON
+    PROJECT_ID="$(python3 - <<'PY'
 import json, os, sys
 try:
     data=json.loads(os.environ['INIT_JSON'])
 except Exception:
     sys.exit(1)
-
 def find(v):
     if isinstance(v,dict):
         for k in ('id','projectId','project_id'):
@@ -71,11 +88,12 @@ if not x: sys.exit(1)
 print(x)
 PY
 )" || fail "Could not resolve newly created Railway project ID"
-  log "Created project ${PROJECT_ID}"
+    log "Created project ${PROJECT_ID}"
+  fi
 fi
 
-# Ensure the production environment is selected. Newly created Railway projects
-# include production by default; this is intentionally non-destructive.
+# Ensure the production environment is selected. This is intentionally
+# non-destructive and does not create replacement projects.
 railway environment "$ENVIRONMENT_NAME" >/dev/null 2>&1 || true
 
 log "Ensuring service ${SERVICE_NAME} exists"
@@ -100,6 +118,9 @@ print('yes' if found else 'no')
 PY
 )"
 if [ "$SERVICE_EXISTS" != yes ]; then
+  if [ -n "$PROJECT_ID_OVERRIDE" ]; then
+    fail "Expected service ${SERVICE_NAME} is missing from explicit production project ${PROJECT_ID}; refusing to create a replacement service"
+  fi
   railway add --service "$SERVICE_NAME" --json >/dev/null
   log "Created service ${SERVICE_NAME}"
 fi
@@ -160,8 +181,11 @@ railway variable set \
   SARA_RELEASE_VERSION=3.2.1 \
   --skip-deploys --service "$SERVICE_NAME" >/dev/null
 
+# Use the proven linked-context volume pattern from railway_secure_activate.sh.
+# Railway CLI 5.x accepts volume add in the selected service context and no
+# longer requires/accepts --service for this operation.
 log "Ensuring persistent /data volume exists"
-VOLUMES_JSON="$(railway volume list --service "$SERVICE_NAME" --json 2>/dev/null || printf '[]')"
+VOLUMES_JSON="$(railway volume list --json 2>/dev/null || printf '[]')"
 export VOLUMES_JSON
 if ! python3 - <<'PY'
 import json, os, sys
@@ -178,7 +202,7 @@ def ok(v):
 sys.exit(0 if ok(data) else 1)
 PY
 then
-  railway volume add --service "$SERVICE_NAME" --mount-path /data --json >/dev/null
+  railway volume add --mount-path /data --json >/dev/null
   log "Created persistent /data volume"
 else
   log "Persistent /data volume already present"
@@ -188,6 +212,7 @@ log "Deploying checked-out SARA-OMEGA V3.2.1 source"
 railway up --service "$SERVICE_NAME" --ci
 
 log "Waiting for successful deployment"
+STATUS='UNKNOWN'
 for _ in $(seq 1 90); do
   DEP_JSON="$(railway deployment list --service "$SERVICE_NAME" --limit 1 --json 2>/dev/null || printf '[]')"
   export DEP_JSON
@@ -232,6 +257,9 @@ for v in vals:
 PY
 )"
 if [ -z "$DOMAIN" ]; then
+  if [ -n "$PROJECT_ID_OVERRIDE" ]; then
+    fail "Explicit production project has no Railway public domain; refusing to create a replacement domain"
+  fi
   DOMAIN_JSON="$(railway domain --service "$SERVICE_NAME" --json)"
   export DOMAIN_JSON
   DOMAIN="$(python3 - <<'PY'
@@ -241,7 +269,7 @@ except Exception: sys.exit(1)
 vals=[]
 def walk(v):
     if isinstance(v,dict):
-        for k,x in v.items():
+        for x in v.values():
             if isinstance(x,str): vals.append(x)
             walk(x)
     elif isinstance(v,list):
@@ -286,11 +314,9 @@ try: data=json.loads(os.environ['VAR_JSON'])
 except Exception: sys.exit(1)
 if isinstance(data,dict) and isinstance(data.get('OWNER_TOKEN'),str):
     print(data['OWNER_TOKEN']); raise SystemExit
-
 def walk(v):
     if isinstance(v,dict):
-        if v.get('name') == 'OWNER_TOKEN' and isinstance(v.get('value'),str):
-            return v['value']
+        if v.get('name') == 'OWNER_TOKEN' and isinstance(v.get('value'),str): return v['value']
         for x in v.values():
             y=walk(x)
             if y: return y
@@ -317,11 +343,9 @@ try: data=json.loads(os.environ['VAR_JSON'])
 except Exception: sys.exit(1)
 if isinstance(data,dict) and isinstance(data.get('GPT_ACTION_TOKEN'),str):
     print(data['GPT_ACTION_TOKEN']); raise SystemExit
-
 def walk(v):
     if isinstance(v,dict):
-        if v.get('name') == 'GPT_ACTION_TOKEN' and isinstance(v.get('value'),str):
-            return v['value']
+        if v.get('name') == 'GPT_ACTION_TOKEN' and isinstance(v.get('value'),str): return v['value']
         for x in v.values():
             y=walk(x)
             if y: return y
