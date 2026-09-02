@@ -48,10 +48,12 @@ jobs:
             echo 'source=none' >> "$GITHUB_OUTPUT"
             {
               echo '## SARA-OMEGA V3.2.1 zero-to-production'
-              echo 'Deployment controller is valid and ready.'
-              echo 'Repository-level Railway authentication is not available to this GitHub runner.'
+              echo 'DEPLOYMENT BLOCKED: repository-level Railway authentication is unavailable.'
               echo 'No Railway changes were attempted.'
+              echo 'This workflow fails closed so a green run always means Railway activation actually executed.'
             } >> "$GITHUB_STEP_SUMMARY"
+            echo 'Railway activation blocked: configure RAILWAY_API_TOKEN (preferred) or RAILWAY_TOKEN as a GitHub Actions secret.' >&2
+            exit 1
           fi
 
       - name: Set up Node
