@@ -25,6 +25,16 @@ def test_native_windows_activator_cannot_create_or_link_context() -> None:
     assert 'railway workspace' not in text
 
 
+def test_native_windows_activator_bypasses_npm_powershell_shim() -> None:
+    text = _text()
+    assert 'Get-Command railway.cmd' in text
+    assert 'Get-Command railway.exe' in text
+    assert 'railway.ps1 npm shim is intentionally rejected' in text
+    assert '& $script:RailwayCommand @Arguments' in text
+    assert '$ErrorActionPreference = "Continue"' in text
+    assert '$exitCode = $LASTEXITCODE' in text
+
+
 def test_native_windows_activator_uses_explicit_target_tuple() -> None:
     text = _text()
     assert '$targetArgs = @("--project", $ProjectId, "--environment", $EnvironmentName, "--service", $ServiceName)' in text
