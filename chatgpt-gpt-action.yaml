@@ -129,6 +129,230 @@ paths:
           description: SARA action gateway daily request limit reached
         '503':
           description: Runtime is fail-closed or a required assurance component is unavailable
+  /road/health:
+    get:
+      operationId: getRoadHealth
+      summary: Get ROAD live health
+      description: Returns the headless ROAD service health and production-acceptance state.
+      responses:
+        '200':
+          description: ROAD health
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /road/tools:
+    get:
+      operationId: getRoadToolDiscovery
+      summary: Discover ROAD tools
+      description: Returns the authoritative ROAD 11-tool set without UI resources.
+      responses:
+        '200':
+          description: ROAD tool discovery
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /road/actions/get_completion_overview:
+    post:
+      operationId: get_completion_overview
+      summary: Get ROAD completion overview
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoadToolRequest'
+      responses:
+        '200':
+          description: ROAD completion overview
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /road/actions/get_completion_track:
+    post:
+      operationId: get_completion_track
+      summary: Get one ROAD completion track
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoadToolRequest'
+      responses:
+        '200':
+          description: ROAD completion track
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /road/actions/suggest_next_build_phase:
+    post:
+      operationId: suggest_next_build_phase
+      summary: Suggest the next ROAD build phase
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoadToolRequest'
+      responses:
+        '200':
+          description: ROAD next build phase
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /road/actions/get_live_runtime_status:
+    post:
+      operationId: get_live_runtime_status
+      summary: Get ROAD live runtime status
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoadToolRequest'
+      responses:
+        '200':
+          description: ROAD live runtime status
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /road/actions/get_production_acceptance:
+    post:
+      operationId: get_production_acceptance
+      summary: Get ROAD production acceptance
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoadToolRequest'
+      responses:
+        '200':
+          description: ROAD production acceptance
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /road/actions/get_contextdev_authorization:
+    post:
+      operationId: get_contextdev_authorization
+      summary: Get ROAD Context.dev authorization status
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoadToolRequest'
+      responses:
+        '200':
+          description: ROAD Context.dev authorization
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /road/actions/get_gate_evidence:
+    post:
+      operationId: get_gate_evidence
+      summary: Get ROAD gate evidence
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoadToolRequest'
+      responses:
+        '200':
+          description: ROAD gate evidence
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /road/actions/get_blocking_dependencies:
+    post:
+      operationId: get_blocking_dependencies
+      summary: Get ROAD blocking dependencies
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoadToolRequest'
+      responses:
+        '200':
+          description: ROAD blocking dependencies
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /road/actions/run_certification_check:
+    post:
+      operationId: run_certification_check
+      summary: Run ROAD certification checks
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoadToolRequest'
+      responses:
+        '200':
+          description: ROAD certification check
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /road/actions/verify_release_candidate:
+    post:
+      operationId: verify_release_candidate
+      summary: Verify ROAD release candidate
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoadToolRequest'
+      responses:
+        '200':
+          description: ROAD release candidate verification
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /road/actions/generate_completion_manifest:
+    post:
+      operationId: generate_completion_manifest
+      summary: Generate ROAD completion manifest
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoadToolRequest'
+      responses:
+        '200':
+          description: ROAD completion manifest
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
 components:
   securitySchemes:
     bearerAuth:
@@ -190,3 +414,11 @@ components:
         session_id:
           type: string
           description: Optional stable session id for rate-limit grouping.
+    RoadToolRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        arguments:
+          type: object
+          additionalProperties: true
+          description: Optional ROAD tool arguments.

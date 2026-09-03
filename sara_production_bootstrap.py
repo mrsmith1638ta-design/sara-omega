@@ -43,6 +43,35 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _deployment_identity() -> dict[str, str]:
+    """Collect non-secret Railway and ROAD revision identifiers."""
+    env_map = {
+        "railway_project_id": "RAILWAY_PROJECT_ID",
+        "railway_service_id": "RAILWAY_SERVICE_ID",
+        "railway_environment_id": "RAILWAY_ENVIRONMENT_ID",
+        "railway_deployment_id": "RAILWAY_DEPLOYMENT_ID",
+        "railway_git_commit_sha": "RAILWAY_GIT_COMMIT_SHA",
+        "railway_git_branch": "RAILWAY_GIT_BRANCH",
+        "railway_git_repo_name": "RAILWAY_GIT_REPO_NAME",
+        "railway_git_author": "RAILWAY_GIT_AUTHOR",
+        "road_expected_commit_sha": "ROAD_EXPECTED_COMMIT_SHA",
+        "road_revision_label": "ROAD_REVISION_LABEL",
+    }
+    identity = {
+        key: os.environ.get(env_name, "").strip()[:256]
+        for key, env_name in env_map.items()
+        if os.environ.get(env_name, "").strip()
+    }
+    build_identifier = (
+        identity.get("railway_deployment_id")
+        or identity.get("railway_git_commit_sha")
+        or identity.get("road_expected_commit_sha")
+    )
+    if build_identifier:
+        identity["build_identifier"] = build_identifier
+    return identity
+
+
 def configure_production_defaults() -> None:
     """Set secure defaults without overwriting explicit operator configuration."""
     os.environ.setdefault("SARA_FAILSAFE_REQUIRED", "true")
@@ -183,6 +212,7 @@ def run_preflight() -> dict[str, Any]:
         raise ProductionPreflightError("bootstrap_chain_invalid")
 
     persistence_observed = bool(previous_marker and previous_marker.get("boot_id") != boot_id)
+    deployment_identity = _deployment_identity()
     marker = {
         "project_name": PROJECT_NAME,
         "release_version": RELEASE_VERSION,
@@ -191,6 +221,7 @@ def run_preflight() -> dict[str, Any]:
         "created_at_epoch": int(time.time()),
         "bootstrap_snapshot_id": receipt.snapshot_id,
         "chain_digest": receipt.chain_digest,
+        **deployment_identity,
     }
     _atomic_json(marker_path, marker)
 
@@ -212,6 +243,8 @@ def run_preflight() -> dict[str, Any]:
         "chain_valid": True,
         "persistence_observed_across_boots": persistence_observed,
         "persistence_status": "PROVEN" if persistence_observed else "PENDING_RESTART_PROOF",
+        "road_integrated": True,
+        **deployment_identity,
         "production_accepted": bool(
             required
             and runtime.configured
@@ -260,6 +293,17 @@ def register_acceptance_routes(main_module: Any, evidence: dict[str, Any]) -> No
             "chain_valid",
             "persistence_observed_across_boots",
             "persistence_status",
+            "road_integrated",
+            "railway_project_id",
+            "railway_service_id",
+            "railway_environment_id",
+            "railway_deployment_id",
+            "railway_git_commit_sha",
+            "railway_git_branch",
+            "railway_git_repo_name",
+            "road_expected_commit_sha",
+            "road_revision_label",
+            "build_identifier",
             "failure",
             "failure_reason",
         }

@@ -37,6 +37,7 @@ from context_dev_resolver import (
     RequestContext,
     evaluate_request,
 )
+from road_engine import ROAD_TOOLS, RoadEngine
 from sara_v32_hardening import BackupError, FailSafeEvent, RuntimeFailSafe
 from app.enterprise_runtime import (
     concentration_governor,
@@ -113,6 +114,10 @@ class GPTActionGatewayRequest(BaseModel):
     fail_closed: bool = True
     council: bool | None = None
     session_id: str | None = Field(default=None, max_length=256)
+
+
+class RoadToolRequest(BaseModel):
+    arguments: dict[str, Any] = Field(default_factory=dict)
 
 
 def get_llm_client():
@@ -337,6 +342,17 @@ def production_acceptance_snapshot() -> Dict[str, Any]:
                 "chain_valid",
                 "persistence_observed_across_boots",
                 "persistence_status",
+                "road_integrated",
+                "railway_project_id",
+                "railway_service_id",
+                "railway_environment_id",
+                "railway_deployment_id",
+                "railway_git_commit_sha",
+                "railway_git_branch",
+                "railway_git_repo_name",
+                "road_expected_commit_sha",
+                "road_revision_label",
+                "build_identifier",
             }
             return {key: evidence.get(key) for key in sorted(public_keys) if key in evidence}
         except Exception as exc:
@@ -348,6 +364,21 @@ def production_acceptance_snapshot() -> Dict[str, Any]:
         "failsafe_required": status.get("required"),
         "failsafe_configured": status.get("configured"),
     }
+
+
+ROAD = RoadEngine(
+    release_version=RELEASE_VERSION,
+    hardening_profile=HARDENING_PROFILE,
+    roadmap_path=Path(__file__).with_name("data") / "roadmap.md",
+    production_acceptance_supplier=production_acceptance_snapshot,
+    contextdev_supplier=lambda: CONTEXT_DEV_LICENSE.public_status(),
+)
+
+
+def request_base_url(req: Request) -> str:
+    proto = req.headers.get("x-forwarded-proto") or req.url.scheme or "https"
+    host = req.headers.get("x-forwarded-host") or req.headers.get("host") or req.url.netloc
+    return f"{proto}://{host}"
 
 
 def model_dump(value: Any) -> Any:
@@ -518,6 +549,49 @@ async def chatgpt_action_gateway(req: Request, body: GPTActionGatewayRequest):
 def chatgpt_action_openapi_schema():
     schema_path = Path(__file__).with_name("chatgpt-gpt-action.yaml")
     return Response(schema_path.read_text(encoding="utf-8"), media_type="text/yaml")
+
+
+@app.get("/road/health")
+def road_health():
+    return {
+        "status": "healthy",
+        "service": "SARA OMEGA ROAD",
+        "mode": "headless_mcp_and_openapi_action_bridge",
+        "version": RELEASE_VERSION,
+        "tool_count": len(ROAD_TOOLS),
+        "production_acceptance": ROAD.get_production_acceptance()["status"],
+    }
+
+
+@app.get("/road/tools")
+def road_tool_discovery():
+    return ROAD.tool_discovery()
+
+
+@app.get("/road/openapi.json")
+def road_openapi_schema(req: Request):
+    return ROAD.openapi_schema(request_base_url(req))
+
+
+@app.post("/road/actions/{tool_name}")
+def road_action(tool_name: str, body: RoadToolRequest | None = None):
+    clean_tool = clean_text(tool_name, 96)
+    arguments = body.arguments if body else {}
+    result = ROAD.call_tool(clean_tool, arguments)
+    if result.get("code") == "unknown_tool":
+        raise HTTPException(404, result)
+    return result
+
+
+@app.post("/mcp")
+async def road_mcp_endpoint(req: Request):
+    try:
+        body = await req.json()
+    except Exception as exc:
+        raise HTTPException(400, "Malformed MCP JSON body") from exc
+    if not isinstance(body, dict):
+        raise HTTPException(400, "MCP body must be a JSON object")
+    return ROAD.mcp_response(body)
 
 
 def think(session_id: str, text: str, role: str = "tester") -> str:
