@@ -420,7 +420,11 @@ class RoadEngine:
     def _json_response(self) -> dict[str, Any]:
         return {
             "description": "ROAD JSON response",
-            "content": {"application/json": {"schema": {"type": "object", "additionalProperties": True}}},
+            "content": {
+                "application/json": {
+                    "schema": {"type": "object", "additionalProperties": True, "properties": {}}
+                }
+            },
         }
 
     def _safe_args(self, arguments: dict[str, Any] | None) -> dict[str, Any]:
@@ -441,4 +445,3 @@ class RoadEngine:
 
     def _clean_text(self, value: Any, max_length: int) -> str:
         return str(value or "").replace("\x00", "")[:max_length]
-
