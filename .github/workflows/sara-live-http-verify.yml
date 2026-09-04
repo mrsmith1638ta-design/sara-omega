@@ -1,0 +1,30 @@
+name: SARA live HTTP verify
+
+on:
+  push:
+    branches: [repair/control-plane-20260904]
+    paths:
+      - '.sara-upload/VERIFY_LIVE'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify production HTTP gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://sara-omega-production.up.railway.app'
+          for path in /health/live /health/ready /health/production-acceptance; do
+            code="$(curl -sS --max-time 20 -o "/tmp$(echo "$path" | tr '/' '_').json" -w '%{http_code}' "$BASE$path")"
+            echo "$path HTTP $code"
+            cat "/tmp$(echo "$path" | tr '/' '_').json"
+            echo
+            test "$code" = 200
+          done
+          jq -e '.alive == true' /tmp_health_live.json >/dev/null
+          jq -e '.ready == true' /tmp_health_ready.json >/dev/null
+          jq -e '.production_accepted == true' /tmp_health_production-acceptance.json >/dev/null
