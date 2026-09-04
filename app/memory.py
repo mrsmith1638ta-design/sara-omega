@@ -55,13 +55,28 @@ def _decode_key_material() -> bytes | None:
     return None
 
 
+def derive_secret_key(context: str, *, required: bool = True) -> bytes | None:
+    """Derive a domain-separated 32-byte secret from SARA's configured root key material."""
+    material = _decode_key_material()
+    if material is None:
+        if required:
+            raise MemoryKeyError("encrypted_memory_key_not_configured")
+        return None
+    normalized = context.strip()
+    if not normalized or len(normalized) > 128:
+        raise MemoryKeyError("invalid_secret_key_context")
+    return hashlib.sha256(
+        f"SARA-OMEGA:secret:{normalized}:v1\0".encode("utf-8") + material
+    ).digest()
+
+
 def _derive_memory_key(required: bool) -> bytes | None:
     material = _decode_key_material()
     if material is None:
         if required:
             raise MemoryKeyError("encrypted_memory_key_not_configured")
         return None
-    # Domain-separate memory encryption even when the fail-safe master key is reused.
+    # Keep the deployed conversation-memory key derivation stable for restart compatibility.
     return hashlib.sha256(b"SARA-OMEGA:encrypted-memory:v1\0" + material).digest()
 
 
