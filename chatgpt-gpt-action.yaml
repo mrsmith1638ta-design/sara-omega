@@ -133,7 +133,7 @@ paths:
     post:
       operationId: saraOmegaUserGateway
       summary: Use SARA with OAuth-bound personal continuity
-      description: OAuth-only personal gateway. The authenticated SARA user identity owns encrypted continuity across separate GPT conversations. Shared GPT Action, test, owner, source-control, and Railway-control credentials do not grant personal-memory authority through this endpoint.
+      description: OAuth-only personal gateway. The authenticated SARA user identity owns encrypted continuity across separate GPT conversations. Shared compatibility credentials and privileged operational credentials do not grant personal-memory authority through this endpoint.
       security:
         - bearerAuth: []
       requestBody:
