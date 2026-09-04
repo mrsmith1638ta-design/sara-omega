@@ -36,7 +36,7 @@ jobs:
           git checkout --detach origin/main
           git apply --check /tmp/sara-repair.diff
           git apply /tmp/sara-repair.diff
-          mapfile -t changed < <(git diff --name-only | sort)
+          mapfile -t changed < <({ git diff --name-only; git ls-files --others --exclude-standard; } | sort -u)
           expected=(
             app/control_plane.py
             app/memory.py
