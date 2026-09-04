@@ -24,8 +24,10 @@ from .titan import (
     TitanEngine,
     VoiceEventRequest,
 )
+from .user_identity_http import router as user_identity_router
 
 router = APIRouter()
+router.include_router(user_identity_router)
 runtime_assurance = RuntimeAssuranceEngine()
 module_awareness = ModuleAwarenessEngine()
 titan = TitanEngine(module_awareness)
