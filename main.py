@@ -48,6 +48,7 @@ from app.enterprise_runtime import (
 )
 from app.concentration import ConcentrationRequest
 from app.hawkins_chaos import HawkinsChaosRequest
+from app.memory import ConversationMemory, MemoryStoreError
 from app.models import Problem
 from app.orchestrator import SaraOmega
 from app.runtime_assurance import RuntimeAssuranceConfigurationError, RuntimeAssuranceRequest
@@ -181,6 +182,7 @@ RATE_LIMIT = defaultdict(list)
 startup_time = time.time()
 FAILSAFE = RuntimeFailSafe.from_env()
 CONTEXT_DEV_LICENSE = PENDING_CONTEXT_DEV_LICENSE
+CONVERSATION_MEMORY = ConversationMemory.from_env(required=False)
 
 
 class ContextDevEvaluationRequest(BaseModel):
@@ -521,11 +523,13 @@ def chatgpt_action_openapi_schema():
 
 
 def think(session_id: str, text: str, role: str = "tester") -> str:
+    if CONVERSATION_MEMORY is None:
+        return "Request blocked because encrypted conversation persistence is unavailable."
     client = get_llm_client()
     if not client:
         return "AI not configured. Set OPENAI_API_KEY."
     try:
-        ctx = list(SESSION.get(session_id, []))
+        ctx = list(SESSION.get(session_id) or CONVERSATION_MEMORY.load(session_id))
         ctx.append({"role": "user", "content": clean_text(text, 1000)})
         max_context = get_max_context(role)
         ctx = ctx[-max_context:] if max_context else ctx
@@ -537,6 +541,7 @@ def think(session_id: str, text: str, role: str = "tester") -> str:
             correlation_id=f"session-{uuid.uuid4()}",
             metadata={"store": "session", "session_id": clean_text(session_id, 128), "role": role},
         )
+        CONVERSATION_MEMORY.save(session_id, ctx)
         SESSION[session_id] = ctx
         audit(
             "llm_completion",
@@ -552,6 +557,9 @@ def think(session_id: str, text: str, role: str = "tester") -> str:
     except BackupError as exc:
         logger.error("Fail-safe blocked session mutation: %s", type(exc).__name__)
         return "Request blocked because fail-safe state protection is unavailable."
+    except MemoryStoreError as exc:
+        logger.error("Encrypted conversation memory blocked mutation: %s", type(exc).__name__)
+        return "Request blocked because encrypted conversation persistence is unavailable."
     except Exception as exc:
         logger.error("Think error: %s", type(exc).__name__)
         return "Error processing request."
@@ -848,6 +856,13 @@ def restore_latest(req: Request):
         raise HTTPException(409, "Snapshot runtime schema is invalid")
     SESSION.clear()
     SESSION.update(sessions)
+    if CONVERSATION_MEMORY is not None:
+        try:
+            for restored_session_id, restored_messages in sessions.items():
+                if isinstance(restored_session_id, str) and isinstance(restored_messages, list):
+                    CONVERSATION_MEMORY.save(restored_session_id, restored_messages)
+        except MemoryStoreError as exc:
+            raise HTTPException(503, "Encrypted conversation persistence restore failed") from exc
     AUDIT.clear()
     AUDIT.extend(audit_entries[-1000:])
     RATE_LIMIT.clear()

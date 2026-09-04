@@ -285,6 +285,9 @@ def register_acceptance_routes(main_module: Any, evidence: dict[str, Any]) -> No
 
 
 def run() -> None:
+    if _env_bool("SARA_NO_START", False):
+        logger.warning("SARA production bootstrap NO-START: cost-control gate active")
+        raise SystemExit(0)
     configure_production_defaults()
     try:
         evidence = run_preflight()

@@ -7,6 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from .memory import EncryptedStateStore, MemoryStoreError
+
 
 ONTOLOGICAL_ANCHOR = "0aa4755159bf24d69acd4e8608445bbe"
 
@@ -85,7 +87,7 @@ class MemoryConsolidation(BaseModel):
 class ModuleAwarenessEngine:
     """Integrated module awareness, temporal context and continuity layer."""
 
-    def __init__(self, baseline_count: int | None = None):
+    def __init__(self, baseline_count: int | None = None, state_store: EncryptedStateStore | None = None):
         self.baseline_count = baseline_count or int(os.getenv("SARA_MODULE_BASELINE_COUNT", "215"))
         self.registry: dict[str, ModuleRecord] = {}
         self.baseline: set[str] = set()
@@ -93,6 +95,8 @@ class ModuleAwarenessEngine:
         self.probe_state: dict[str, dict[str, Any]] = {}
         self.narrative: dict[str, list[dict[str, Any]]] = {}
         self.consolidations: dict[str, dict[str, Any]] = {}
+        self._state_store = state_store if state_store is not None else EncryptedStateStore.from_env(required=False)
+        self._suspend_persistence = True
         for service in (
             "sara-module-awareness",
             "sara-nqhn",
@@ -105,6 +109,13 @@ class ModuleAwarenessEngine:
             "sara-titan-apex",
         ):
             self.register(ModuleRecord(service=service, status="integrated"))
+        self._suspend_persistence = False
+        if self._state_store is not None:
+            persisted = self._state_store.load_json("module-awareness-v1", "state")
+            if persisted is not None:
+                self._restore_persisted_state(persisted)
+            else:
+                self._persist_state()
 
     def health(self) -> dict[str, Any]:
         return {
@@ -126,12 +137,14 @@ class ModuleAwarenessEngine:
     def load_snapshot(self, snapshot: ModuleRegistrySnapshot) -> dict[str, Any]:
         self.registry = {m.service: m for m in snapshot.modules}
         self.baseline = set(snapshot.baseline)
+        self._persist_state()
         return self.awareness()
 
     def register(self, record: ModuleRecord) -> dict[str, Any]:
         if not record.registered_at:
             record.registered_at = self._now_iso()
         self.registry[record.service] = record
+        self._persist_state()
         return {"registered": True, "service": record.service, "anchor": ONTOLOGICAL_ANCHOR}
 
     def count(self) -> dict[str, Any]:
@@ -164,6 +177,7 @@ class ModuleAwarenessEngine:
     def establish_baseline(self) -> dict[str, Any]:
         self.baseline = {s for s in self.registry if s not in INFRASTRUCTURE_SERVICES}
         self.baseline_count = len(self.baseline)
+        self._persist_state()
         return {"established": True, "count": self.baseline_count, "timestamp": self._now_iso()}
 
     def diff(self) -> dict[str, Any]:
@@ -186,6 +200,7 @@ class ModuleAwarenessEngine:
         if not alias or not canonical:
             raise ValueError("alias and canonical are required")
         self.route_table[alias] = canonical
+        self._persist_state()
         return {"registered": True, "alias": alias, "canonical": canonical, "anchor": ONTOLOGICAL_ANCHOR}
 
     def harmonize(self, request: HarmonizeRequest) -> dict[str, Any]:
@@ -224,6 +239,7 @@ class ModuleAwarenessEngine:
             "anchor": ONTOLOGICAL_ANCHOR,
         }
         self.probe_state[service] = state
+        self._persist_state()
         return state
 
     def state(self) -> dict[str, Any]:
@@ -271,6 +287,7 @@ class ModuleAwarenessEngine:
             "anchor": ONTOLOGICAL_ANCHOR,
         }
         self.narrative.setdefault(entry.session_id, []).append(item)
+        self._persist_state()
         return {"stored": True, "entry_id": item["entry_id"], "anchor": ONTOLOGICAL_ANCHOR}
 
     def get_narrative(self, session_id: str, limit: int = 50) -> dict[str, Any]:
@@ -290,6 +307,7 @@ class ModuleAwarenessEngine:
             "anchor": ONTOLOGICAL_ANCHOR,
         }
         self.consolidations[request.session_id] = doc
+        self._persist_state()
         return {"consolidated": True, "session_id": request.session_id, "fact_count": len(request.key_facts)}
 
     def continuity(self, session_id: str) -> dict[str, Any]:
@@ -329,6 +347,48 @@ class ModuleAwarenessEngine:
             "remediated_by": "sara-sge-integrated",
         }
         return {"remediated": False, "service": service_id, "patch": patch, "mode": "advisory"}
+
+
+    def _persist_state(self) -> None:
+        if self._suspend_persistence or self._state_store is None:
+            return
+        payload = {
+            "baseline_count": self.baseline_count,
+            "registry": {service: record.model_dump() for service, record in self.registry.items()},
+            "baseline": sorted(self.baseline),
+            "route_table": dict(self.route_table),
+            "probe_state": self.probe_state,
+            "narrative": self.narrative,
+            "consolidations": self.consolidations,
+        }
+        self._state_store.save_json("module-awareness-v1", "state", payload)
+
+    def _restore_persisted_state(self, payload: Any) -> None:
+        if not isinstance(payload, dict):
+            raise MemoryStoreError("module_awareness_schema_invalid")
+        registry_raw = payload.get("registry", {})
+        if not isinstance(registry_raw, dict):
+            raise MemoryStoreError("module_awareness_schema_invalid")
+        try:
+            registry = {
+                str(service): ModuleRecord.model_validate(record)
+                for service, record in registry_raw.items()
+            }
+            baseline = set(payload.get("baseline", []))
+            route_table = dict(payload.get("route_table", DEFAULT_ROUTE_TABLE))
+            probe_state = dict(payload.get("probe_state", {}))
+            narrative = dict(payload.get("narrative", {}))
+            consolidations = dict(payload.get("consolidations", {}))
+            baseline_count = int(payload.get("baseline_count", self.baseline_count))
+        except (TypeError, ValueError) as exc:
+            raise MemoryStoreError("module_awareness_schema_invalid") from exc
+        self.registry = registry
+        self.baseline = baseline
+        self.route_table = route_table
+        self.probe_state = probe_state
+        self.narrative = narrative
+        self.consolidations = consolidations
+        self.baseline_count = baseline_count
 
     def _compliance_check(self, record: ModuleRecord) -> dict[str, Any]:
         violations = []
