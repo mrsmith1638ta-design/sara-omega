@@ -1,0 +1,205 @@
+name: SARA exact-commit Railway deploy
+
+on:
+  push:
+    branches: [repair/control-plane-20260904]
+    paths:
+      - '.sara-upload/DEPLOY'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sara-exact-commit-railway-deploy
+  cancel-in-progress: false
+
+env:
+  PROJECT_NAME: SARA-OMEGA-V3.2.1
+  SERVICE_NAME: sara-omega
+  ENVIRONMENT_NAME: production
+  BASE_URL: https://sara-omega-production.up.railway.app
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      RAILWAY_ACCOUNT_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+      RAILWAY_LEGACY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify exact production commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET_COMMIT="$(tr -d '[:space:]' < .sara-upload/DEPLOY)"
+          [[ "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "$TARGET_COMMIT"
+          git checkout --detach "$TARGET_COMMIT"
+          echo "TARGET_COMMIT=$TARGET_COMMIT" >> "$GITHUB_ENV"
+
+      - name: Install Railway CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global @railway/cli
+          python -m pip install --quiet httpx
+
+      - name: Resolve existing target and submit exact commit once
+        id: submit
+        shell: bash
+        env:
+          GH_CONTROL_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -n "${RAILWAY_ACCOUNT_TOKEN:-}" ]; then
+            TOKEN="$RAILWAY_ACCOUNT_TOKEN"
+          elif [ -n "${RAILWAY_LEGACY_TOKEN:-}" ]; then
+            TOKEN="$RAILWAY_LEGACY_TOKEN"
+          else
+            echo 'BLOCKED: Railway repository credential unavailable' >&2
+            exit 1
+          fi
+          export RAILWAY_API_TOKEN="$TOKEN"
+          railway whoami >/dev/null
+
+          PROJECTS_JSON="$(railway list --json)"
+          PROJECT_ID="$(printf '%s' "$PROJECTS_JSON" | jq -r --arg n "$PROJECT_NAME" '[.. | objects | select(.name? == $n and .id? != null) | .id] | unique | if length == 1 then .[0] else empty end')"
+          test -n "$PROJECT_ID" || { echo 'BLOCKED: existing Railway project not uniquely resolved' >&2; exit 1; }
+          railway link --project "$PROJECT_ID" --environment "$ENVIRONMENT_NAME" >/dev/null
+
+          SERVICES_JSON="$(railway service list --json)"
+          SERVICE_ID="$(printf '%s' "$SERVICES_JSON" | jq -r --arg n "$SERVICE_NAME" '[.. | objects | select(.name? == $n and .id? != null) | .id] | unique | if length == 1 then .[0] else empty end')"
+          test -n "$SERVICE_ID" || { echo 'BLOCKED: existing Railway service not uniquely resolved' >&2; exit 1; }
+          railway service "$SERVICE_NAME" >/dev/null
+
+          STATUS_JSON="$(railway status --json)"
+          ENVIRONMENT_ID="$(printf '%s' "$STATUS_JSON" | jq -r --arg n "$ENVIRONMENT_NAME" '[.. | objects | select(.name? == $n and .id? != null) | .id] | unique | if length >= 1 then .[0] else empty end')"
+          test -n "$ENVIRONMENT_ID" || { echo 'BLOCKED: production environment ID not resolved' >&2; exit 1; }
+
+          VOLUMES_JSON="$(railway volume list --json)"
+          printf '%s' "$VOLUMES_JSON" | jq -e '[.. | objects | select((.mountPath? == "/data") or (.mount? == "/data") or (.mount_path? == "/data"))] | length > 0' >/dev/null || { echo 'BLOCKED: existing /data volume not present' >&2; exit 1; }
+
+          VARIABLES_JSON="$(railway variable list --service "$SERVICE_NAME" --json)"
+          printf '%s' "$VARIABLES_JSON" | jq -e '[.. | objects | select(has("SARA_FAILSAFE_MASTER_KEY_HEX") or has("SARA_FAILSAFE_MASTER_KEY_B64") or .name? == "SARA_FAILSAFE_MASTER_KEY_HEX" or .name? == "SARA_FAILSAFE_MASTER_KEY_B64")] | length > 0' >/dev/null || { echo 'BLOCKED: existing encryption/failsafe key unavailable' >&2; exit 1; }
+          railway variable set SARA_DATA_DIR=/data --skip-deploys --service "$SERVICE_NAME" >/dev/null
+
+          DEPLOYMENTS_JSON="$(railway deployment list --service "$SERVICE_NAME" --limit 1 --json)"
+          EXPECTED_DEPLOYMENT_ID="$(printf '%s' "$DEPLOYMENTS_JSON" | jq -r 'if type == "array" and length > 0 then .[0].id // empty elif type == "object" then .id // empty else empty end')"
+          test -n "$EXPECTED_DEPLOYMENT_ID" || { echo 'BLOCKED: current deployment ID unavailable' >&2; exit 1; }
+
+          IDEM_KEY="release-${TARGET_COMMIT}"
+          RESERVATION_PATH=".sara-upload/idempotency/${IDEM_KEY}.json"
+          CHECK_URL="https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/${RESERVATION_PATH}?ref=repair/control-plane-20260904"
+          CODE="$(curl -sS -o /tmp/reservation-existing.json -w '%{http_code}' -H "Authorization: Bearer ${GH_CONTROL_TOKEN}" -H 'Accept: application/vnd.github+json' "$CHECK_URL")"
+          if [ "$CODE" = 200 ]; then
+            echo 'BLOCKED: durable deployment reservation already exists; automatic retry refused' >&2
+            cat /tmp/reservation-existing.json | jq -r '.name // "reservation-present"' >&2 || true
+            exit 1
+          fi
+          test "$CODE" = 404 || { echo "BLOCKED: could not verify durable idempotency state (HTTP $CODE)" >&2; exit 1; }
+
+          RESERVATION="$(jq -cn --arg status RESERVED --arg commit "$TARGET_COMMIT" --arg project "$PROJECT_ID" --arg service "$SERVICE_ID" --arg environment "$ENVIRONMENT_ID" --arg expected "$EXPECTED_DEPLOYMENT_ID" '{status:$status,commit_sha:$commit,project_id:$project,service_id:$service,environment_id:$environment,expected_current_deployment_id:$expected}')"
+          CONTENT="$(printf '%s\n' "$RESERVATION" | base64 -w0)"
+          CREATE_BODY="$(jq -cn --arg message "Reserve Railway deployment ${IDEM_KEY}" --arg content "$CONTENT" --arg branch repair/control-plane-20260904 '{message:$message,content:$content,branch:$branch}')"
+          CREATE_CODE="$(curl -sS -o /tmp/reservation-created.json -w '%{http_code}' -X PUT -H "Authorization: Bearer ${GH_CONTROL_TOKEN}" -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json' "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/${RESERVATION_PATH}" -d "$CREATE_BODY")"
+          test "$CREATE_CODE" = 201 || { echo "BLOCKED: durable idempotency reservation failed (HTTP $CREATE_CODE)" >&2; exit 1; }
+          RESERVATION_SHA="$(jq -r '.content.sha' /tmp/reservation-created.json)"
+          test -n "$RESERVATION_SHA"
+
+          SRC_AUTH="$(openssl rand -hex 32)"
+          RW_AUTH="$(openssl rand -hex 32)"
+          export SARA_SOURCE_CONTROL_AUTH_TOKEN="$SRC_AUTH"
+          export SARA_GITHUB_CONTROL_TOKEN="$GH_CONTROL_TOKEN"
+          export SARA_RAILWAY_CONTROL_AUTH_TOKEN="$RW_AUTH"
+          export SARA_RAILWAY_API_TOKEN="$TOKEN"
+          export SARA_RAILWAY_PROJECT_ID="$PROJECT_ID"
+          export SARA_RAILWAY_SERVICE_ID="$SERVICE_ID"
+          export SARA_RAILWAY_ENVIRONMENT_ID="$ENVIRONMENT_ID"
+          export SARA_DATA_DIR="$RUNNER_TEMP/sara-control-ledger"
+          mkdir -p "$SARA_DATA_DIR"
+          export TARGET_COMMIT EXPECTED_DEPLOYMENT_ID IDEM_KEY SRC_AUTH RW_AUTH
+
+          set +e
+          python - <<'PY' >/tmp/deploy-result.json 2>/tmp/deploy-error.txt
+          import json, os, sys
+          from app.control_plane import SourceControlBridge, RailwayControlBridge, SubmissionUnverified
+          try:
+              source = SourceControlBridge.from_env()
+              source.verify_commit(os.environ['SRC_AUTH'], os.environ['TARGET_COMMIT'])
+              railway = RailwayControlBridge.from_env()
+              result = railway.deploy_exact_commit(
+                  auth_token=os.environ['RW_AUTH'],
+                  commit_sha=os.environ['TARGET_COMMIT'],
+                  expected_current_deployment_id=os.environ['EXPECTED_DEPLOYMENT_ID'],
+                  idempotency_key=os.environ['IDEM_KEY'],
+              )
+              print(json.dumps(result, sort_keys=True))
+          except SubmissionUnverified as exc:
+              print('SUBMISSION_UNVERIFIED:' + str(exc), file=sys.stderr)
+              sys.exit(42)
+          except Exception as exc:
+              print(type(exc).__name__ + ':' + str(exc), file=sys.stderr)
+              sys.exit(1)
+          PY
+          BRIDGE_RC=$?
+          set -e
+
+          if [ "$BRIDGE_RC" -eq 0 ]; then
+            FINAL_STATUS=COMPLETED
+            DEPLOYMENT_ID="$(jq -r '.deployment_id' /tmp/deploy-result.json)"
+            test -n "$DEPLOYMENT_ID"
+          elif [ "$BRIDGE_RC" -eq 42 ]; then
+            FINAL_STATUS=SUBMISSION_UNVERIFIED
+            DEPLOYMENT_ID=''
+          else
+            FINAL_STATUS=REJECTED
+            DEPLOYMENT_ID=''
+          fi
+
+          FINAL="$(jq -cn --arg status "$FINAL_STATUS" --arg commit "$TARGET_COMMIT" --arg project "$PROJECT_ID" --arg service "$SERVICE_ID" --arg environment "$ENVIRONMENT_ID" --arg expected "$EXPECTED_DEPLOYMENT_ID" --arg deployment "$DEPLOYMENT_ID" '{status:$status,commit_sha:$commit,project_id:$project,service_id:$service,environment_id:$environment,expected_current_deployment_id:$expected,deployment_id:($deployment|select(length>0))}')"
+          FINAL_CONTENT="$(printf '%s\n' "$FINAL" | base64 -w0)"
+          UPDATE_BODY="$(jq -cn --arg message "Finalize Railway deployment ${IDEM_KEY}: ${FINAL_STATUS}" --arg content "$FINAL_CONTENT" --arg branch repair/control-plane-20260904 --arg sha "$RESERVATION_SHA" '{message:$message,content:$content,branch:$branch,sha:$sha}')"
+          UPDATE_CODE="$(curl -sS -o /tmp/reservation-final.json -w '%{http_code}' -X PUT -H "Authorization: Bearer ${GH_CONTROL_TOKEN}" -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/json' "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/${RESERVATION_PATH}" -d "$UPDATE_BODY")"
+          test "$UPDATE_CODE" = 200 || { echo "BLOCKED: terminal idempotency state persistence failed (HTTP $UPDATE_CODE)" >&2; exit 1; }
+
+          if [ "$FINAL_STATUS" != COMPLETED ]; then
+            cat /tmp/deploy-error.txt >&2 || true
+            echo "BLOCKED: Railway mutation status ${FINAL_STATUS}; no automatic retry" >&2
+            exit 1
+          fi
+
+          echo "deployment_id=$DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
+          echo "project_id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
+          echo "service_id=$SERVICE_ID" >> "$GITHUB_OUTPUT"
+          echo "environment_id=$ENVIRONMENT_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Verify deployed commit live
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOYMENT_ID='${{ steps.submit.outputs.deployment_id }}'
+          test -n "$DEPLOYMENT_ID"
+          STATUS=UNKNOWN
+          for i in $(seq 1 90); do
+            LIST="$(railway deployment list --service "$SERVICE_NAME" --limit 10 --json)"
+            STATUS="$(printf '%s' "$LIST" | jq -r --arg id "$DEPLOYMENT_ID" '[.. | objects | select(.id? == $id) | .status // .state // empty] | first // "UNKNOWN"' | tr '[:lower:]' '[:upper:]')"
+            case "$STATUS" in
+              SUCCESS) break ;;
+              FAILED|CRASHED|REMOVED) echo "BLOCKED: deployment ended ${STATUS}" >&2; exit 1 ;;
+            esac
+            sleep 4
+          done
+          test "$STATUS" = SUCCESS || { echo 'BLOCKED: deployment did not reach SUCCESS' >&2; exit 1; }
+
+          curl -fsS --max-time 15 "$BASE_URL/health/live" >/tmp/live.json
+          curl -fsS --max-time 15 "$BASE_URL/health/ready" >/tmp/ready.json
+          curl -fsS --max-time 15 "$BASE_URL/health/production-acceptance" >/tmp/acceptance.json
+          jq -e '.production_accepted == true' /tmp/acceptance.json >/dev/null
+          echo "PRODUCTION_DEPLOYMENT_ID=$DEPLOYMENT_ID" >> "$GITHUB_STEP_SUMMARY"
+          echo "PRODUCTION_COMMIT=$TARGET_COMMIT" >> "$GITHUB_STEP_SUMMARY"
+          echo "PRODUCTION_URL=$BASE_URL" >> "$GITHUB_STEP_SUMMARY"
+          echo 'PRODUCTION_ACCEPTANCE=PASS' >> "$GITHUB_STEP_SUMMARY"
