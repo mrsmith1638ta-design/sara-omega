@@ -12,6 +12,7 @@ def test_production_app_exposes_user_identity_routes():
         "/oauth/token",
         "/oauth/revoke",
         "/oauth/status",
+        "/gpt/user/gateway",
     }
     enterprise_paths = {getattr(route, "path", "") for route in enterprise_router.routes}
     app_paths = {getattr(route, "path", "") for route in main.app.routes}
