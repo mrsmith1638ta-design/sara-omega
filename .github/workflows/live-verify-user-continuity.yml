@@ -70,7 +70,7 @@ jobs:
           grep -q 'Create My SARA Account' "$work/enroll.html"
           echo 'enrollment_route reachable=true'
 
-          code="$(curl --silent --show-error --connect-timeout 15 --max-time 45 -o "$work/user-gateway.json" -w '%{http_code}' -H 'Content-Type: application/json' --data '{"operation":"memory_status"}' "$base/gpt/user/gateway')"
+          code="$(curl --silent --show-error --connect-timeout 15 --max-time 45 -o "$work/user-gateway.json" -w '%{http_code}' -H 'Content-Type: application/json' --data '{"operation":"memory_status"}' "$base/gpt/user/gateway")"
           echo "/gpt/user/gateway unauthenticated HTTP $code"
           test "$code" = '401'
           echo 'oauth_user_gateway fail_closed_without_auth=true'
