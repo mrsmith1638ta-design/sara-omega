@@ -55,13 +55,28 @@ def _decode_key_material() -> bytes | None:
     return None
 
 
+def derive_secret_key(context: str, *, required: bool = True) -> bytes | None:
+    """Derive a domain-separated 32-byte secret from SARA's configured root key material."""
+    material = _decode_key_material()
+    if material is None:
+        if required:
+            raise MemoryKeyError("encrypted_memory_key_not_configured")
+        return None
+    normalized = context.strip()
+    if not normalized or len(normalized) > 128:
+        raise MemoryKeyError("invalid_secret_key_context")
+    return hashlib.sha256(
+        f"SARA-OMEGA:secret:{normalized}:v1\0".encode("utf-8") + material
+    ).digest()
+
+
 def _derive_memory_key(required: bool) -> bytes | None:
     material = _decode_key_material()
     if material is None:
         if required:
             raise MemoryKeyError("encrypted_memory_key_not_configured")
         return None
-    # Domain-separate memory encryption even when the fail-safe master key is reused.
+    # Keep the deployed conversation-memory key derivation stable for restart compatibility.
     return hashlib.sha256(b"SARA-OMEGA:encrypted-memory:v1\0" + material).digest()
 
 
@@ -151,15 +166,37 @@ class EncryptedStateStore:
         except Exception as exc:
             raise MemoryStoreError("encrypted_state_authentication_failed") from exc
 
+    def delete_json(self, scope: str, record_key: str) -> None:
+        key_hash = self._key_hash(scope, record_key)
+        try:
+            with closing(self._connect()) as conn:
+                with conn:
+                    conn.execute(
+                        f"DELETE FROM {self.TABLE} WHERE scope=? AND record_key_hash=?",
+                        (scope, key_hash),
+                    )
+        except sqlite3.Error as exc:
+            raise MemoryStoreError("encrypted_state_delete_failed") from exc
+
 
 class ConversationMemory:
-    """Durable encrypted conversation history with restart recovery."""
+    """Durable encrypted conversation history with restart and user continuity recovery."""
 
     SCOPE = "conversation-v1"
+    USER_SCOPE = "conversation-user-v1"
+    USER_INDEX_SCOPE = "conversation-user-index-v1"
+    USER_CONTINUITY_SCOPE = "conversation-user-continuity-v1"
 
-    def __init__(self, store: EncryptedStateStore, *, max_messages: int = 1000):
+    def __init__(
+        self,
+        store: EncryptedStateStore,
+        *,
+        max_messages: int = 1000,
+        continuity_max_items: int = 50,
+    ):
         self.store = store
         self.max_messages = max(1, int(max_messages))
+        self.continuity_max_items = max(1, int(continuity_max_items))
 
     @classmethod
     def from_env(cls, *, required: bool = True) -> "ConversationMemory | None":
@@ -167,20 +204,34 @@ class ConversationMemory:
         if store is None:
             return None
         max_messages = int(os.getenv("SARA_MEMORY_MAX_MESSAGES", "1000"))
-        return cls(store, max_messages=max_messages)
+        continuity_max_items = int(os.getenv("SARA_MEMORY_CONTINUITY_MAX_ITEMS", "50"))
+        return cls(
+            store,
+            max_messages=max_messages,
+            continuity_max_items=continuity_max_items,
+        )
 
-    def save(self, session_id: str, messages: list[dict[str, str]]) -> None:
-        if not session_id:
-            raise MemoryStoreError("session_id_required")
-        bounded = messages[-self.max_messages :]
-        self.store.save_json(self.SCOPE, session_id, bounded)
+    @staticmethod
+    def _validate_user_uuid(user_uuid: str) -> str:
+        if not isinstance(user_uuid, str) or not user_uuid or len(user_uuid) > 64:
+            raise MemoryStoreError("user_uuid_required")
+        try:
+            parsed = uuid.UUID(user_uuid)
+        except (ValueError, AttributeError) as exc:
+            raise MemoryStoreError("user_uuid_invalid") from exc
+        canonical = str(parsed)
+        if canonical != user_uuid.lower():
+            raise MemoryStoreError("user_uuid_invalid")
+        return canonical
 
-    def load(self, session_id: str) -> list[dict[str, str]]:
-        if not session_id:
+    @staticmethod
+    def _validate_session_id(session_id: str) -> str:
+        if not isinstance(session_id, str) or not session_id or len(session_id) > 256:
             raise MemoryStoreError("session_id_required")
-        value = self.store.load_json(self.SCOPE, session_id)
-        if value is None:
-            return []
+        return session_id
+
+    @staticmethod
+    def _validate_messages(value: Any) -> list[dict[str, str]]:
         if not isinstance(value, list):
             raise MemoryStoreError("conversation_schema_invalid")
         messages: list[dict[str, str]] = []
@@ -193,6 +244,134 @@ class ConversationMemory:
                 raise MemoryStoreError("conversation_schema_invalid")
             messages.append({"role": role, "content": content})
         return messages
+
+    def save(self, session_id: str, messages: list[dict[str, str]]) -> None:
+        if not session_id:
+            raise MemoryStoreError("session_id_required")
+        bounded = self._validate_messages(messages)[-self.max_messages :]
+        self.store.save_json(self.SCOPE, session_id, bounded)
+
+    def load(self, session_id: str) -> list[dict[str, str]]:
+        if not session_id:
+            raise MemoryStoreError("session_id_required")
+        value = self.store.load_json(self.SCOPE, session_id)
+        if value is None:
+            return []
+        return self._validate_messages(value)
+
+    @staticmethod
+    def _thread_key(user_uuid: str, session_id: str) -> str:
+        return f"{user_uuid}\0{session_id}"
+
+    @staticmethod
+    def _user_key(user_uuid: str) -> str:
+        return f"{user_uuid}\0state"
+
+    def _load_thread_index(self, user_uuid: str) -> list[str]:
+        raw = self.store.load_json(self.USER_INDEX_SCOPE, self._user_key(user_uuid))
+        if raw is None:
+            return []
+        if not isinstance(raw, list) or any(not isinstance(item, str) or not item for item in raw):
+            raise MemoryStoreError("conversation_user_index_schema_invalid")
+        return raw[-self.continuity_max_items :]
+
+    def _save_thread_index(self, user_uuid: str, session_ids: list[str]) -> list[str]:
+        unique: list[str] = []
+        for session_id in session_ids:
+            if session_id in unique:
+                unique.remove(session_id)
+            unique.append(session_id)
+        evicted = unique[:-self.continuity_max_items]
+        bounded = unique[-self.continuity_max_items :]
+        self.store.save_json(self.USER_INDEX_SCOPE, self._user_key(user_uuid), bounded)
+        for session_id in evicted:
+            self.store.delete_json(self.USER_SCOPE, self._thread_key(user_uuid, session_id))
+        return bounded
+
+    def save_for_user(
+        self,
+        user_uuid: str,
+        session_id: str,
+        messages: list[dict[str, str]],
+    ) -> None:
+        user_uuid = self._validate_user_uuid(user_uuid)
+        session_id = self._validate_session_id(session_id)
+        bounded = self._validate_messages(messages)[-self.max_messages :]
+        self.store.save_json(self.USER_SCOPE, self._thread_key(user_uuid, session_id), bounded)
+        index = self._load_thread_index(user_uuid)
+        self._save_thread_index(user_uuid, [*index, session_id])
+
+    def load_for_user(self, user_uuid: str, session_id: str) -> list[dict[str, str]]:
+        user_uuid = self._validate_user_uuid(user_uuid)
+        session_id = self._validate_session_id(session_id)
+        value = self.store.load_json(self.USER_SCOPE, self._thread_key(user_uuid, session_id))
+        if value is None:
+            return []
+        return self._validate_messages(value)
+
+    def list_user_threads(self, user_uuid: str, limit: int = 20) -> list[dict[str, str]]:
+        user_uuid = self._validate_user_uuid(user_uuid)
+        bounded_limit = max(1, min(int(limit), self.continuity_max_items))
+        index = self._load_thread_index(user_uuid)[-bounded_limit:]
+        return [{"session_id": session_id} for session_id in index]
+
+    def load_user_continuity(self, user_uuid: str) -> dict[str, Any]:
+        user_uuid = self._validate_user_uuid(user_uuid)
+        raw = self.store.load_json(self.USER_CONTINUITY_SCOPE, self._user_key(user_uuid))
+        if raw is None:
+            return {"thread_count": 0, "threads": []}
+        if not isinstance(raw, dict):
+            raise MemoryStoreError("conversation_user_continuity_schema_invalid")
+        threads = raw.get("threads")
+        if not isinstance(threads, list):
+            raise MemoryStoreError("conversation_user_continuity_schema_invalid")
+        validated: list[dict[str, Any]] = []
+        for item in threads[-self.continuity_max_items :]:
+            if not isinstance(item, dict):
+                raise MemoryStoreError("conversation_user_continuity_schema_invalid")
+            session_id = item.get("session_id")
+            messages = item.get("messages")
+            if not isinstance(session_id, str) or not isinstance(messages, list):
+                raise MemoryStoreError("conversation_user_continuity_schema_invalid")
+            validated_messages = self._validate_messages(messages)
+            validated.append({"session_id": session_id, "messages": validated_messages})
+        return {"thread_count": len(validated), "threads": validated}
+
+    def update_user_continuity(
+        self,
+        user_uuid: str,
+        *,
+        session_id: str,
+        messages: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        user_uuid = self._validate_user_uuid(user_uuid)
+        session_id = self._validate_session_id(session_id)
+        validated_messages = self._validate_messages(messages)
+        index = self._save_thread_index(user_uuid, [*self._load_thread_index(user_uuid), session_id])
+        previous = self.load_user_continuity(user_uuid)
+        by_session = {
+            str(item["session_id"]): item
+            for item in previous.get("threads", [])
+            if isinstance(item, dict) and isinstance(item.get("session_id"), str)
+        }
+        # Continuity is deterministic and bounded: retain only recent transcript snippets.
+        snippets = [
+            {"role": item["role"], "content": item["content"][:500]}
+            for item in validated_messages[-6:]
+        ]
+        by_session[session_id] = {"session_id": session_id, "messages": snippets}
+        threads = [by_session[item] for item in index if item in by_session]
+        continuity = {"thread_count": len(threads), "threads": threads}
+        self.store.save_json(self.USER_CONTINUITY_SCOPE, self._user_key(user_uuid), continuity)
+        return continuity
+
+    def forget_user(self, user_uuid: str) -> None:
+        user_uuid = self._validate_user_uuid(user_uuid)
+        index = self._load_thread_index(user_uuid)
+        for session_id in index:
+            self.store.delete_json(self.USER_SCOPE, self._thread_key(user_uuid, session_id))
+        self.store.delete_json(self.USER_INDEX_SCOPE, self._user_key(user_uuid))
+        self.store.delete_json(self.USER_CONTINUITY_SCOPE, self._user_key(user_uuid))
 
 
 class DecisionLedger:
