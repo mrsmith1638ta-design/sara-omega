@@ -1,0 +1,12 @@
+{
+  "status": "RESERVED",
+  "commit_sha": "db9a80fe21fe77244a602b09dca1260316ae4e3b",
+  "tested_tree_sha": "80e8cb27bf599cdc682786912c5d523dfbe7474c",
+  "project_id": "d231d279-92f3-435d-a1d6-c38849b6bfc8",
+  "service_id": "c876b916-8089-470f-b655-4c9a8d957f52",
+  "environment_id": "502fe307-8e47-41a7-9a83-525a61929670",
+  "expected_current_deployment_id": "78fa1fd2-5940-4780-88ab-7b93e3c6268e",
+  "mutation": "exact_commit_deploy",
+  "retry_policy": "NO_AUTOMATIC_RETRY_ON_UNCERTAIN_SUBMISSION",
+  "reserved_at": "2026-09-04T23:09:00-04:00"
+}
