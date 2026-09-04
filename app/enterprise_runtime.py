@@ -24,10 +24,10 @@ from .titan import (
     TitanEngine,
     VoiceEventRequest,
 )
+from .user_gateway import router as user_gateway_router
 from .user_identity_http import router as user_identity_router
 
 router = APIRouter()
-router.include_router(user_identity_router)
 runtime_assurance = RuntimeAssuranceEngine()
 module_awareness = ModuleAwarenessEngine()
 titan = TitanEngine(module_awareness)
@@ -279,3 +279,9 @@ async def titan_apex_execute_gate(request: ExecuteGateRequest):
 @router.post("/titan/apex/sovereignty/sweep")
 async def titan_sovereignty_sweep(request: SovereigntySweepRequest):
     return titan.sovereignty_sweep(request)
+
+
+# Compose user-facing routers only after all runtime routes are registered. This
+# prevents later router composition from obscuring enrollment/OAuth/user-memory paths.
+router.include_router(user_identity_router)
+router.include_router(user_gateway_router)
