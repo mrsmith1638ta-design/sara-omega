@@ -19,12 +19,14 @@ jobs:
           set -euo pipefail
           BASE='https://sara-omega-production.up.railway.app'
           for path in /health/live /health/ready /health/production-acceptance; do
-            code="$(curl -sS --max-time 20 -o "/tmp$(echo "$path" | tr '/' '_').json" -w '%{http_code}' "$BASE$path")"
+            name="$(echo "$path" | sed 's#^/##; s#/#_#g')"
+            out="/tmp/${name}.json"
+            code="$(curl -sS --max-time 20 -o "$out" -w '%{http_code}' "$BASE$path")"
             echo "$path HTTP $code"
-            cat "/tmp$(echo "$path" | tr '/' '_').json"
+            cat "$out"
             echo
             test "$code" = 200
           done
-          jq -e '.alive == true' /tmp_health_live.json >/dev/null
-          jq -e '.ready == true' /tmp_health_ready.json >/dev/null
-          jq -e '.production_accepted == true' /tmp_health_production-acceptance.json >/dev/null
+          jq -e '.alive == true' /tmp/health_live.json >/dev/null
+          jq -e '.ready == true' /tmp/health_ready.json >/dev/null
+          jq -e '.production_accepted == true' /tmp/health_production-acceptance.json >/dev/null
