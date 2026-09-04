@@ -1,0 +1,85 @@
+name: SARA control-plane commit gate
+
+on:
+  push:
+    branches: [repair/control-plane-20260904]
+    paths:
+      - '.sara-upload/COMMIT'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sara-control-plane-commit-gate
+  cancel-in-progress: false
+
+env:
+  EXPECTED_MAIN_SHA: f23fb4e08e12f92b1f3c8d37e561aef49dd935d6
+  PATCH_SHA256: aaeb2e7e86a32111e25a8aa8fb826e0a0528cc578607d864b39277458d5ead1b
+
+jobs:
+  commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify sealed repair and canonical main
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .sara-upload/part-* | base64 -d > /tmp/sara-repair.diff
+          echo "${PATCH_SHA256}  /tmp/sara-repair.diff" | sha256sum -c -
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "$EXPECTED_MAIN_SHA"
+          git checkout --detach origin/main
+          git apply --check /tmp/sara-repair.diff
+          git apply /tmp/sara-repair.diff
+          mapfile -t changed < <(git diff --name-only | sort)
+          expected=(
+            app/control_plane.py
+            app/memory.py
+            app/module_awareness.py
+            main.py
+            sara_production_bootstrap.py
+            tests/test_no_start_cost_gate.py
+            tests/test_privileged_control_plane.py
+            tests/test_secure_continuity.py
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          diff -u <(printf '%s\n' "${expected_sorted[@]}") <(printf '%s\n' "${changed[@]}")
+          git diff --check
+
+      - name: Verify repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet -r requirements.txt pytest
+          pytest -q
+          python -m py_compile app/control_plane.py app/memory.py app/module_awareness.py main.py sara_production_bootstrap.py
+          python - <<'PY'
+          import re, subprocess, sys
+          text=subprocess.check_output(['git','diff'], text=True)
+          patterns=[
+            r'(?i)(api[_-]?key|token|secret|password)\s*[=:]\s*["\'][A-Za-z0-9_\-./+=]{24,}["\']',
+            r'gh[pousr]_[A-Za-z0-9]{30,}',
+            r'sk-[A-Za-z0-9_-]{24,}',
+          ]
+          if any(re.search(p,text) for p in patterns):
+              print('BLOCKED: secret pattern in diff', file=sys.stderr); sys.exit(1)
+          print('secret-scan: PASS')
+          PY
+
+      - name: Create one production source commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'mrsmith1638ta-design'
+          git config user.email 'mrsmith1638t.a@gmail.com'
+          git add app/control_plane.py app/memory.py app/module_awareness.py main.py sara_production_bootstrap.py tests/test_no_start_cost_gate.py tests/test_privileged_control_plane.py tests/test_secure_continuity.py
+          git diff --cached --check
+          git commit -m 'Harden SARA OMEGA privileged controls and durable continuity'
+          test "$(git rev-parse HEAD^1)" = "$EXPECTED_MAIN_SHA"
+          git push origin HEAD:main
+          echo "COMMIT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
