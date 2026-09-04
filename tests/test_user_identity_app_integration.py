@@ -2,12 +2,18 @@ from __future__ import annotations
 
 
 def test_production_app_exposes_user_identity_routes():
+    from app.enterprise_runtime import router as enterprise_router
     import main
 
-    paths = {getattr(route, "path", "") for route in main.app.routes}
-    assert "/admin/enrollment/invitations" in paths
-    assert "/enroll/{invite_token}" in paths
-    assert "/oauth/authorize" in paths
-    assert "/oauth/token" in paths
-    assert "/oauth/revoke" in paths
-    assert "/oauth/status" in paths
+    expected = {
+        "/admin/enrollment/invitations",
+        "/enroll/{invite_token}",
+        "/oauth/authorize",
+        "/oauth/token",
+        "/oauth/revoke",
+        "/oauth/status",
+    }
+    enterprise_paths = {getattr(route, "path", "") for route in enterprise_router.routes}
+    app_paths = {getattr(route, "path", "") for route in main.app.routes}
+    assert expected.issubset(enterprise_paths)
+    assert expected.issubset(app_paths)
