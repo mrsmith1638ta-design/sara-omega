@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: SARA-OMEGA V3.2.1 Runtime and Governed Action Gateway
   version: 3.2.1
-  description: One governed ChatGPT Action path into the live Railway SARA-OMEGA runtime for assurance, module truth, concentration control, Hawkins Chaos, TITAN health, fail-closed solving, and sanitized Context.dev authorization state.
+  description: Governed ChatGPT Action access to the live Railway SARA-OMEGA runtime, including OAuth-bound personal continuity, assurance, module truth, concentration control, Hawkins Chaos, TITAN health, fail-closed solving, and sanitized Context.dev authorization state.
 servers:
   - url: https://sara-omega-production.up.railway.app
 paths:
@@ -103,8 +103,8 @@ paths:
   /gpt/action/gateway:
     post:
       operationId: saraOmegaGovernedGateway
-      summary: Route a governed SARA operation through Railway
-      description: Uses Railway V3.2.1 auth, fail-safe readiness, audit receipts, module awareness, concentration control, runtime assurance, Hawkins Chaos, and TITAN status.
+      summary: Route a non-personal governed SARA operation through Railway
+      description: Compatibility gateway for shared owner/action/test credentials. Personal cross-chat memory is not exposed here; use the OAuth user gateway for personal continuity.
       security:
         - bearerAuth: []
       requestBody:
@@ -129,6 +129,35 @@ paths:
           description: SARA action gateway daily request limit reached
         '503':
           description: Runtime is fail-closed or a required assurance component is unavailable
+  /gpt/user/gateway:
+    post:
+      operationId: saraOmegaUserGateway
+      summary: Use SARA with OAuth-bound personal continuity
+      description: OAuth-only personal gateway. The authenticated SARA user identity owns encrypted continuity across separate GPT conversations. Shared GPT Action, test, owner, source-control, and Railway-control credentials do not grant personal-memory authority through this endpoint.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaraOmegaUserGatewayRequest'
+      responses:
+        '200':
+          description: Governed user result or personal-memory response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request or missing explicit confirmation for memory deletion
+        '401':
+          description: Missing, invalid, expired, or revoked SARA OAuth access token
+        '403':
+          description: Required OAuth scope is not present
+        '503':
+          description: Identity persistence, encrypted memory, or fail-safe checkpointing is unavailable
 components:
   securitySchemes:
     bearerAuth:
@@ -190,3 +219,40 @@ components:
         session_id:
           type: string
           description: Optional stable session id for rate-limit grouping.
+    SaraOmegaUserGatewayRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - operation
+      properties:
+        operation:
+          type: string
+          description: Selects the OAuth-authenticated personal SARA operation.
+          enum:
+            - solve
+            - memory_status
+            - memory_recall
+            - memory_forget
+        query:
+          type: string
+          maxLength: 5000
+          description: User request for a governed solve operation.
+        objective:
+          type: string
+          maxLength: 2000
+          description: Optional target outcome for a solve operation.
+        requested_action:
+          type: string
+          maxLength: 1000
+          description: Optional action intent checked by SARA governance.
+        context:
+          type: object
+          additionalProperties: true
+          description: Non-secret user context. For memory_forget, context.confirm must be exactly true.
+        council:
+          type: boolean
+          description: Optional request for SARA council routing.
+        session_id:
+          type: string
+          maxLength: 256
+          description: The session id is a conversation thread identifier only; the authenticated SARA OAuth user identity owns cross-chat continuity.
