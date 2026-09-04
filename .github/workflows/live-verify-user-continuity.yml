@@ -1,0 +1,76 @@
+name: SARA user continuity live verification
+
+on:
+  push:
+    branches:
+      - feature/user-continuity-oauth-20260904
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe live SARA production
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://sara-omega-production.up.railway.app'
+          work="$RUNNER_TEMP/sara-live"
+          mkdir -p "$work"
+
+          probe_get() {
+            local path="$1" out="$2" expected="$3"
+            code="$(curl --fail-with-body --silent --show-error --connect-timeout 15 --max-time 45 -o "$out" -w '%{http_code}' "$base$path")"
+            echo "$path HTTP $code"
+            test "$code" = "$expected"
+          }
+
+          probe_get '/health/live' "$work/live.json" 200
+          python - <<'PY' "$work/live.json"
+          import json,sys
+          v=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert v.get('alive') is True, v
+          print('health_live alive=true')
+          PY
+
+          probe_get '/health/ready' "$work/ready.json" 200
+          python - <<'PY' "$work/ready.json"
+          import json,sys
+          v=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert v.get('ready') is True, v
+          print('health_ready ready=true')
+          PY
+
+          probe_get '/health/production-acceptance' "$work/acceptance.json" 200
+          python - <<'PY' "$work/acceptance.json"
+          import json,sys
+          v=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert v.get('production_accepted') is True, v
+          assert v.get('persistence_status') == 'PROVEN', v
+          assert v.get('chain_valid') is True, v
+          print('production_accepted=true persistence_status=PROVEN chain_valid=true')
+          PY
+
+          probe_get '/oauth/status' "$work/oauth.json" 200
+          python - <<'PY' "$work/oauth.json"
+          import json,sys
+          v=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert v.get('status') == 'CONFIGURATION_REQUIRED', v
+          assert v.get('configured') is False, v
+          assert v.get('client_id_configured') is True, v
+          assert v.get('client_secret_configured') is True, v
+          assert v.get('redirect_uris_configured') is False, v
+          print('oauth_status=CONFIGURATION_REQUIRED callback_unset=true')
+          PY
+
+          probe_get '/enroll/route-probe-token' "$work/enroll.html" 200
+          grep -q 'Create My SARA Account' "$work/enroll.html"
+          echo 'enrollment_route reachable=true'
+
+          code="$(curl --silent --show-error --connect-timeout 15 --max-time 45 -o "$work/user-gateway.json" -w '%{http_code}' -H 'Content-Type: application/json' --data '{"operation":"memory_status"}' "$base/gpt/user/gateway')"
+          echo "/gpt/user/gateway unauthenticated HTTP $code"
+          test "$code" = '401'
+          echo 'oauth_user_gateway fail_closed_without_auth=true'
