@@ -215,19 +215,15 @@ class UserIdentityStore:
     def _verify_password_hash(self, password: str, encoded: str) -> bool:
         try:
             parts = encoded.split("$")
-            if len(parts) != 8 or parts[0] != "scrypt" or parts[1] != "v=1":
+            if len(parts) != 7 or parts[0] != "scrypt" or parts[1] != "v=1":
                 return False
             n = int(parts[2].split("=", 1)[1])
             r = int(parts[3].split("=", 1)[1])
             p = int(parts[4].split("=", 1)[1])
             salt = _b64decode(parts[5])
-            expected = _b64decode(parts[6]) if parts[7] == "" else _b64decode(parts[7])
+            expected = _b64decode(parts[6])
         except (ValueError, IndexError, TypeError):
             return False
-        # Backward-compatible parser for the exact format emitted above.
-        if parts[7] != "":
-            salt = _b64decode(parts[5])
-            expected = _b64decode(parts[6])
         if n != self.SCRYPT_N or r != self.SCRYPT_R or p != self.SCRYPT_P:
             return False
         try:
