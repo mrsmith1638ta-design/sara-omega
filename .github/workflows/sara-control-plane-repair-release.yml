@@ -1,0 +1,324 @@
+name: SARA control-plane repair release
+
+on:
+  push:
+    branches: [repair/control-plane-20260904]
+    paths:
+      - '.sara-upload/READY'
+
+permissions:
+  contents: write
+
+env:
+  EXPECTED_MAIN_SHA: f23fb4e08e12f92b1f3c8d37e561aef49dd935d6
+  PATCH_SHA256: aaeb2e7e86a32111e25a8aa8fb826e0a0528cc578607d864b39277458d5ead1b
+  PROJECT_NAME: SARA-OMEGA-V3.2.1
+  SERVICE_NAME: sara-omega
+  ENVIRONMENT_NAME: production
+
+jobs:
+  verify-commit-deploy:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: sara-control-plane-repair-release
+      cancel-in-progress: false
+    env:
+      RAILWAY_ACCOUNT_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+      RAILWAY_LEGACY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct and verify sealed patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .sara-upload/part-* | base64 -d > /tmp/sara-repair.diff
+          echo "${PATCH_SHA256}  /tmp/sara-repair.diff" | sha256sum -c -
+          cp /tmp/sara-repair.diff /tmp/sara-repair-verified.diff
+
+      - name: Verify canonical main and apply once
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          ACTUAL_MAIN_SHA="$(git rev-parse origin/main)"
+          test "$ACTUAL_MAIN_SHA" = "$EXPECTED_MAIN_SHA" || {
+            echo "BLOCKED: main moved from $EXPECTED_MAIN_SHA to $ACTUAL_MAIN_SHA" >&2
+            exit 1
+          }
+          git checkout --detach origin/main
+          git apply --check /tmp/sara-repair-verified.diff
+          git apply /tmp/sara-repair-verified.diff
+          mapfile -t changed < <(git diff --name-only | sort)
+          expected=(
+            app/control_plane.py
+            app/memory.py
+            app/module_awareness.py
+            main.py
+            sara_production_bootstrap.py
+            tests/test_no_start_cost_gate.py
+            tests/test_privileged_control_plane.py
+            tests/test_secure_continuity.py
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          diff -u <(printf '%s\n' "${expected_sorted[@]}") <(printf '%s\n' "${changed[@]}")
+          git diff --check
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+
+      - name: Full local verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest -q
+          python -m py_compile app/control_plane.py app/memory.py app/module_awareness.py main.py sara_production_bootstrap.py
+          python - <<'PY'
+          import re, subprocess, sys
+          diff = subprocess.check_output(['git','diff','--cached'], text=True) if subprocess.run(['git','diff','--cached','--quiet']).returncode else ''
+          work = subprocess.check_output(['git','diff'], text=True)
+          text = diff + work
+          patterns = [
+              r'(?i)(api[_-]?key|token|secret|password)\s*[=:]\s*["\'][A-Za-z0-9_\-./+=]{24,}["\']',
+              r'gh[pousr]_[A-Za-z0-9]{30,}',
+              r'sk-[A-Za-z0-9_-]{24,}',
+          ]
+          for p in patterns:
+              if re.search(p, text):
+                  print('BLOCKED: high-confidence secret pattern found in diff', file=sys.stderr)
+                  sys.exit(1)
+          print('secret-scan: PASS')
+          PY
+
+      - name: Create exactly one main repair commit
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'mrsmith1638ta-design'
+          git config user.email 'mrsmith1638t.a@gmail.com'
+          git add app/control_plane.py app/memory.py app/module_awareness.py main.py sara_production_bootstrap.py tests/test_no_start_cost_gate.py tests/test_privileged_control_plane.py tests/test_secure_continuity.py
+          git diff --cached --check
+          git commit -m 'Harden SARA OMEGA privileged controls and durable continuity'
+          COMMIT_SHA="$(git rev-parse HEAD)"
+          echo "sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
+          test "$(git rev-parse HEAD^1)" = "$EXPECTED_MAIN_SHA"
+          git push origin HEAD:main
+
+      - name: Resolve existing Railway target only
+        id: railway
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${RAILWAY_ACCOUNT_TOKEN:-}" ]; then
+            export RAILWAY_API_TOKEN="$RAILWAY_ACCOUNT_TOKEN"
+          elif [ -n "${RAILWAY_LEGACY_TOKEN:-}" ]; then
+            export RAILWAY_API_TOKEN="$RAILWAY_LEGACY_TOKEN"
+          else
+            echo 'BLOCKED: Railway credential unavailable' >&2
+            exit 1
+          fi
+          unset RAILWAY_ACCOUNT_TOKEN RAILWAY_LEGACY_TOKEN
+          npm install --global @railway/cli
+          railway whoami >/dev/null
+          PROJECTS_JSON="$(railway list --json)"
+          export PROJECTS_JSON PROJECT_NAME
+          PROJECT_ID="$(python - <<'PY'
+          import json, os, sys
+          data=json.loads(os.environ['PROJECTS_JSON']); name=os.environ['PROJECT_NAME']; found=[]
+          def walk(v):
+              if isinstance(v,dict):
+                  if v.get('name') == name and isinstance(v.get('id'),str): found.append(v['id'])
+                  for x in v.values(): walk(x)
+              elif isinstance(v,list):
+                  for x in v: walk(x)
+          walk(data)
+          if len(set(found)) != 1: sys.exit(1)
+          print(found[0])
+          PY
+          )" || { echo 'BLOCKED: expected existing Railway project was not uniquely resolved; no resource will be created' >&2; exit 1; }
+          railway link --project "$PROJECT_ID" --environment "$ENVIRONMENT_NAME" >/dev/null
+          SERVICES_JSON="$(railway service list --json)"
+          export SERVICES_JSON SERVICE_NAME
+          SERVICE_ID="$(python - <<'PY'
+          import json, os, sys
+          data=json.loads(os.environ['SERVICES_JSON']); name=os.environ['SERVICE_NAME']; found=[]
+          def walk(v):
+              if isinstance(v,dict):
+                  if v.get('name') == name and isinstance(v.get('id'),str): found.append(v['id'])
+                  for x in v.values(): walk(x)
+              elif isinstance(v,list):
+                  for x in v: walk(x)
+          walk(data)
+          if len(set(found)) != 1: sys.exit(1)
+          print(found[0])
+          PY
+          )" || { echo 'BLOCKED: expected existing Railway service was not uniquely resolved; no resource will be created' >&2; exit 1; }
+          railway service "$SERVICE_NAME" >/dev/null
+          railway environment "$ENVIRONMENT_NAME" >/dev/null
+          STATUS_JSON="$(railway status --json)"
+          export STATUS_JSON ENVIRONMENT_NAME
+          ENVIRONMENT_ID="$(python - <<'PY'
+          import json, os, sys
+          data=json.loads(os.environ['STATUS_JSON']); name=os.environ['ENVIRONMENT_NAME']; found=[]
+          def walk(v):
+              if isinstance(v,dict):
+                  if v.get('name') == name and isinstance(v.get('id'),str): found.append(v['id'])
+                  if isinstance(v.get('environment'),dict):
+                      e=v['environment']
+                      if e.get('name') == name and isinstance(e.get('id'),str): found.append(e['id'])
+                  for x in v.values(): walk(x)
+              elif isinstance(v,list):
+                  for x in v: walk(x)
+          walk(data)
+          vals=list(dict.fromkeys(found))
+          if len(vals) != 1: sys.exit(1)
+          print(vals[0])
+          PY
+          )" || { echo 'BLOCKED: production environment id not uniquely resolved' >&2; exit 1; }
+          VOLUMES_JSON="$(railway volume list --json)"
+          export VOLUMES_JSON
+          python - <<'PY'
+          import json, os, sys
+          data=json.loads(os.environ['VOLUMES_JSON'])
+          def has_data(v):
+              if isinstance(v,dict):
+                  if any(str(k).lower().replace('_','') in {'mount','mountpath'} and x == '/data' for k,x in v.items()): return True
+                  return any(has_data(x) for x in v.values())
+              if isinstance(v,list): return any(has_data(x) for x in v)
+              return False
+          sys.exit(0 if has_data(data) else 1)
+          PY
+          || { echo 'BLOCKED: existing persistent /data volume not found; refusing to create one' >&2; exit 1; }
+          VARS_JSON="$(railway variable list --service "$SERVICE_NAME" --json)"
+          export VARS_JSON
+          python - <<'PY'
+          import json, os, sys
+          data=json.loads(os.environ['VARS_JSON'])
+          text=json.dumps(data)
+          sys.exit(0 if ('SARA_FAILSAFE_MASTER_KEY_HEX' in text or 'SARA_FAILSAFE_MASTER_KEY_B64' in text) else 1)
+          PY
+          || { echo 'BLOCKED: existing fail-safe key not found; refusing to generate a replacement key' >&2; exit 1; }
+          railway variable set SARA_DATA_DIR=/data --skip-deploys --service "$SERVICE_NAME" >/dev/null
+          DEP_JSON="$(railway deployment list --service "$SERVICE_NAME" --limit 1 --json)"
+          export DEP_JSON
+          EXPECTED_DEPLOYMENT_ID="$(python - <<'PY'
+          import json, os, sys
+          d=json.loads(os.environ['DEP_JSON']); x=d[0] if isinstance(d,list) and d else d
+          val=x.get('id') if isinstance(x,dict) else None
+          if not isinstance(val,str) or not val: sys.exit(1)
+          print(val)
+          PY
+          )"
+          echo "project_id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
+          echo "service_id=$SERVICE_ID" >> "$GITHUB_OUTPUT"
+          echo "environment_id=$ENVIRONMENT_ID" >> "$GITHUB_OUTPUT"
+          echo "expected_deployment_id=$EXPECTED_DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
+          echo "RAILWAY_API_TOKEN=$RAILWAY_API_TOKEN" >> "$GITHUB_ENV"
+
+      - name: Verify source commit and deploy exact commit through hardened bridges
+        id: deploy
+        env:
+          SARA_DATA_DIR: ${{ runner.temp }}/sara-control-ledger
+          SARA_SOURCE_CONTROL_AUTH_TOKEN: source-${{ github.run_id }}-${{ github.run_attempt }}
+          SARA_GITHUB_CONTROL_TOKEN: ${{ github.token }}
+          SARA_RAILWAY_CONTROL_AUTH_TOKEN: railway-${{ github.run_id }}-${{ github.run_attempt }}
+          SARA_RAILWAY_API_TOKEN: ${{ env.RAILWAY_API_TOKEN }}
+          SARA_RAILWAY_PROJECT_ID: ${{ steps.railway.outputs.project_id }}
+          SARA_RAILWAY_SERVICE_ID: ${{ steps.railway.outputs.service_id }}
+          SARA_RAILWAY_ENVIRONMENT_ID: ${{ steps.railway.outputs.environment_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMMIT_SHA='${{ steps.commit.outputs.sha }}'
+          EXPECTED_DEPLOYMENT='${{ steps.railway.outputs.expected_deployment_id }}'
+          export COMMIT_SHA EXPECTED_DEPLOYMENT
+          python - <<'PY'
+          import os
+          from app.control_plane import SourceControlBridge, RailwayControlBridge
+          sha=os.environ['COMMIT_SHA']
+          source=SourceControlBridge.from_env()
+          verified=source.verify_commit(os.environ['SARA_SOURCE_CONTROL_AUTH_TOKEN'], sha)
+          assert verified['repository'] == 'mrsmith1638ta-design/sara-omega'
+          assert verified['commit_sha'] == sha
+          railway=RailwayControlBridge.from_env()
+          result=railway.deploy_exact_commit(
+              auth_token=os.environ['SARA_RAILWAY_CONTROL_AUTH_TOKEN'],
+              commit_sha=sha,
+              expected_current_deployment_id=os.environ['EXPECTED_DEPLOYMENT'],
+              idempotency_key='release-' + sha,
+          )
+          print('DEPLOYMENT_ID=' + result['deployment_id'])
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as f:
+              f.write('deployment_id=' + result['deployment_id'] + '\n')
+          PY
+
+      - name: Wait for exact deployment and verify live acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          SERVICE_NAME="$SERVICE_NAME"
+          TARGET_DEPLOYMENT='${{ steps.deploy.outputs.deployment_id }}'
+          TARGET_COMMIT='${{ steps.commit.outputs.sha }}'
+          for _ in $(seq 1 90); do
+            DEP_JSON="$(railway deployment list --service "$SERVICE_NAME" --limit 10 --json)"
+            export DEP_JSON TARGET_DEPLOYMENT
+            STATUS="$(python - <<'PY'
+          import json, os
+          d=json.loads(os.environ['DEP_JSON']); target=os.environ['TARGET_DEPLOYMENT']
+          for x in d if isinstance(d,list) else [d]:
+              if isinstance(x,dict) and x.get('id') == target:
+                  print(str(x.get('status') or x.get('state') or 'UNKNOWN').upper()); break
+          else: print('UNKNOWN')
+          PY
+          )"
+            case "$STATUS" in SUCCESS) break;; FAILED|CRASHED|REMOVED) echo "Deployment $TARGET_DEPLOYMENT failed: $STATUS" >&2; exit 1;; esac
+            sleep 4
+          done
+          test "$STATUS" = SUCCESS
+          DOMAIN_JSON="$(railway domain list --service "$SERVICE_NAME" --json)"
+          export DOMAIN_JSON
+          DOMAIN="$(python - <<'PY'
+          import json, os, re, sys
+          d=json.loads(os.environ['DOMAIN_JSON']); vals=[]
+          def walk(v):
+              if isinstance(v,dict):
+                  for k,x in v.items():
+                      if isinstance(x,str) and any(t in str(k).lower() for t in ('domain','url','host')): vals.append(x)
+                      walk(x)
+              elif isinstance(v,list):
+                  for x in v: walk(x)
+          walk(d)
+          for v in vals:
+              v=re.sub(r'^https?://','',v).strip('/ ')
+              if v.endswith('.up.railway.app'): print(v); sys.exit(0)
+          sys.exit(1)
+          PY
+          )" || { echo 'BLOCKED: existing Railway public domain not found; refusing to create one' >&2; exit 1; }
+          BASE_URL="https://$DOMAIN"
+          for _ in $(seq 1 60); do
+            if curl -fsS --max-time 10 "$BASE_URL/health/live" >/dev/null 2>&1; then break; fi
+            sleep 4
+          done
+          curl -fsS --max-time 15 "$BASE_URL/health/live"
+          curl -fsS --max-time 15 "$BASE_URL/health/ready"
+          ACCEPTANCE="$(curl -fsS --max-time 15 "$BASE_URL/health/production-acceptance")"
+          export ACCEPTANCE TARGET_COMMIT TARGET_DEPLOYMENT BASE_URL
+          python - <<'PY'
+          import json, os, sys
+          a=json.loads(os.environ['ACCEPTANCE'])
+          if not a.get('production_accepted'):
+              print(json.dumps(a, indent=2, sort_keys=True), file=sys.stderr)
+              sys.exit(1)
+          print(json.dumps({
+              'status':'PASS',
+              'commit':os.environ['TARGET_COMMIT'],
+              'deployment_id':os.environ['TARGET_DEPLOYMENT'],
+              'public_url':os.environ['BASE_URL'],
+              'production_accepted':True,
+          }, sort_keys=True))
+          PY
