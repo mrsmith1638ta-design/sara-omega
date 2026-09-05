@@ -33,9 +33,9 @@ except Exception as exc:
     OPENAI_IMPORT_ERROR = type(exc).__name__
 
 from context_dev_resolver import (
-    PENDING_CONTEXT_DEV_LICENSE,
     RequestContext,
     evaluate_request,
+    load_context_dev_license,
 )
 from sara_v32_hardening import BackupError, FailSafeEvent, RuntimeFailSafe
 from app.enterprise_runtime import (
@@ -181,7 +181,7 @@ AUDIT: List[Dict] = []
 RATE_LIMIT = defaultdict(list)
 startup_time = time.time()
 FAILSAFE = RuntimeFailSafe.from_env()
-CONTEXT_DEV_LICENSE = PENDING_CONTEXT_DEV_LICENSE
+CONTEXT_DEV_LICENSE = load_context_dev_license()
 CONVERSATION_MEMORY = ConversationMemory.from_env(required=False)
 
 
@@ -615,7 +615,7 @@ def health():
             "google_cloud": ENABLE_GCP,
             "openai": bool(OPENAI_API_KEY),
             "sios_configured": bool(SIOS_BASE_URL),
-            "context_dev_commercial_runtime": False,
+            "context_dev_commercial_runtime": CONTEXT_DEV_LICENSE.commercial_runtime_authorized(),
         },
         "features": {
             "voice": ENABLE_GCP,
