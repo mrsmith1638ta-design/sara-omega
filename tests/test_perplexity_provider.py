@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 
 import httpx
@@ -59,8 +60,11 @@ def _provider(monkeypatch) -> PerplexitySpecialist:
     return PerplexitySpecialist()
 
 
-@pytest.mark.asyncio
-async def test_perplexity_returns_answer_citations_and_search_results_without_secret(monkeypatch):
+def _run(provider: PerplexitySpecialist):
+    return asyncio.run(provider.run(_assignment()))
+
+
+def test_perplexity_returns_answer_citations_and_search_results_without_secret(monkeypatch):
     provider = _provider(monkeypatch)
     _FakeClient.error = None
     _FakeClient.response = _FakeResponse(
@@ -79,7 +83,7 @@ async def test_perplexity_returns_answer_citations_and_search_results_without_se
         }
     )
 
-    result = await provider.run(_assignment())
+    result = _run(provider)
 
     assert result.success is True
     assert result.answer == "Grounded answer"
@@ -88,7 +92,6 @@ async def test_perplexity_returns_answer_citations_and_search_results_without_se
     assert SECRET not in json.dumps(result.model_dump())
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("status_code", "expected_error"),
     [
@@ -99,38 +102,36 @@ async def test_perplexity_returns_answer_citations_and_search_results_without_se
         (503, "perplexity_upstream_error"),
     ],
 )
-async def test_perplexity_http_failures_are_safely_mapped(monkeypatch, status_code, expected_error):
+def test_perplexity_http_failures_are_safely_mapped(monkeypatch, status_code, expected_error):
     provider = _provider(monkeypatch)
     _FakeClient.error = None
     _FakeClient.response = _FakeResponse(status_code=status_code, payload={"error": SECRET})
 
-    result = await provider.run(_assignment())
+    result = _run(provider)
 
     assert result.success is False
     assert result.error == expected_error
     assert SECRET not in json.dumps(result.model_dump())
 
 
-@pytest.mark.asyncio
-async def test_perplexity_timeout_is_redacted(monkeypatch):
+def test_perplexity_timeout_is_redacted(monkeypatch):
     provider = _provider(monkeypatch)
     _FakeClient.response = None
     _FakeClient.error = httpx.TimeoutException(f"timeout carrying {SECRET}")
 
-    result = await provider.run(_assignment())
+    result = _run(provider)
 
     assert result.success is False
     assert result.error == "perplexity_timeout"
     assert SECRET not in json.dumps(result.model_dump())
 
 
-@pytest.mark.asyncio
-async def test_perplexity_malformed_response_is_safely_mapped(monkeypatch):
+def test_perplexity_malformed_response_is_safely_mapped(monkeypatch):
     provider = _provider(monkeypatch)
     _FakeClient.error = None
     _FakeClient.response = _FakeResponse(payload={"model": "sonar-pro", "choices": []})
 
-    result = await provider.run(_assignment())
+    result = _run(provider)
 
     assert result.success is False
     assert result.error == "perplexity_malformed_response"
