@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from fastapi import FastAPI
@@ -40,6 +42,22 @@ def _create_account(store: UserIdentityStore):
         password_confirm="Correct-Horse-7!Battery",
     )
     return account
+
+
+def _hidden_value(page: str, name: str) -> str:
+    match = re.search(rf'name="{re.escape(name)}" value="([^"]+)"', page)
+    assert match is not None, f"missing hidden field {name}"
+    return match.group(1)
+
+
+def _oauth_params() -> dict[str, str]:
+    return {
+        "client_id": "sara-custom-gpt",
+        "redirect_uri": "https://chat.openai.com/aip/g-test/oauth/callback",
+        "response_type": "code",
+        "scope": "sara.memory sara.solve",
+        "state": "opaque-state-123",
+    }
 
 
 def test_owner_can_create_invitation_but_shared_tokens_cannot(monkeypatch, tmp_path):
@@ -153,18 +171,29 @@ def test_enrollment_page_has_requested_fields_and_creates_permanent_id(monkeypat
     assert "https://chatgpt.com/g/g-test-sara" in success.text
 
 
-def test_oauth_authorize_login_redirect_preserves_state(monkeypatch, tmp_path):
+def test_oauth_authorize_requires_nonempty_state(monkeypatch, tmp_path, caplog):
+    _set_env(monkeypatch, tmp_path)
+    client = _client()
+    params = _oauth_params()
+    params["state"] = ""
+
+    response = client.get("/oauth/authorize", params=params)
+
+    assert response.status_code == 400
+    assert "OAuth authorization request rejected" in response.text
+    rendered_logs = caplog.text
+    assert "oauth_authorize_rejected" in rendered_logs
+    assert "missing_state" in rendered_logs
+    assert "https://chat.openai.com/aip/g-test/oauth/callback" not in rendered_logs
+    assert "sara-custom-gpt" not in rendered_logs
+
+
+def test_oauth_login_requires_explicit_consent_and_denial_preserves_state(monkeypatch, tmp_path):
     _set_env(monkeypatch, tmp_path)
     store = UserIdentityStore.from_env(required=True)
     account = _create_account(store)
     client = _client()
-    params = {
-        "client_id": "sara-custom-gpt",
-        "redirect_uri": "https://chat.openai.com/aip/g-test/oauth/callback",
-        "response_type": "code",
-        "scope": "sara.memory sara.solve",
-        "state": "opaque-state-123",
-    }
+    params = _oauth_params()
 
     login = client.get("/oauth/authorize", params=params)
     assert login.status_code == 200
@@ -172,16 +201,60 @@ def test_oauth_authorize_login_redirect_preserves_state(monkeypatch, tmp_path):
     assert 'name="password"' in login.text
     assert "opaque-state-123" in login.text
 
-    result = client.post(
+    authenticated = client.post(
         "/oauth/authorize",
         data={**params, "public_user_id": account.public_user_id, "password": "Correct-Horse-7!Battery"},
         follow_redirects=False,
     )
-    assert result.status_code in {302, 303}
-    location = result.headers["location"]
-    assert location.startswith("https://chat.openai.com/aip/g-test/oauth/callback?")
-    assert "code=" in location
-    assert "state=opaque-state-123" in location
+    assert authenticated.status_code == 200
+    assert "Authorize SARA-OMEGA" in authenticated.text
+    assert "code=" not in authenticated.text
+    assert "Correct-Horse-7!Battery" not in authenticated.text
+    authorization_session = _hidden_value(authenticated.text, "authorization_session")
+
+    denied = client.post(
+        "/oauth/consent",
+        data={"authorization_session": authorization_session, "decision": "deny"},
+        follow_redirects=False,
+    )
+    assert denied.status_code in {302, 303}
+    query = parse_qs(urlsplit(denied.headers["location"]).query)
+    assert query["error"] == ["access_denied"]
+    assert query["state"] == ["opaque-state-123"]
+    assert "code" not in query
+
+
+def test_oauth_consent_approval_returns_one_code_and_original_state(monkeypatch, tmp_path):
+    _set_env(monkeypatch, tmp_path)
+    store = UserIdentityStore.from_env(required=True)
+    account = _create_account(store)
+    client = _client()
+    params = _oauth_params()
+
+    authenticated = client.post(
+        "/oauth/authorize",
+        data={**params, "public_user_id": account.public_user_id, "password": "Correct-Horse-7!Battery"},
+        follow_redirects=False,
+    )
+    assert authenticated.status_code == 200
+    authorization_session = _hidden_value(authenticated.text, "authorization_session")
+
+    approved = client.post(
+        "/oauth/consent",
+        data={"authorization_session": authorization_session, "decision": "approve"},
+        follow_redirects=False,
+    )
+    assert approved.status_code in {302, 303}
+    query = parse_qs(urlsplit(approved.headers["location"]).query)
+    assert len(query["code"]) == 1
+    assert query["state"] == ["opaque-state-123"]
+
+    replay = client.post(
+        "/oauth/consent",
+        data={"authorization_session": authorization_session, "decision": "approve"},
+        follow_redirects=False,
+    )
+    assert replay.status_code == 400
 
 
 def test_oauth_token_exchange_uses_no_store_headers(monkeypatch, tmp_path):
