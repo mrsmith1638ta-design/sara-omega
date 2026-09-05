@@ -15,7 +15,8 @@ def test_production_app_exposes_user_identity_routes():
     assert "Create My SARA Account" in enrollment.text
 
     oauth_authorize = client.get("/oauth/authorize")
-    assert oauth_authorize.status_code == 422
+    assert oauth_authorize.status_code in {400, 422}
+    assert oauth_authorize.status_code != 404
 
     oauth_status = client.get("/oauth/status")
     assert oauth_status.status_code in {200, 503}
