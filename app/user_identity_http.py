@@ -54,6 +54,28 @@ def _require_owner(request: Request) -> None:
         raise HTTPException(status_code=403, detail="Owner only")
 
 
+def _require_enrollment_bootstrap(request: Request) -> None:
+    bootstrap = os.getenv("SARA_ENROLLMENT_BOOTSTRAP_TOKEN", "").strip()
+    if not bootstrap:
+        # Hide the temporary bootstrap surface completely when it is not enabled.
+        raise HTTPException(status_code=404, detail="Not Found")
+    if len(bootstrap) < 32:
+        raise HTTPException(status_code=503, detail="Enrollment bootstrap configuration unavailable")
+
+    owner = os.getenv("OWNER_TOKEN", "")
+    action = os.getenv("GPT_ACTION_TOKEN", "")
+    tester = os.getenv("TEST_TOKEN", "")
+    if any(
+        configured and hmac.compare_digest(bootstrap, configured)
+        for configured in (owner, action, tester)
+    ):
+        raise HTTPException(status_code=503, detail="Enrollment bootstrap configuration unavailable")
+
+    supplied = _bearer_token(request)
+    if not supplied or not hmac.compare_digest(supplied, bootstrap):
+        raise HTTPException(status_code=403, detail="Enrollment bootstrap denied")
+
+
 def _public_base_url(request: Request) -> str:
     configured = os.getenv("SARA_PUBLIC_BASE_URL", "").strip()
     if configured:
@@ -168,6 +190,24 @@ async def create_enrollment_invitation(request: Request):
         "enrollment_url": invitation.enrollment_url,
         "expires_at": invitation.expires_at,
     }
+
+
+@router.post("/admin/enrollment/bootstrap")
+async def create_bootstrap_enrollment_invitation(request: Request):
+    _require_enrollment_bootstrap(request)
+    store = _store()
+    try:
+        invitation = store.create_invitation(base_url=_public_base_url(request))
+    except IdentityStoreError as exc:
+        raise HTTPException(status_code=503, detail="Unable to create enrollment invitation") from exc
+    return JSONResponse(
+        {
+            "enrollment_id": invitation.enrollment_id,
+            "enrollment_url": invitation.enrollment_url,
+            "expires_at": invitation.expires_at,
+        },
+        headers=_NO_STORE_HEADERS,
+    )
 
 
 @router.get("/enroll/{invite_token}")
