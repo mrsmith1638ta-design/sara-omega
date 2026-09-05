@@ -48,3 +48,11 @@ def test_main_exposes_context_dev_state_in_health():
     source = ast.unparse(_functions()["health"])
     assert "context_dev_policy_gate" in source
     assert "CONTEXT_DEV_LICENSE.public_status()" in source
+    assert "CONTEXT_DEV_LICENSE.commercial_runtime_authorized()" in source
+
+
+def test_main_loads_reviewed_context_dev_license_instead_of_pending_constant():
+    module_source = MAIN_PATH.read_text(encoding="utf-8")
+    assert "load_context_dev_license" in module_source
+    assert "CONTEXT_DEV_LICENSE = load_context_dev_license()" in module_source
+    assert "CONTEXT_DEV_LICENSE = PENDING_CONTEXT_DEV_LICENSE" not in module_source
