@@ -68,6 +68,54 @@ def test_owner_can_create_invitation_but_shared_tokens_cannot(monkeypatch, tmp_p
     assert "token" not in payload
 
 
+def test_temporary_bootstrap_invitation_is_disabled_by_default_and_uses_distinct_token(monkeypatch, tmp_path):
+    _set_env(monkeypatch, tmp_path)
+    monkeypatch.delenv("SARA_ENROLLMENT_BOOTSTRAP_TOKEN", raising=False)
+    client = _client()
+
+    disabled = client.post(
+        "/admin/enrollment/bootstrap",
+        headers={"Authorization": "Bearer bootstrap-not-enabled"},
+    )
+    assert disabled.status_code == 404
+
+    bootstrap_token = "bootstrap-token-unique-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    monkeypatch.setenv("SARA_ENROLLMENT_BOOTSTRAP_TOKEN", bootstrap_token)
+
+    denied_owner = client.post(
+        "/admin/enrollment/bootstrap",
+        headers={"Authorization": "Bearer owner-token-unique"},
+    )
+    denied_action = client.post(
+        "/admin/enrollment/bootstrap",
+        headers={"Authorization": "Bearer action-token-unique"},
+    )
+    assert denied_owner.status_code == 403
+    assert denied_action.status_code == 403
+
+    response = client.post(
+        "/admin/enrollment/bootstrap",
+        headers={"Authorization": f"Bearer {bootstrap_token}"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["enrollment_id"] == "SARA-NEW-USER"
+    assert payload["enrollment_url"].startswith("https://sara.example/enroll/")
+    assert "token" not in payload
+    assert bootstrap_token not in response.text
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_temporary_bootstrap_rejects_weak_configured_token(monkeypatch, tmp_path):
+    _set_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("SARA_ENROLLMENT_BOOTSTRAP_TOKEN", "too-short")
+    response = _client().post(
+        "/admin/enrollment/bootstrap",
+        headers={"Authorization": "Bearer too-short"},
+    )
+    assert response.status_code == 503
+
+
 def test_enrollment_page_has_requested_fields_and_creates_permanent_id(monkeypatch, tmp_path):
     _set_env(monkeypatch, tmp_path)
     store = UserIdentityStore.from_env(required=True)
