@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+import context_dev_resolver as resolver
 from context_dev_resolver import (
     AuthorizationState,
     ChangeStream,
@@ -98,3 +99,17 @@ def test_verified_label_without_scoped_evidence_still_blocks_runtime():
     )
     assert state.commercial_runtime_authorized() is False
     assert state.public_status()["monetized_runtime"] == "BLOCKED"
+
+
+def test_reviewed_written_authorization_enables_required_commercial_scope():
+    state = resolver.load_context_dev_license()
+    status = state.public_status()
+
+    assert state.authorization_state is AuthorizationState.VERIFIED
+    assert resolver.REQUIRED_COMMERCIAL_SCOPES.issubset(state.authorized_scopes)
+    assert state.commercial_runtime_authorized() is True
+    assert status["commercial_authorization"] == "VERIFIED"
+    assert status["monetized_runtime"] == "ALLOWED"
+    assert status["production_authorization"] == "SCOPE_VERIFIED"
+    assert status["credentials_configured"] is False
+    assert status["vendor_transport_enabled"] is False
