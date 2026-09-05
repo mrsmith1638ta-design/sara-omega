@@ -1,21 +1,23 @@
 """Fail-closed Context.dev commercial authorization boundary for SARA-OMEGA.
 
 This module intentionally contains no Context.dev credentials or HTTP vendor
-transport. Until reviewed written authorization is recorded, the default state
-prevents monetized, automated, target-unauthorized, and ZDR-sensitive requests
-from advancing to any future Context.dev adapter.
+transport. Commercial authorization is loaded only from reviewed, hash-bound
+repository evidence and fails closed to UNVERIFIED if that evidence is missing,
+malformed, or changed without an updated approval record.
 """
 
 from __future__ import annotations
 
 import hashlib
 import ipaddress
+import json
 import re
 import socket
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -26,6 +28,8 @@ VENDOR = "Context Dev Inc."
 SERVICE = "Context.dev"
 TERMS_VERSION_REVIEWED = "2026-08-20"
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
+REPO_ROOT = Path(__file__).resolve().parent
+AUTHORIZATION_STATE_PATH = REPO_ROOT / "Context.Dev" / "evidence" / "authorization-state.json"
 
 
 class AuthorizationState(str, Enum):
@@ -214,6 +218,95 @@ class VendorLicenseState:
         }
 
 
+def _unverified_license() -> VendorLicenseState:
+    return VendorLicenseState(
+        authorization_state=AuthorizationState.UNVERIFIED,
+        authorized_scopes=frozenset(),
+        stored_terms_hash=None,
+        verified_terms_hash=None,
+        terms_version=TERMS_VERSION_REVIEWED,
+        reviewed_at=None,
+        evidence=(),
+    )
+
+
+def _repository_evidence_path(relative_path: str) -> Path:
+    candidate = (REPO_ROOT / relative_path).resolve()
+    candidate.relative_to(REPO_ROOT)
+    return candidate
+
+
+def _sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def load_context_dev_license(
+    state_path: Path = AUTHORIZATION_STATE_PATH,
+) -> VendorLicenseState:
+    """Load reviewed Context.dev authorization evidence; any defect fails closed."""
+    try:
+        record = json.loads(state_path.read_text(encoding="utf-8"))
+        if record.get("schema_version") != 1:
+            return _unverified_license()
+        if record.get("policy_id") != POLICY_ID:
+            return _unverified_license()
+        if record.get("vendor") != VENDOR or record.get("service") != SERVICE:
+            return _unverified_license()
+        if record.get("authorization_state") != AuthorizationState.VERIFIED.value:
+            return _unverified_license()
+        if record.get("terms_version") != TERMS_VERSION_REVIEWED:
+            return _unverified_license()
+
+        authorization_path = _repository_evidence_path(
+            str(record["authorization_evidence_file"])
+        )
+        terms_path = _repository_evidence_path(str(record["terms_evidence_file"]))
+        authorization_hash = _sha256_file(authorization_path)
+        terms_hash = _sha256_file(terms_path)
+        if authorization_hash != record.get("authorization_evidence_sha256"):
+            return _unverified_license()
+        if terms_hash != record.get("terms_evidence_sha256"):
+            return _unverified_license()
+
+        scopes = frozenset(str(scope) for scope in record.get("authorized_scopes", []))
+        if not REQUIRED_COMMERCIAL_SCOPES.issubset(scopes):
+            return _unverified_license()
+
+        evidence = EvidenceLedgerEntry(
+            vendor=VENDOR,
+            source_url=str(record["source_url"]),
+            document_title=str(record["document_title"]),
+            retrieved_at=str(record["reviewed_at"]),
+            effective_date=str(record["effective_date"]),
+            terms_version=TERMS_VERSION_REVIEWED,
+            sha256_content_hash=authorization_hash,
+            claim=str(record["claim"]),
+            evidence_excerpt_reference=str(record["evidence_excerpt_reference"]),
+            epistemic_classification=EpistemicClassification(
+                str(record["epistemic_classification"])
+            ),
+            authorization_scope=tuple(sorted(scopes)),
+            superseded_by=None,
+            reviewer=str(record["reviewer"]),
+            approval_state=ApprovalState(str(record["approval_state"])),
+        )
+        if evidence.validation_errors():
+            return _unverified_license()
+
+        state = VendorLicenseState(
+            authorization_state=AuthorizationState.VERIFIED,
+            authorized_scopes=scopes,
+            stored_terms_hash=str(record["terms_evidence_sha256"]),
+            verified_terms_hash=terms_hash,
+            terms_version=TERMS_VERSION_REVIEWED,
+            reviewed_at=str(record["reviewed_at"]),
+            evidence=(evidence,),
+        )
+        return state if state.commercial_runtime_authorized() else _unverified_license()
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        return _unverified_license()
+
+
 @dataclass(frozen=True)
 class RequestContext:
     request_id: str
@@ -339,7 +432,7 @@ class ContextDevPolicyDenied(RuntimeError):
 
 
 class GovernedContextDevAdapter:
-    """Future server-side transport boundary; unreachable in pending-MSA state."""
+    """Server-side transport boundary guarded by the commercial resolver."""
 
     def __init__(
         self,

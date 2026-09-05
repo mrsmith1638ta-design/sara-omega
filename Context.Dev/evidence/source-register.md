@@ -8,4 +8,5 @@ Each entry uses the ledger schema in `api-mcp-evidence.md` and includes a SHA-25
 | Pricing | REVIEWED | Cost/plan evidence |
 | Fair Use | REVIEWED | Usage boundaries |
 | API/MCP documentation | REVIEWED | Technical capability evidence |
-| Written authorization/MSA | PENDING | Commercial authorization gate |
+| Written authorization | VERIFIED | Express commercial authorization for the recorded SARA-OMEGA scope |
+| MSA / ZDR entitlement | PENDING | Contract precedence and ZDR entitlement evidence; not required for the already-authorized non-ZDR commercial scope |
