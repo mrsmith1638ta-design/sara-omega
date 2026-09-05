@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "policy_id": "CTX-COMMERCIAL-RESOLVER-001",
+  "vendor": "Context Dev Inc.",
+  "service": "Context.dev",
+  "authorization_state": "VERIFIED",
+  "terms_version": "2026-08-20",
+  "reviewed_at": "2026-09-05T19:32:20Z",
+  "authorization_evidence_file": "Context.Dev/evidence/authorization-response.md",
+  "authorization_evidence_sha256": "9f49fd5405fdc5bdfea8b3a93cf44e7a2940eb357bbe0e692dc8246d7d2f0539",
+  "terms_evidence_file": "Context.Dev/evidence/terms-2026-08-20.md",
+  "terms_evidence_sha256": "f42fe39945324b47d08bee15ae8953accd64a49990e3e99a82941ab1af3d6701",
+  "source_url": "mailto:yahia@context.dev",
+  "document_title": "Context.dev written commercial authorization for SARA-OMEGA",
+  "effective_date": "2026-09-05",
+  "claim": "Express written permission for SARA-OMEGA commercial use under current Context.dev Terms within the recorded scope.",
+  "evidence_excerpt_reference": "authorization-response.md#express-authorization",
+  "epistemic_classification": "VERIFIED",
+  "approval_state": "APPROVED",
+  "reviewer": "SARA-OMEGA owner evidence review",
+  "authorized_scopes": [
+    "commercial_saas",
+    "automated_api_use",
+    "agent_mcp_use",
+    "end_user_triggered_requests",
+    "derived_outputs",
+    "source_citations",
+    "evidence_retention",
+    "reasonable_caching",
+    "monitoring",
+    "commercial_subscription_revenue"
+  ],
+  "provenance": {
+    "source_type": "owner_supplied_vendor_email_screenshot",
+    "sender_display": "Yahia <yahia@context.dev>",
+    "mailbox_header_verified": false,
+    "note": "Direct visual review of owner-supplied screenshot and matching transcription; original vendor-sender message was not independently surfaced by connected Gmail."
+  },
+  "limitations": {
+    "zdr_entitlement": "PENDING_ONE_YEAR_SCALE_COMMITMENT_AND_ENDPOINT_VERIFICATION",
+    "target_site_rights_required": true,
+    "authenticated_content_allowed": false
+  }
+}
