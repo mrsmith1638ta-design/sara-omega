@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import site
 import sqlite3
 import subprocess
 import sys
@@ -14,20 +15,28 @@ def _tool_env(tmp_path: Path) -> dict[str, str]:
     env["SARA_MEMORY_KEY_HEX"] = "61" * 32
     env["SARA_ENROLLMENT_ID"] = "SARA-NEW-USER"
     env["SARA_PUBLIC_BASE_URL"] = "https://sara.example"
+    # Simulate the production container: third-party packages are importable,
+    # but the repository root is not injected through an editable installation.
+    env["PYTHONPATH"] = os.pathsep.join(site.getsitepackages())
     return env
 
 
-def test_first_user_invite_tool_creates_one_durable_invitation_and_is_idempotent(tmp_path: Path):
-    env = _tool_env(tmp_path)
-    tool = Path("tools/create_first_user_invite_once.py")
-
-    first_run = subprocess.run(
-        [sys.executable, str(tool)],
+def _run_tool(tool: Path, env: dict[str, str], cwd: Path):
+    return subprocess.run(
+        [sys.executable, "-S", str(tool)],
+        cwd=cwd,
         env=env,
         text=True,
         capture_output=True,
         check=False,
     )
+
+
+def test_first_user_invite_tool_creates_one_durable_invitation_and_is_idempotent(tmp_path: Path):
+    env = _tool_env(tmp_path)
+    tool = Path("tools/create_first_user_invite_once.py").resolve()
+
+    first_run = _run_tool(tool, env, tmp_path)
     assert first_run.returncode == 0, first_run.stderr
 
     outbox = tmp_path / "sara_first_user_invite.json"
@@ -41,13 +50,7 @@ def test_first_user_invite_tool_creates_one_durable_invitation_and_is_idempotent
     with sqlite3.connect(tmp_path / "sara_identity.db") as conn:
         assert conn.execute("SELECT COUNT(*) FROM enrollment_invites").fetchone()[0] == 1
 
-    second_run = subprocess.run(
-        [sys.executable, str(tool)],
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+    second_run = _run_tool(tool, env, tmp_path)
     assert second_run.returncode == 0, second_run.stderr
     second = json.loads(outbox.read_text(encoding="utf-8"))
     assert second == first
