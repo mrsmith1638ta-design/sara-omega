@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from app.user_identity import OAuthRejected, UserIdentityStore
+from app.oauth_identity import OAuthUserIdentityStore
+from app.user_identity import OAuthRejected
 
 
 CLIENT_ID = "sara-custom-gpt"
@@ -30,7 +31,7 @@ def _set_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SARA_OAUTH_SCOPE", "sara.memory sara.solve")
 
 
-def _account(store: UserIdentityStore):
+def _account(store: OAuthUserIdentityStore):
     invite = store.create_invitation(base_url="https://sara.example", ttl_seconds=3600)
     return store.enroll(
         invite_token=invite.token,
@@ -42,7 +43,7 @@ def _account(store: UserIdentityStore):
 
 def test_pkce_s256_is_enforced_only_when_authorization_code_stores_challenge(monkeypatch, tmp_path):
     _set_env(monkeypatch, tmp_path)
-    store = UserIdentityStore.from_env(required=True)
+    store = OAuthUserIdentityStore.from_env(required=True)
     account = _account(store)
     code = store.issue_authorization_code(
         user_uuid=account.user_uuid,
@@ -74,7 +75,7 @@ def test_pkce_s256_is_enforced_only_when_authorization_code_stores_challenge(mon
 
 def test_confidential_client_code_without_pkce_still_redeems(monkeypatch, tmp_path):
     _set_env(monkeypatch, tmp_path)
-    store = UserIdentityStore.from_env(required=True)
+    store = OAuthUserIdentityStore.from_env(required=True)
     account = _account(store)
     code = store.issue_authorization_code(
         user_uuid=account.user_uuid,
@@ -94,7 +95,7 @@ def test_confidential_client_code_without_pkce_still_redeems(monkeypatch, tmp_pa
 
 def test_invalid_pkce_method_fails_closed_before_code_issuance(monkeypatch, tmp_path):
     _set_env(monkeypatch, tmp_path)
-    store = UserIdentityStore.from_env(required=True)
+    store = OAuthUserIdentityStore.from_env(required=True)
     account = _account(store)
 
     with pytest.raises(OAuthRejected, match="invalid_pkce_method"):
