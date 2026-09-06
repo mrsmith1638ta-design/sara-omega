@@ -69,16 +69,29 @@ def test_oauth_user_cannot_create_owner_enrollment_invitations(monkeypatch, tmp_
     assert response.status_code == 403
 
 
-def test_custom_gpt_schema_uses_oauth_user_gateway_for_personal_memory():
+def test_personal_memory_gateway_is_preserved_but_not_exposed_by_custom_gpt_schema():
     schema = Path("chatgpt-gpt-action.yaml").read_text(encoding="utf-8")
-    assert "/gpt/user/gateway:" in schema
-    assert "saraOmegaUserGateway" in schema
+    oauth_schema = Path("chatgpt-oauth-action.yaml").read_text(encoding="utf-8")
+
+    assert "/gpt/user/gateway:" not in schema
+    assert "saraOmegaUserGateway" not in schema
+    assert "memory_status" not in schema
+    assert "memory_recall" not in schema
+    assert "memory_forget" not in schema
+
+    assert "/gpt/user/gateway:" in oauth_schema
+    assert "saraOmegaUserGateway" in oauth_schema
     for operation in ("solve", "memory_status", "memory_recall", "memory_forget"):
-        assert f"- {operation}" in schema
-    assert "session id is a conversation thread identifier" in schema.lower()
-    assert "SARA_OAUTH_CLIENT_SECRET" not in schema
-    assert "SARA_SOURCE_CONTROL_AUTH_TOKEN" not in schema
-    assert "SARA_RAILWAY_CONTROL_AUTH_TOKEN" not in schema
+        assert f"- {operation}" in oauth_schema
+    assert "conversation thread identifier" in oauth_schema.lower()
+
+    for secret_name in (
+        "SARA_OAUTH_CLIENT_SECRET",
+        "SARA_SOURCE_CONTROL_AUTH_TOKEN",
+        "SARA_RAILWAY_CONTROL_AUTH_TOKEN",
+    ):
+        assert secret_name not in schema
+        assert secret_name not in oauth_schema
 
 
 def test_custom_gpt_schema_does_not_expose_privileged_control_plane():
