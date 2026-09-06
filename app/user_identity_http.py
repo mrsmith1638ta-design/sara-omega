@@ -165,6 +165,60 @@ def _redirect_with_code(redirect_uri: str, *, code: str, state: str) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
 
 
+def _redirect_with_error(redirect_uri: str, *, error: str, state: str) -> str:
+    parsed = urlsplit(redirect_uri)
+    query = list(parse_qsl(parsed.query, keep_blank_values=True))
+    query.append(("error", error))
+    if state:
+        query.append(("state", state))
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
+
+
+# RFC 6749 section 4.1.2.1 error codes for authorization-request failures that
+# are safe to deliver back to the client via redirect. Only failures that are
+# detected *after* client_id and redirect_uri have both been confirmed valid
+# belong here - redirecting on an unverified client_id/redirect_uri would be
+# an open-redirect risk, so those are shown to the resource owner instead.
+_OAUTH_REDIRECT_SAFE_ERRORS = {
+    "oauth_response_type_rejected": "unsupported_response_type",
+    "oauth_scope_rejected": "invalid_scope",
+}
+
+
+def _oauth_configuration_error_detail() -> str:
+    return (
+        "SARA OAuth is not configured on this server. The SARA owner must set "
+        "SARA_OAUTH_CLIENT_ID, SARA_OAUTH_CLIENT_SECRET, and SARA_OAUTH_REDIRECT_URIS "
+        "(and optionally SARA_OAUTH_SCOPE) before any client can authenticate."
+    )
+
+
+def _handle_authorization_request_error(
+    exc: OAuthRejected, *, redirect_uri: str, state: str
+) -> HTTPException | RedirectResponse:
+    """Translate a validate_authorization_request() failure into the correct
+    HTTP behavior, distinguishing server misconfiguration from a bad request
+    from any given client so the real cause is never disguised as invalid
+    user credentials."""
+    if isinstance(exc, OAuthConfigurationError):
+        return HTTPException(status_code=503, detail=_oauth_configuration_error_detail())
+    reason = str(exc)
+    safe_error = _OAUTH_REDIRECT_SAFE_ERRORS.get(reason)
+    if safe_error is not None:
+        return RedirectResponse(
+            _redirect_with_error(redirect_uri, error=safe_error, state=state),
+            status_code=303,
+            headers={"Cache-Control": "no-store"},
+        )
+    if reason == "oauth_redirect_uri_rejected":
+        detail = "This redirect URI is not registered for the requested OAuth client."
+    elif reason == "oauth_client_rejected":
+        detail = "This OAuth client_id is not recognized by SARA."
+    else:
+        detail = "OAuth authorization request rejected."
+    return HTTPException(status_code=400, detail=detail)
+
+
 def _client_credentials(request: Request, form: dict[str, str]) -> tuple[str, str]:
     authorization = request.headers.get("Authorization", "")
     if authorization.startswith("Basic "):
@@ -271,8 +325,11 @@ async def oauth_authorize_page(
             response_type=response_type,
             scope=scope,
         )
-    except (OAuthRejected, OAuthConfigurationError) as exc:
-        raise HTTPException(status_code=400, detail="OAuth authorization request rejected") from exc
+    except OAuthRejected as exc:
+        outcome = _handle_authorization_request_error(exc, redirect_uri=redirect_uri, state=state)
+        if isinstance(outcome, HTTPException):
+            raise outcome
+        return outcome
     return _oauth_login_form(
         client_id=client_id,
         redirect_uri=redirect_uri,
@@ -299,8 +356,11 @@ async def oauth_authorize_login(request: Request):
             response_type=response_type,
             scope=scope,
         )
-    except (OAuthRejected, OAuthConfigurationError) as exc:
-        raise HTTPException(status_code=400, detail="OAuth authorization request rejected") from exc
+    except OAuthRejected as exc:
+        outcome = _handle_authorization_request_error(exc, redirect_uri=redirect_uri, state=state)
+        if isinstance(outcome, HTTPException):
+            raise outcome
+        return outcome
     try:
         account = store.authenticate_for_oauth(form.get("public_user_id", ""), form.get("password", ""))
     except OAuthRejected as exc:
@@ -351,7 +411,7 @@ async def oauth_token(request: Request):
         else:
             raise OAuthRejected("oauth_grant_type_rejected")
     except OAuthConfigurationError as exc:
-        raise HTTPException(status_code=503, detail="SARA OAuth is not configured") from exc
+        raise HTTPException(status_code=503, detail=_oauth_configuration_error_detail()) from exc
     except OAuthRejected:
         return JSONResponse(
             {"error": "invalid_grant"},
@@ -382,7 +442,7 @@ async def oauth_revoke(request: Request):
             client_secret=client_secret,
         )
     except OAuthConfigurationError as exc:
-        raise HTTPException(status_code=503, detail="SARA OAuth is not configured") from exc
+        raise HTTPException(status_code=503, detail=_oauth_configuration_error_detail()) from exc
     except OAuthRejected:
         # OAuth revocation is deliberately non-enumerating.
         pass

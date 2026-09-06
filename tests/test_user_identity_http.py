@@ -184,6 +184,92 @@ def test_oauth_authorize_login_redirect_preserves_state(monkeypatch, tmp_path):
     assert "state=opaque-state-123" in location
 
 
+def test_oauth_authorize_missing_server_configuration_is_not_disguised_as_bad_credentials(
+    monkeypatch, tmp_path
+):
+    # Regression test: production was missing SARA_OAUTH_CLIENT_ID/SECRET/REDIRECT_URIS,
+    # which previously surfaced as the same generic 400 used for a bad request, making it
+    # look like the caller's OAuth request (or even their password) was rejected. It must
+    # instead be an explicit, actionable 503 - regardless of which client is calling.
+    monkeypatch.setenv("SARA_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("SARA_MEMORY_KEY_HEX", "51" * 32)
+    monkeypatch.setenv("SARA_ENROLLMENT_ID", "SARA-NEW-USER")
+    monkeypatch.delenv("SARA_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("SARA_OAUTH_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("SARA_OAUTH_REDIRECT_URIS", raising=False)
+    client = _client()
+
+    response = client.get(
+        "/oauth/authorize",
+        params={
+            "client_id": "any-client-at-all",
+            "redirect_uri": "https://example.com/callback",
+            "response_type": "code",
+        },
+    )
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert "not configured" in detail
+    assert "SARA_OAUTH_CLIENT_ID" in detail
+    assert "SARA_OAUTH_CLIENT_SECRET" in detail
+    assert "SARA_OAUTH_REDIRECT_URIS" in detail
+
+
+def test_oauth_authorize_rejects_unknown_client_and_redirect_uri_without_redirecting(
+    monkeypatch, tmp_path
+):
+    # An unverified client_id or redirect_uri must never be used as a redirect target
+    # (open-redirect risk), so these show a direct error instead of a 303 redirect.
+    _set_env(monkeypatch, tmp_path)
+    client = _client()
+
+    bad_client = client.get(
+        "/oauth/authorize",
+        params={
+            "client_id": "not-the-registered-client",
+            "redirect_uri": "https://chat.openai.com/aip/g-test/oauth/callback",
+            "response_type": "code",
+        },
+    )
+    assert bad_client.status_code == 400
+    assert "client_id" in bad_client.json()["detail"]
+
+    bad_redirect = client.get(
+        "/oauth/authorize",
+        params={
+            "client_id": "sara-custom-gpt",
+            "redirect_uri": "https://not-registered.example/callback",
+            "response_type": "code",
+        },
+    )
+    assert bad_redirect.status_code == 400
+    assert "redirect" in bad_redirect.json()["detail"].lower()
+
+
+def test_oauth_authorize_bad_scope_redirects_back_to_client_with_error(monkeypatch, tmp_path):
+    # Once client_id and redirect_uri are both confirmed valid, spec-compliant OAuth
+    # clients expect authorization errors delivered via redirect, not a raw JSON error.
+    _set_env(monkeypatch, tmp_path)
+    client = _client()
+
+    response = client.get(
+        "/oauth/authorize",
+        params={
+            "client_id": "sara-custom-gpt",
+            "redirect_uri": "https://chat.openai.com/aip/g-test/oauth/callback",
+            "response_type": "code",
+            "scope": "sara.admin",
+            "state": "keep-me",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code in {302, 303}
+    location = response.headers["location"]
+    assert location.startswith("https://chat.openai.com/aip/g-test/oauth/callback?")
+    assert "error=invalid_scope" in location
+    assert "state=keep-me" in location
+
+
 def test_oauth_token_exchange_uses_no_store_headers(monkeypatch, tmp_path):
     _set_env(monkeypatch, tmp_path)
     store = UserIdentityStore.from_env(required=True)
