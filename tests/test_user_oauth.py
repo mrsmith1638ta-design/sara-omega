@@ -224,3 +224,79 @@ def test_oauth_configuration_missing_callback_is_explicitly_not_ready(monkeypatc
     assert status["client_id_configured"] is True
     assert status["client_secret_configured"] is True
     assert status["redirect_uris_configured"] is False
+
+
+def test_multiple_oauth_clients_can_be_registered_via_sara_oauth_clients(monkeypatch, tmp_path):
+    # SARA_OAUTH_CLIENTS lets any number of current and future OAuth clients
+    # authenticate against the same SARA deployment, not just one hardcoded
+    # client_id/secret pair.
+    monkeypatch.setenv("SARA_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("SARA_MEMORY_KEY_HEX", "41" * 32)
+    monkeypatch.setenv("SARA_ENROLLMENT_ID", "SARA-NEW-USER")
+    monkeypatch.delenv("SARA_OAUTH_CLIENT_ID", raising=False)
+    monkeypatch.delenv("SARA_OAUTH_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("SARA_OAUTH_REDIRECT_URIS", raising=False)
+    monkeypatch.setenv(
+        "SARA_OAUTH_CLIENTS",
+        (
+            '[{"client_id": "sara-omega-v321-chatgpt", '
+            '"client_secret": "chatgpt-client-secret-1234567890", '
+            '"redirect_uris": ["https://chat.openai.com/aip/g-test/oauth/callback"], '
+            '"scope": "sara.memory sara.solve"}, '
+            '{"client_id": "sara-second-app", '
+            '"client_secret": "second-app-client-secret-1234567890", '
+            '"redirect_uris": ["https://second.example/oauth/callback"], '
+            '"scope": "sara.solve"}]'
+        ),
+    )
+    store = UserIdentityStore.from_env(required=True)
+
+    status = store.oauth_status()
+    assert status["configured"] is True
+    assert status["registered_client_count"] == 2
+
+    scope_a = store.validate_authorization_request(
+        client_id="sara-omega-v321-chatgpt",
+        redirect_uri="https://chat.openai.com/aip/g-test/oauth/callback",
+        response_type="code",
+        scope="",
+    )
+    assert scope_a == "sara.memory sara.solve"
+
+    scope_b = store.validate_authorization_request(
+        client_id="sara-second-app",
+        redirect_uri="https://second.example/oauth/callback",
+        response_type="code",
+        scope="",
+    )
+    assert scope_b == "sara.solve"
+
+    account = _account(store)
+    code_b = store.issue_authorization_code(
+        user_uuid=account.user_uuid,
+        client_id="sara-second-app",
+        redirect_uri="https://second.example/oauth/callback",
+        scope="sara.solve",
+    )
+    bundle = store.exchange_authorization_code(
+        code=code_b,
+        client_id="sara-second-app",
+        client_secret="second-app-client-secret-1234567890",
+        redirect_uri="https://second.example/oauth/callback",
+    )
+    assert bundle.scope == "sara.solve"
+
+    # The second app's redirect_uri must never work for the first client_id.
+    code_a = store.issue_authorization_code(
+        user_uuid=account.user_uuid,
+        client_id="sara-omega-v321-chatgpt",
+        redirect_uri="https://chat.openai.com/aip/g-test/oauth/callback",
+        scope="sara.memory",
+    )
+    with pytest.raises(OAuthRejected, match="oauth_redirect_uri_rejected"):
+        store.exchange_authorization_code(
+            code=code_a,
+            client_id="sara-omega-v321-chatgpt",
+            client_secret="chatgpt-client-secret-1234567890",
+            redirect_uri="https://second.example/oauth/callback",
+        )

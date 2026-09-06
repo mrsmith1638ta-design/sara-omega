@@ -3,13 +3,14 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 import os
 import re
 import secrets
 import sqlite3
 import uuid
 from contextlib import closing
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -55,7 +56,24 @@ class InvitationRecord:
 
 
 @dataclass(frozen=True)
+class OAuthClientEntry:
+    """A single registered OAuth client. SARA supports any number of these at
+    once (the Custom GPT today, additional/future clients tomorrow) without
+    code changes - see SARA_OAUTH_CLIENTS in oauth_configuration()."""
+
+    client_id: str
+    client_secret: str
+    redirect_uris: tuple[str, ...]
+    scopes: frozenset[str]
+
+
+@dataclass(frozen=True)
 class OAuthConfiguration:
+    # client_id/client_secret/redirect_uris/scopes describe whichever single
+    # client is relevant to the current request (the primary/first registered
+    # client by default, or - once a request names a client_id - the matched
+    # entry from `clients`, see find_client()). `clients` holds the full
+    # registry so SARA is never hard-bound to exactly one client.
     client_id: str
     client_secret: str
     redirect_uris: tuple[str, ...]
@@ -63,6 +81,18 @@ class OAuthConfiguration:
     code_ttl_seconds: int
     access_ttl_seconds: int
     refresh_ttl_seconds: int
+    clients: tuple[OAuthClientEntry, ...] = ()
+
+    def find_client(self, client_id: str) -> "OAuthClientEntry | None":
+        match: OAuthClientEntry | None = None
+        for entry in self.clients:
+            try:
+                found = hmac.compare_digest(entry.client_id, client_id)
+            except TypeError:
+                found = False
+            if found:
+                match = entry
+        return match
 
 
 @dataclass(frozen=True)
@@ -475,11 +505,14 @@ class UserIdentityStore:
         client_secret = bool(os.getenv("SARA_OAUTH_CLIENT_SECRET", "").strip())
         redirect_raw = os.getenv("SARA_OAUTH_REDIRECT_URIS", "").strip()
         redirect_ready = bool(redirect_raw)
+        multi_client_configured = bool(os.getenv("SARA_OAUTH_CLIENTS", "").strip())
         configured = False
-        if client_id and client_secret and redirect_ready:
+        registered_client_count = 0
+        if (client_id and client_secret and redirect_ready) or multi_client_configured:
             try:
-                self.oauth_configuration()
+                config = self.oauth_configuration()
                 configured = True
+                registered_client_count = len(config.clients)
             except OAuthConfigurationError:
                 configured = False
         return {
@@ -488,14 +521,15 @@ class UserIdentityStore:
             "client_id_configured": client_id,
             "client_secret_configured": client_secret,
             "redirect_uris_configured": redirect_ready,
+            "multi_client_configured": multi_client_configured,
+            "registered_client_count": registered_client_count,
         }
 
-    def oauth_configuration(self) -> OAuthConfiguration:
-        client_id = os.getenv("SARA_OAUTH_CLIENT_ID", "").strip()
-        client_secret = os.getenv("SARA_OAUTH_CLIENT_SECRET", "").strip()
-        redirect_raw = os.getenv("SARA_OAUTH_REDIRECT_URIS", "").strip()
-        scope_raw = os.getenv("SARA_OAUTH_SCOPE", "sara.memory sara.solve").strip()
-        if not client_id or not client_secret or not redirect_raw:
+    @staticmethod
+    def _build_client_entry(*, client_id: str, client_secret: str, redirect_raw: str, scope_raw: str) -> OAuthClientEntry:
+        client_id = client_id.strip()
+        client_secret = client_secret.strip()
+        if not client_id or not client_secret or not redirect_raw.strip():
             raise OAuthConfigurationError("oauth_configuration_required")
         if len(client_id) > 256 or len(client_secret) < 20 or len(client_secret) > 512:
             raise OAuthConfigurationError("oauth_client_configuration_invalid")
@@ -505,23 +539,104 @@ class UserIdentityStore:
         scopes = frozenset(item for item in scope_raw.split() if item)
         if not scopes or len(scopes) > 16 or any(len(item) > 128 for item in scopes):
             raise OAuthConfigurationError("oauth_scope_configuration_invalid")
+        return OAuthClientEntry(
+            client_id=client_id, client_secret=client_secret, redirect_uris=redirects, scopes=scopes
+        )
+
+    @classmethod
+    def _parse_oauth_clients_env(cls, raw: str) -> list[OAuthClientEntry]:
+        """Parse SARA_OAUTH_CLIENTS, an optional JSON array letting SARA register
+        any number of OAuth clients (current and future) without a code change:
+        [{"client_id": "...", "client_secret": "...", "redirect_uris": ["https://..."],
+          "scope": "sara.memory sara.solve"}, ...]
+        """
+        try:
+            parsed = json.loads(raw)
+        except ValueError as exc:
+            raise OAuthConfigurationError("oauth_clients_configuration_invalid") from exc
+        if not isinstance(parsed, list) or not parsed or len(parsed) > 64:
+            raise OAuthConfigurationError("oauth_clients_configuration_invalid")
+        entries: list[OAuthClientEntry] = []
+        for item in parsed:
+            if not isinstance(item, dict):
+                raise OAuthConfigurationError("oauth_clients_configuration_invalid")
+            redirect_uris = item.get("redirect_uris")
+            if isinstance(redirect_uris, list):
+                redirect_raw = ",".join(str(v) for v in redirect_uris)
+            elif isinstance(redirect_uris, str):
+                redirect_raw = redirect_uris
+            else:
+                raise OAuthConfigurationError("oauth_clients_configuration_invalid")
+            scope_value = item.get("scope", item.get("scopes", "sara.memory sara.solve"))
+            if isinstance(scope_value, list):
+                scope_raw = " ".join(str(v) for v in scope_value)
+            elif isinstance(scope_value, str):
+                scope_raw = scope_value
+            else:
+                raise OAuthConfigurationError("oauth_clients_configuration_invalid")
+            try:
+                entries.append(
+                    cls._build_client_entry(
+                        client_id=str(item.get("client_id", "")),
+                        client_secret=str(item.get("client_secret", "")),
+                        redirect_raw=redirect_raw,
+                        scope_raw=scope_raw,
+                    )
+                )
+            except TypeError as exc:
+                raise OAuthConfigurationError("oauth_clients_configuration_invalid") from exc
+        return entries
+
+    def oauth_configuration(self) -> OAuthConfiguration:
+        entries: list[OAuthClientEntry] = []
+        multi_raw = os.getenv("SARA_OAUTH_CLIENTS", "").strip()
+        if multi_raw:
+            entries.extend(self._parse_oauth_clients_env(multi_raw))
+
+        legacy_client_id = os.getenv("SARA_OAUTH_CLIENT_ID", "").strip()
+        legacy_client_secret = os.getenv("SARA_OAUTH_CLIENT_SECRET", "").strip()
+        legacy_redirect_raw = os.getenv("SARA_OAUTH_REDIRECT_URIS", "").strip()
+        legacy_scope_raw = os.getenv("SARA_OAUTH_SCOPE", "sara.memory sara.solve").strip()
+        if legacy_client_id or legacy_client_secret or legacy_redirect_raw:
+            entries.append(
+                self._build_client_entry(
+                    client_id=legacy_client_id,
+                    client_secret=legacy_client_secret,
+                    redirect_raw=legacy_redirect_raw,
+                    scope_raw=legacy_scope_raw,
+                )
+            )
+
+        if not entries:
+            raise OAuthConfigurationError("oauth_configuration_required")
+        client_ids = [entry.client_id for entry in entries]
+        if len(set(client_ids)) != len(client_ids):
+            raise OAuthConfigurationError("oauth_clients_configuration_invalid")
+
+        primary = entries[0]
         return OAuthConfiguration(
-            client_id=client_id,
-            client_secret=client_secret,
-            redirect_uris=redirects,
-            scopes=scopes,
+            client_id=primary.client_id,
+            client_secret=primary.client_secret,
+            redirect_uris=primary.redirect_uris,
+            scopes=primary.scopes,
             code_ttl_seconds=_positive_int_env("SARA_OAUTH_CODE_TTL_SECONDS", 300),
             access_ttl_seconds=_positive_int_env("SARA_OAUTH_ACCESS_TTL_SECONDS", 3600),
             refresh_ttl_seconds=_positive_int_env("SARA_OAUTH_REFRESH_TTL_SECONDS", 2592000),
+            clients=tuple(entries),
         )
 
     def _validate_client_credentials(self, client_id: str, client_secret: str) -> OAuthConfiguration:
         config = self.oauth_configuration()
-        if not hmac.compare_digest(client_id, config.client_id) or not hmac.compare_digest(
-            client_secret, config.client_secret
-        ):
+        entry = config.find_client(client_id)
+        if entry is None or not hmac.compare_digest(client_secret, entry.client_secret):
             raise OAuthRejected("oauth_client_rejected")
-        return config
+        return replace(
+            config,
+            client_id=entry.client_id,
+            client_secret=entry.client_secret,
+            redirect_uris=entry.redirect_uris,
+            scopes=entry.scopes,
+        )
 
     def validate_authorization_request(
         self,
@@ -532,8 +647,16 @@ class UserIdentityStore:
         scope: str,
     ) -> str:
         config = self.oauth_configuration()
-        if not hmac.compare_digest(client_id, config.client_id):
+        entry = config.find_client(client_id)
+        if entry is None:
             raise OAuthRejected("oauth_client_rejected")
+        config = replace(
+            config,
+            client_id=entry.client_id,
+            client_secret=entry.client_secret,
+            redirect_uris=entry.redirect_uris,
+            scopes=entry.scopes,
+        )
         if redirect_uri not in config.redirect_uris:
             raise OAuthRejected("oauth_redirect_uri_rejected")
         if response_type != "code":
