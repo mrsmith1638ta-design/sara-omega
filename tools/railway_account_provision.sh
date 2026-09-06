@@ -181,6 +181,25 @@ railway variable set \
   SARA_RELEASE_VERSION=3.2.1 \
   --skip-deploys --service "$SERVICE_NAME" >/dev/null
 
+# Perplexity is an optional research specialist (app/providers/perplexity.py).
+# Its absence must never block the fail-safe/OWNER_TOKEN acceptance gate above,
+# so this step only logs and continues rather than calling fail().
+log "Checking Perplexity research provider configuration"
+if has_variable PERPLEXITY_API_KEY; then
+  log "Existing PERPLEXITY_API_KEY retained"
+elif [ -n "${PERPLEXITY_API_KEY:-}" ]; then
+  printf '%s' "$PERPLEXITY_API_KEY" | railway variable set PERPLEXITY_API_KEY --stdin --skip-deploys --service "$SERVICE_NAME" >/dev/null
+  log "Installed PERPLEXITY_API_KEY from provided secret without printing it"
+else
+  log "PERPLEXITY_API_KEY not supplied; Perplexity specialist will remain disabled until it is configured"
+fi
+unset PERPLEXITY_API_KEY
+
+if [ -n "${PERPLEXITY_MODEL:-}" ] && ! has_variable PERPLEXITY_MODEL; then
+  railway variable set PERPLEXITY_MODEL="$PERPLEXITY_MODEL" --skip-deploys --service "$SERVICE_NAME" >/dev/null
+  log "Installed PERPLEXITY_MODEL override ${PERPLEXITY_MODEL}"
+fi
+
 # Use the proven linked-context volume pattern from railway_secure_activate.sh.
 # Railway CLI 5.x accepts volume add in the selected service context and no
 # longer requires/accepts --service for this operation.
