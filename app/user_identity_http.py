@@ -4,6 +4,7 @@ import base64
 import binascii
 import hmac
 import html
+import logging
 import os
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -11,23 +12,24 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from .memory import MemoryKeyError
+from .oauth_identity import OAuthUserIdentityStore
 from .user_identity import (
     EnrollmentRejected,
     IdentityStoreError,
     OAuthConfigurationError,
     OAuthRejected,
     PasswordPolicyRejected,
-    UserIdentityStore,
 )
 
 router = APIRouter()
+logger = logging.getLogger("sara.oauth")
 
 _NO_STORE_HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 
 
-def _store() -> UserIdentityStore:
+def _store() -> OAuthUserIdentityStore:
     try:
-        store = UserIdentityStore.from_env(required=True)
+        store = OAuthUserIdentityStore.from_env(required=True)
     except (MemoryKeyError, IdentityStoreError) as exc:
         raise HTTPException(status_code=503, detail="SARA identity persistence unavailable") from exc
     if store is None:
@@ -47,7 +49,6 @@ def _require_owner(request: Request) -> None:
     action = os.getenv("GPT_ACTION_TOKEN", "")
     tester = os.getenv("TEST_TOKEN", "")
     supplied = _bearer_token(request)
-    # A credential overlap is unsafe because the caller's authority would be ambiguous.
     if not owner or (action and hmac.compare_digest(owner, action)) or (tester and hmac.compare_digest(owner, tester)):
         raise HTTPException(status_code=503, detail="Owner identity configuration unavailable")
     if not supplied or not hmac.compare_digest(supplied, owner):
@@ -57,7 +58,6 @@ def _require_owner(request: Request) -> None:
 def _require_enrollment_bootstrap(request: Request) -> None:
     bootstrap = os.getenv("SARA_ENROLLMENT_BOOTSTRAP_TOKEN", "").strip()
     if not bootstrap:
-        # Hide the temporary bootstrap surface completely when it is not enabled.
         raise HTTPException(status_code=404, detail="Not Found")
     if len(bootstrap) < 32:
         raise HTTPException(status_code=503, detail="Enrollment bootstrap configuration unavailable")
@@ -65,10 +65,7 @@ def _require_enrollment_bootstrap(request: Request) -> None:
     owner = os.getenv("OWNER_TOKEN", "")
     action = os.getenv("GPT_ACTION_TOKEN", "")
     tester = os.getenv("TEST_TOKEN", "")
-    if any(
-        configured and hmac.compare_digest(bootstrap, configured)
-        for configured in (owner, action, tester)
-    ):
+    if any(configured and hmac.compare_digest(bootstrap, configured) for configured in (owner, action, tester)):
         raise HTTPException(status_code=503, detail="Enrollment bootstrap configuration unavailable")
 
     supplied = _bearer_token(request)
@@ -80,7 +77,6 @@ def _public_base_url(request: Request) -> str:
     configured = os.getenv("SARA_PUBLIC_BASE_URL", "").strip()
     if configured:
         return configured.rstrip("/")
-    # Development fallback only. Production is expected to pin SARA_PUBLIC_BASE_URL.
     return str(request.base_url).rstrip("/")
 
 
@@ -91,7 +87,7 @@ def _page(title: str, body: str, *, status_code: int = 200) -> HTMLResponse:
         f"<title>{html.escape(title)}</title>"
         "<style>body{font-family:system-ui,sans-serif;max-width:620px;margin:48px auto;padding:0 20px;}"
         "label{display:block;margin:14px 0 5px;}input{box-sizing:border-box;width:100%;padding:10px;}"
-        "button{margin-top:20px;padding:10px 18px;} .error{font-weight:600;} .id{font-size:1.2rem;font-weight:700;}"
+        "button{margin:20px 8px 0 0;padding:10px 18px;} .error{font-weight:600;} .id{font-size:1.2rem;font-weight:700;}"
         "</style></head><body>"
         f"{body}</body></html>",
         status_code=status_code,
@@ -126,6 +122,8 @@ def _oauth_login_form(
     response_type: str,
     scope: str,
     state: str,
+    code_challenge: str = "",
+    code_challenge_method: str = "",
     error: str = "",
     status_code: int = 200,
 ) -> HTMLResponse:
@@ -137,6 +135,8 @@ def _oauth_login_form(
             ("response_type", response_type),
             ("scope", scope),
             ("state", state),
+            ("code_challenge", code_challenge),
+            ("code_challenge_method", code_challenge_method),
         )
     )
     error_html = f'<p class="error">{html.escape(error)}</p>' if error else ""
@@ -156,12 +156,33 @@ def _oauth_login_form(
     )
 
 
+def _oauth_consent_form(*, authorization_session: str, scope: str) -> HTMLResponse:
+    safe_session = html.escape(authorization_session, quote=True)
+    safe_scope = html.escape(scope)
+    return _page(
+        "Authorize SARA-OMEGA",
+        "<h1>Authorize SARA-OMEGA</h1>"
+        f"<p>The connected GPT is requesting these SARA permissions: <strong>{safe_scope}</strong>.</p>"
+        '<p>Approve only if you want this GPT to act with these permissions.</p>'
+        '<form method="post" action="/oauth/consent">'
+        f'<input type="hidden" name="authorization_session" value="{safe_session}">'
+        '<button type="submit" name="decision" value="approve">Approve</button>'
+        '<button type="submit" name="decision" value="deny">Deny</button>'
+        "</form>",
+    )
+
+
 def _redirect_with_code(redirect_uri: str, *, code: str, state: str) -> str:
     parsed = urlsplit(redirect_uri)
     query = list(parse_qsl(parsed.query, keep_blank_values=True))
-    query.append(("code", code))
-    if state:
-        query.append(("state", state))
+    query.extend((("code", code), ("state", state)))
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
+
+
+def _redirect_with_error(redirect_uri: str, *, error: str, state: str) -> str:
+    parsed = urlsplit(redirect_uri)
+    query = list(parse_qsl(parsed.query, keep_blank_values=True))
+    query.extend((("error", error), ("state", state)))
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment))
 
 
@@ -175,6 +196,91 @@ def _client_credentials(request: Request, form: dict[str, str]) -> tuple[str, st
         except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
             raise HTTPException(status_code=401, detail="Invalid OAuth client credentials") from exc
     return form.get("client_id", ""), form.get("client_secret", "")
+
+
+def _rejection_reason(exc: BaseException) -> str:
+    value = str(exc)
+    return {
+        "oauth_client_rejected": "unknown_client",
+        "oauth_redirect_uri_rejected": "redirect_uri_mismatch",
+        "oauth_response_type_rejected": "unsupported_response_type",
+        "oauth_scope_rejected": "scope_not_allowed",
+        "invalid_pkce_method": "invalid_pkce_method",
+        "invalid_pkce_challenge": "invalid_pkce_method",
+        "oauth_configuration_required": "server_configuration_error",
+    }.get(value, "server_configuration_error")
+
+
+def _log_authorize_rejection(
+    reason: str,
+    *,
+    client_id: str,
+    redirect_uri: str,
+    state: str,
+    scope: str,
+    response_type: str,
+    code_challenge: str,
+    code_challenge_method: str,
+) -> None:
+    safe_response_type = response_type if response_type in {"", "code"} else "other"
+    safe_pkce_method = code_challenge_method if code_challenge_method in {"", "S256"} else "other"
+    logger.warning(
+        "oauth_authorize_rejected reason=%s client_id_state=%s redirect_uri_state=%s state_present=%s "
+        "scope_state=%s response_type=%s pkce_present=%s pkce_method=%s",
+        reason,
+        "present" if client_id else "missing",
+        "present" if redirect_uri else "missing",
+        bool(state),
+        "present" if scope else "default",
+        safe_response_type,
+        bool(code_challenge),
+        safe_pkce_method,
+    )
+
+
+def _validate_authorization_inputs(
+    store: OAuthUserIdentityStore,
+    *,
+    client_id: str,
+    redirect_uri: str,
+    response_type: str,
+    scope: str,
+    state: str,
+    code_challenge: str,
+    code_challenge_method: str,
+) -> str:
+    if not response_type:
+        reason = "missing_response_type"
+    elif response_type != "code":
+        reason = "unsupported_response_type"
+    elif not client_id:
+        reason = "missing_client_id"
+    elif not redirect_uri:
+        reason = "missing_redirect_uri"
+    elif not state or not state.strip():
+        reason = "missing_state"
+    else:
+        try:
+            store.validate_pkce_parameters(code_challenge, code_challenge_method)
+            return store.validate_authorization_request(
+                client_id=client_id,
+                redirect_uri=redirect_uri,
+                response_type=response_type,
+                scope=scope,
+            )
+        except (OAuthRejected, OAuthConfigurationError) as exc:
+            reason = _rejection_reason(exc)
+    _log_authorize_rejection(
+        reason,
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+        state=state,
+        scope=scope,
+        response_type=response_type,
+        code_challenge=code_challenge,
+        code_challenge_method=code_challenge_method,
+    )
+    raise HTTPException(status_code=400, detail="OAuth authorization request rejected")
 
 
 @router.post("/admin/enrollment/invitations")
@@ -242,9 +348,7 @@ async def enroll_user(invite_token: str, request: Request):
         raise HTTPException(status_code=503, detail="SARA identity persistence unavailable") from exc
 
     gpt_url = os.getenv("SARA_GPT_URL", "").strip()
-    gpt_link = (
-        f'<p><a href="{html.escape(gpt_url, quote=True)}">Open SARA-OMEGA</a></p>' if gpt_url else ""
-    )
+    gpt_link = f'<p><a href="{html.escape(gpt_url, quote=True)}">Open SARA-OMEGA</a></p>' if gpt_url else ""
     return _page(
         "SARA account created",
         "<h1>SARA account created</h1>"
@@ -257,28 +361,33 @@ async def enroll_user(invite_token: str, request: Request):
 
 @router.get("/oauth/authorize")
 async def oauth_authorize_page(
-    client_id: str,
-    redirect_uri: str,
-    response_type: str = "code",
+    client_id: str = "",
+    redirect_uri: str = "",
+    response_type: str = "",
     scope: str = "",
     state: str = "",
+    code_challenge: str = "",
+    code_challenge_method: str = "",
 ):
     store = _store()
-    try:
-        canonical_scope = store.validate_authorization_request(
-            client_id=client_id,
-            redirect_uri=redirect_uri,
-            response_type=response_type,
-            scope=scope,
-        )
-    except (OAuthRejected, OAuthConfigurationError) as exc:
-        raise HTTPException(status_code=400, detail="OAuth authorization request rejected") from exc
+    canonical_scope = _validate_authorization_inputs(
+        store,
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+        response_type=response_type,
+        scope=scope,
+        state=state,
+        code_challenge=code_challenge,
+        code_challenge_method=code_challenge_method,
+    )
     return _oauth_login_form(
         client_id=client_id,
         redirect_uri=redirect_uri,
         response_type=response_type,
         scope=canonical_scope,
         state=state,
+        code_challenge=code_challenge,
+        code_challenge_method=code_challenge_method,
     )
 
 
@@ -289,18 +398,21 @@ async def oauth_authorize_login(request: Request):
     store = _store()
     client_id = form.get("client_id", "")
     redirect_uri = form.get("redirect_uri", "")
-    response_type = form.get("response_type", "code")
+    response_type = form.get("response_type", "")
     scope = form.get("scope", "")
     state = form.get("state", "")
-    try:
-        canonical_scope = store.validate_authorization_request(
-            client_id=client_id,
-            redirect_uri=redirect_uri,
-            response_type=response_type,
-            scope=scope,
-        )
-    except (OAuthRejected, OAuthConfigurationError) as exc:
-        raise HTTPException(status_code=400, detail="OAuth authorization request rejected") from exc
+    code_challenge = form.get("code_challenge", "")
+    code_challenge_method = form.get("code_challenge_method", "")
+    canonical_scope = _validate_authorization_inputs(
+        store,
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+        response_type=response_type,
+        scope=scope,
+        state=state,
+        code_challenge=code_challenge,
+        code_challenge_method=code_challenge_method,
+    )
     try:
         account = store.authenticate_for_oauth(form.get("public_user_id", ""), form.get("password", ""))
     except OAuthRejected as exc:
@@ -311,17 +423,45 @@ async def oauth_authorize_login(request: Request):
             response_type=response_type,
             scope=canonical_scope,
             state=state,
+            code_challenge=code_challenge,
+            code_challenge_method=code_challenge_method,
             error=message,
             status_code=401,
         )
-    code = store.issue_authorization_code(
-        user_uuid=account.user_uuid,
-        client_id=client_id,
-        redirect_uri=redirect_uri,
-        scope=canonical_scope,
-    )
+    try:
+        authorization_session = store.create_authorization_session(
+            user_uuid=account.user_uuid,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            scope=canonical_scope,
+            state=state,
+            code_challenge=code_challenge,
+            code_challenge_method=code_challenge_method,
+        )
+    except (OAuthRejected, IdentityStoreError) as exc:
+        raise HTTPException(status_code=400, detail="OAuth authorization request rejected") from exc
+    return _oauth_consent_form(authorization_session=authorization_session, scope=canonical_scope)
+
+
+@router.post("/oauth/consent")
+async def oauth_consent(request: Request):
+    raw = await request.form()
+    form = {str(key): str(value) for key, value in raw.items()}
+    try:
+        result = _store().complete_authorization_session(
+            form.get("authorization_session", ""),
+            form.get("decision", ""),
+        )
+    except (OAuthRejected, IdentityStoreError) as exc:
+        raise HTTPException(status_code=400, detail="OAuth consent request rejected") from exc
+    if not result.approved:
+        return RedirectResponse(
+            _redirect_with_error(result.redirect_uri, error="access_denied", state=result.state),
+            status_code=303,
+            headers={"Cache-Control": "no-store"},
+        )
     return RedirectResponse(
-        _redirect_with_code(redirect_uri, code=code, state=state),
+        _redirect_with_code(result.redirect_uri, code=result.code, state=result.state),
         status_code=303,
         headers={"Cache-Control": "no-store"},
     )
@@ -341,6 +481,7 @@ async def oauth_token(request: Request):
                 client_id=client_id,
                 client_secret=client_secret,
                 redirect_uri=form.get("redirect_uri", ""),
+                code_verifier=form.get("code_verifier", ""),
             )
         elif grant_type == "refresh_token":
             bundle = store.refresh_access_token(
@@ -353,11 +494,7 @@ async def oauth_token(request: Request):
     except OAuthConfigurationError as exc:
         raise HTTPException(status_code=503, detail="SARA OAuth is not configured") from exc
     except OAuthRejected:
-        return JSONResponse(
-            {"error": "invalid_grant"},
-            status_code=400,
-            headers=_NO_STORE_HEADERS,
-        )
+        return JSONResponse({"error": "invalid_grant"}, status_code=400, headers=_NO_STORE_HEADERS)
     return JSONResponse(
         {
             "access_token": bundle.access_token,
@@ -384,7 +521,6 @@ async def oauth_revoke(request: Request):
     except OAuthConfigurationError as exc:
         raise HTTPException(status_code=503, detail="SARA OAuth is not configured") from exc
     except OAuthRejected:
-        # OAuth revocation is deliberately non-enumerating.
         pass
     return Response(status_code=200, headers=_NO_STORE_HEADERS)
 

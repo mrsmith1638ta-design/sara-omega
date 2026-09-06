@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import tools.custom_gpt_action_sync_resolver as resolver
 
 
@@ -72,3 +74,27 @@ def test_validate_schema_contract_fails_closed_when_gateway_operation_missing():
 
 def test_normalize_schema_makes_line_endings_stable():
     assert resolver.normalize_schema("a: 1\r\nb: 2  \n") == "a: 1\nb: 2"
+
+
+def test_custom_gpt_schema_uses_governed_gateway_without_oauth_login_surface() -> None:
+    schema = Path("chatgpt-gpt-action.yaml").read_text(encoding="utf-8")
+    oauth_schema = Path("chatgpt-oauth-action.yaml").read_text(encoding="utf-8")
+
+    assert "/gpt/action/gateway:" in schema
+    assert "operationId: saraOmegaGovernedGateway" in schema
+    assert "securitySchemes:" in schema
+    assert "bearerAuth:" in schema
+
+    assert "/gpt/user/gateway:" not in schema
+    assert "operationId: saraOmegaUserGateway" not in schema
+    assert "SaraOmegaUserGatewayRequest" not in schema
+    assert "memory_status" not in schema
+    assert "memory_recall" not in schema
+    assert "memory_forget" not in schema
+    assert "OAuth" not in schema
+
+    assert "/gpt/user/gateway:" in oauth_schema
+    assert "operationId: saraOmegaUserGateway" in oauth_schema
+    assert "memory_status" in oauth_schema
+    assert "memory_recall" in oauth_schema
+    assert "memory_forget" in oauth_schema
