@@ -21,7 +21,7 @@ def _require_user(auth):
 async def iot_health(): return service.health()
 @router.post('/iot/devices/register')
 async def register_device(request:DeviceRegistrationRequest,authorization:str|None=Header(default=None)):
-    _require_exact_env(authorization,'SARA_DEVICE_CONTROL_AUTH_TOKEN',('GPT_ACTION_TOKEN','TEST_TOKEN','SARA_RAILWAY_CONTROL_AUTH_TOKEN','SARA_SOURCE_CONTROL_AUTH_TOKEN'))
+    _require_exact_env(authorization,'SARA_DEVICE_CONTROL_AUTH_TOKEN',('OWNER_TOKEN','GPT_ACTION_TOKEN','TEST_TOKEN','SARA_RAILWAY_CONTROL_AUTH_TOKEN','SARA_SOURCE_CONTROL_AUTH_TOKEN'))
     try: return service.register_device(request.device,request.telemetry_secret)
     except (ValueError,IoTError) as e: raise HTTPException(status_code=400,detail=str(e)) from e
 @router.get('/iot/devices')
@@ -49,7 +49,7 @@ async def prepare_command(device_id:str,request:PrepareCommandRequest,authorizat
     except IoTError as e: raise HTTPException(status_code=422,detail=str(e)) from e
 @router.post('/iot/devices/{device_id}/commands/execute')
 async def execute_command(device_id:str,request:ExecuteCommandRequest,authorization:str|None=Header(default=None)):
-    token=_require_exact_env(authorization,'SARA_DEVICE_CONTROL_AUTH_TOKEN',('GPT_ACTION_TOKEN','TEST_TOKEN','SARA_RAILWAY_CONTROL_AUTH_TOKEN','SARA_SOURCE_CONTROL_AUTH_TOKEN')); existing=service.get_command(request.command_id)
+    token=_require_exact_env(authorization,'SARA_DEVICE_CONTROL_AUTH_TOKEN',('OWNER_TOKEN','GPT_ACTION_TOKEN','TEST_TOKEN','SARA_RAILWAY_CONTROL_AUTH_TOKEN','SARA_SOURCE_CONTROL_AUTH_TOKEN')); existing=service.get_command(request.command_id)
     if existing is None or existing.device_id!=device_id: raise HTTPException(status_code=404,detail='command_not_found')
     try: return service.execute_command(request.command_id,token,request.confirmation_token)
     except IoTError as e: raise HTTPException(status_code=409,detail=str(e)) from e
