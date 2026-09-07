@@ -35,7 +35,7 @@ class IoTIngressGuard:
         if not self.store.reserve_replay(d.device_id,envelope.message_id,now.isoformat()): self._failure(d.device_id,'replay'); raise ReplayRejected('telemetry_replay_rejected')
         return d
     def authorize_control(self,device,supplied_token,action):
-        expected=os.getenv('SARA_DEVICE_CONTROL_AUTH_TOKEN','').strip(); forbidden={os.getenv(x,'').strip() for x in ('GPT_ACTION_TOKEN','TEST_TOKEN','SARA_RAILWAY_CONTROL_AUTH_TOKEN','SARA_SOURCE_CONTROL_AUTH_TOKEN')}; forbidden.discard('')
+        expected=os.getenv('SARA_DEVICE_CONTROL_AUTH_TOKEN','').strip(); forbidden={os.getenv(x,'').strip() for x in ('OWNER_TOKEN','GPT_ACTION_TOKEN','TEST_TOKEN','SARA_RAILWAY_CONTROL_AUTH_TOKEN','SARA_SOURCE_CONTROL_AUTH_TOKEN')}; forbidden.discard('')
         if not expected or expected in forbidden: raise AuthenticationRejected('device_control_authority_not_separately_configured')
         if not supplied_token or supplied_token in forbidden or not hmac.compare_digest(expected,supplied_token): raise AuthenticationRejected('device_control_authentication_rejected')
         if action not in device.allowed_commands: raise AuthenticationRejected('device_action_not_authorized')
