@@ -82,3 +82,22 @@ def test_from_env_fails_closed_without_signer_configuration(monkeypatch):
         monkeypatch.delenv(name, raising=False)
     with pytest.raises(SigningError, match="signer_configuration_incomplete"):
         DualSigner.from_env()
+
+
+@pytest.mark.asyncio
+async def test_external_signer_rejects_wrong_algorithm_or_key_id(monkeypatch):
+    class Response:
+        def raise_for_status(self): pass
+        def json(self):
+            return {"signature_b64": "c2ln", "algorithm": "Wrong", "key_id": "wrong-key"}
+    class Client:
+        def __init__(self, *args, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def post(self, *args, **kwargs): return Response()
+    monkeypatch.setattr("app.signing.httpx.AsyncClient", Client)
+    signer = ExternalHttpSigner(
+        algorithm="Ed25519", url="https://signer.invalid", key_id="expected-key", token="fake-token"
+    )
+    with pytest.raises(SigningError, match="signer_response_identity_mismatch"):
+        await signer.sign(b"digest")
