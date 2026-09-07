@@ -40,7 +40,34 @@ Mathematical & Physical Sciences Fabric:
 - Science analyses flow through the existing mandatory OMEGA Council `solve` path: verified
 - No unrestricted `/science/solve` bypass endpoint: verified
 
-Verification evidence for feature head `2b0743b98dab505e1e49b6665974ff298cdb3b90`:
+High-Level Truth Gate:
+
+- Structured applicability scope, certainty level, universality status, and engineering state: implemented
+- Monotonic certainty ceiling: implemented; certainty cannot rise above the evidence/provenance ceiling without stronger independent evidence
+- Missing sources, stale evidence, and missing material dependencies fail closed to lower certainty: implemented
+- Provider consensus cannot promote a scoped/model claim into a universal fact: implemented
+- EDS family-level active-control, passive-restoring, and low-speed behavior are `SYSTEM_DEPENDENT`: implemented
+- HTS transport-level active-control, passive-restoring, and low-speed behavior are `SYSTEM_DEPENDENT`: implemented
+- Illustrative numerical defaults cannot be promoted to user-specific facts: implemented
+- Historical reconstruction cannot be promoted to documented ancient practice: implemented
+- Science-specialist outputs are truth-gated before Council/judge synthesis: implemented
+- Candidate final synthesis is truth-gated before Verdict signing; one bounded correction attempt is permitted, then SARA fails closed to `SYSTEM_DEPENDENT / INSUFFICIENT_EVIDENCE`: implemented
+- Truth-gate decisions are included in Verdict evidence and the signed ledger payload: implemented
+- Science retains `execution_authority=false`: verified by tests
+
+TDD evidence:
+
+- RED: GitHub Actions validation run 172 (`34163488513`) failed on the intentionally introduced regression tests before production implementation. Failures reproduced the original EDS/HTS universal-boolean behavior and confirmed the truth-gate types/module were absent.
+- GREEN: GitHub Actions validation run 187 (`34163946183`) on feature head `910ed86dad296b8da4b43f2866cb60f191acd98a` completed successfully.
+- Full `pytest -q`: PASS at 100% with no failures (230 tests exercised by the run progress output).
+- Focused adversarial gate: PASS, 5/5.
+- Compile: PASS.
+- Deployment shell sanitation: PASS.
+- Native Windows activator syntax: PASS.
+- Docker/Railway container build: PASS.
+- Built image digest reported by run 187: `sha256:6c455b94d29dd784edf09e61a0ed5cf26aeef4f8d577552b89b8a0949c5f1512`.
+
+Earlier science-fabric verification evidence for feature head `2b0743b98dab505e1e49b6665974ff298cdb3b90`:
 
 - GitHub Actions workflow: SARA-OMEGA V3.2.1 validation, run 169 (`34155775607`)
 - Compile: PASS
@@ -60,6 +87,6 @@ Non-blocking warnings observed in CI:
 - anyio `BlockingPortal` alias deprecation warning
 - GitHub-hosted runner Node 20 deprecation warning while actions were forced onto Node 24
 
-Secrets embedded: no production credentials were added by the science-fabric implementation.
+Secrets embedded: no production credentials are intended to be added by the science-fabric or High-Level Truth Gate implementation. The final PR diff must still be inspected before merge.
 
 Live production deployment is a separate release gate and must use the exact verified merged commit.
