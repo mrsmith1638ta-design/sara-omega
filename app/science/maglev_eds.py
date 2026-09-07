@@ -1,19 +1,29 @@
 from __future__ import annotations
 
-from .models import ProvenanceClass, ScienceAnalysis, ScienceCalculation
+from .models import EngineeringState, ProvenanceClass, ScienceAnalysis, ScienceCalculation
 from .validation import require_positive
 
 
 class EDSMaglevEngine:
     domain = "maglev_eds"
 
-    def characterize(self, *, speed_mps: float) -> dict[str, float | str | bool]:
+    def characterize(self, *, speed_mps: float) -> dict[str, float | str | bool | list[str]]:
         require_positive("speed_mps", speed_mps)
         return {
             "family": "EDS",
             "speed_mps": speed_mps,
             "speed_dependent_lift": True,
-            "active_control": False,
+            "active_control": EngineeringState.SYSTEM_DEPENDENT.value,
+            "passive_restoring_behavior": EngineeringState.SYSTEM_DEPENDENT.value,
+            "low_speed_levitation": EngineeringState.SYSTEM_DEPENDENT.value,
+            "dependencies": [
+                "guideway topology",
+                "onboard magnet architecture",
+                "damping method",
+                "transition speed",
+                "conductor/coil arrangement",
+                "control strategy",
+            ],
             "provenance_class": ProvenanceClass.ENGINEERING_MODEL.value,
         }
 
@@ -31,9 +41,9 @@ class EDSMaglevEngine:
                     provenance_class=ProvenanceClass.ENGINEERING_MODEL,
                     evidence_status="SUPPORTED",
                     assumptions=["Generic EDS family characterization"],
-                    limitations=["Lift/drag requires system-specific magnets, coils, conductors, and geometry"],
+                    limitations=["Lift, low-speed transition, damping, restoring behavior, and control requirements depend on system-specific magnets, coils, conductors, guideway geometry, and control architecture"],
                     source_ids=["maglev.eds"],
                     validation_status="VALID",
                 )
             )
-        return ScienceAnalysis(domain=self.domain, summary="Superconducting/electrodynamic suspension analysis.", calculations=calculations, confidence=0.75 if calculations else 0.5)
+        return ScienceAnalysis(domain=self.domain, summary="Superconducting/electrodynamic suspension analysis with architecture-dependent behavior explicitly scoped.", calculations=calculations, confidence=0.75 if calculations else 0.5)

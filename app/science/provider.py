@@ -9,6 +9,7 @@ from .engineering import EngineeringPhysicsEngine
 from .maglev_ems import EMSMaglevEngine
 from .maglev_eds import EDSMaglevEngine
 from .maglev_hts import HTSMaglevEngine
+from .truth_gate import HighLevelTruthGate
 
 
 _ENGINES = {
@@ -27,9 +28,14 @@ class ScienceSpecialist:
             raise ValueError("unknown_science_provider")
         self.provider_name = provider_name
         self.engine = _ENGINES[provider_name]()
+        self.truth_gate = HighLevelTruthGate()
 
     async def run(self, assignment: Assignment) -> SpecialistResult:
         analysis = self.engine.analyze_text(assignment.task)
+        truth_gate = self.truth_gate.gate_analysis(analysis)
+        analysis.metadata = dict(analysis.metadata)
+        analysis.metadata["truth_gate"] = truth_gate
+        analysis.execution_authority = False
         payload = analysis.model_dump(mode="json")
         return SpecialistResult(
             provider=self.provider_name,
