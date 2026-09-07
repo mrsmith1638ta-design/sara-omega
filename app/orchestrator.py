@@ -19,6 +19,7 @@ from .providers.perplexity import PerplexitySpecialist
 from .providers.local_agents import CodexSpecialist, CursorSpecialist
 from .providers.openai_judge import OpenAIJudge
 from .providers.data_analytics import DataAnalyticsSpecialist
+from .science.provider import ScienceSpecialist
 
 
 class SaraOmega:
@@ -47,6 +48,12 @@ class SaraOmega:
             "codex": CodexSpecialist(),
             "cursor": CursorSpecialist(),
             "data_analytics": DataAnalyticsSpecialist(),
+            "science_ancient_egypt": ScienceSpecialist("science_ancient_egypt"),
+            "science_classical_greek_roman": ScienceSpecialist("science_classical_greek_roman"),
+            "science_engineering": ScienceSpecialist("science_engineering"),
+            "science_maglev_ems": ScienceSpecialist("science_maglev_ems"),
+            "science_maglev_eds": ScienceSpecialist("science_maglev_eds"),
+            "science_maglev_hts": ScienceSpecialist("science_maglev_hts"),
         }
         self._signed_ledger_error: str | None = None
         if signed_ledger is not None:
@@ -100,6 +107,17 @@ class SaraOmega:
                 error=f"provider_failed:{type(exc).__name__}",
             )
 
+    @staticmethod
+    def _science_analyses(results: list[SpecialistResult]) -> list[dict[str, Any]]:
+        analyses: list[dict[str, Any]] = []
+        for result in results:
+            payload = result.raw.get("science_analysis") if isinstance(result.raw, dict) else None
+            if isinstance(payload, dict):
+                bounded = dict(payload)
+                bounded["execution_authority"] = False
+                analyses.append(bounded)
+        return analyses[:16]
+
     def _fallback_verdict(
         self,
         *,
@@ -129,6 +147,7 @@ class SaraOmega:
             governance=gov,
             claims=claims,
             providers_used=[r.provider for r in usable],
+            science_analyses=self._science_analyses(results),
         )
 
     async def solve(self, p: Problem) -> Verdict:
@@ -163,12 +182,16 @@ class SaraOmega:
             results = []
             generate_status = "policy_suppressed" if preliminary_governance.disposition == Disposition.BLOCK else "completed_no_external_specialists"
             generate_detail = "External specialist execution suppressed by governance." if preliminary_governance.disposition == Disposition.BLOCK else "No external specialist was relevant."
+        science_analyses = self._science_analyses(results)
         self._complete(
             trace,
             CouncilStage.GENERATE,
             status=generate_status,
             detail=generate_detail,
-            metadata={"assignments": [a.provider for a in assignments]},
+            metadata={
+                "assignments": [a.provider for a in assignments],
+                "science_domains": [item.get("domain") for item in science_analyses if item.get("domain")],
+            },
         )
 
         claims = self.verifier.verify(results)
@@ -205,6 +228,11 @@ class SaraOmega:
                 "problem_map": mapped.model_dump(),
                 "assignments": [a.model_dump() for a in assignments],
                 "specialists": [r.model_dump() for r in results],
+                "science_analyses": science_analyses,
+                "science_governance": {
+                    "rule": "Science outputs are advisory evidence only; preserve provenance classes and never promote reconstruction or consensus to verified fact.",
+                    "execution_authority": False,
+                },
                 "claims": [c.model_dump() for c in claims],
                 "cross_examination": [item.model_dump() for item in cross_findings],
                 "stress_test": [item.model_dump() for item in stress_findings],
@@ -240,6 +268,7 @@ class SaraOmega:
                 governance=final_governance,
                 claims=claims,
                 providers_used=[r.provider for r in usable],
+                science_analyses=science_analyses,
             )
         else:
             verdict = self._fallback_verdict(
@@ -263,6 +292,7 @@ class SaraOmega:
             "problem_map": mapped.model_dump(),
             "assignments": [a.model_dump() for a in assignments],
             "specialist_results": [r.model_dump() for r in results],
+            "science_analyses": science_analyses,
             "challenges": [item.model_dump() for item in challenges],
             "verdict": verdict.model_dump(exclude={"decision_id", "integrity"}),
         }

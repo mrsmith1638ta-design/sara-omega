@@ -1,0 +1,13 @@
+[
+  {"id":"egypt.rhind.p56","title":"Rhind Mathematical Papyrus, Problem 56 (seked)","domain":"ancient_egypt","source_type":"primary historical mathematical text","provenance_class":"DOCUMENTED_ANCIENT","evidence_status":"SUPPORTED"},
+  {"id":"egypt.moscow.p14","title":"Moscow Mathematical Papyrus, Problem 14 (truncated square pyramid)","domain":"ancient_egypt","source_type":"primary historical mathematical text","provenance_class":"DOCUMENTED_ANCIENT","evidence_status":"SUPPORTED"},
+  {"id":"egypt.giza.dimensions","title":"Great Pyramid conventional reconstructed dimensions: base 440 cubits, height 280 cubits","domain":"ancient_egypt","source_type":"archaeological reconstruction","provenance_class":"HISTORICALLY_COMPATIBLE_RECONSTRUCTION","evidence_status":"SUPPORTED"},
+  {"id":"greek.euclid","title":"Euclidean geometry tradition","domain":"classical_greek_roman","source_type":"primary mathematical tradition","provenance_class":"DOCUMENTED_ANCIENT","evidence_status":"SUPPORTED"},
+  {"id":"rome.vitruvius","title":"Vitruvius, De architectura","domain":"classical_greek_roman","source_type":"primary architectural treatise","provenance_class":"DOCUMENTED_ANCIENT","evidence_status":"SUPPORTED"},
+  {"id":"physics.drag","title":"Classical aerodynamic drag relationship","domain":"engineering","source_type":"established physics","provenance_class":"ESTABLISHED_PHYSICS","evidence_status":"VERIFIED"},
+  {"id":"control.state_space","title":"Linear state-space system representation","domain":"engineering","source_type":"established engineering mathematics","provenance_class":"ESTABLISHED_PHYSICS","evidence_status":"VERIFIED"},
+  {"id":"maglev.ems","title":"Electromagnetic suspension analytical model","domain":"maglev_ems","source_type":"engineering model","provenance_class":"ENGINEERING_MODEL","evidence_status":"SUPPORTED"},
+  {"id":"maglev.eds","title":"Electrodynamic suspension analytical model","domain":"maglev_eds","source_type":"engineering model","provenance_class":"ENGINEERING_MODEL","evidence_status":"SUPPORTED"},
+  {"id":"maglev.hts","title":"High-temperature-superconductor flux-pinning levitation research model","domain":"maglev_hts","source_type":"experimental technology","provenance_class":"EXPERIMENTAL_TECHNOLOGY","evidence_status":"SUPPORTED"},
+  {"id":"china.maglev.official","title":"China high-speed EMS maglev official program descriptions","domain":"maglev_ems","source_type":"official technology source","provenance_class":"DOCUMENTED_TECHNOLOGY","evidence_status":"SUPPORTED"}
+]

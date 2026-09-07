@@ -162,6 +162,7 @@ class Verdict(BaseModel):
     governance: GovernanceDecision
     claims: list[Claim] = Field(default_factory=list)
     providers_used: list[str] = Field(default_factory=list)
+    science_analyses: list[dict[str, Any]] = Field(default_factory=list)
     decision_id: str | None = None
     request_id: str | None = None
     council_trace: CouncilTrace | None = None
