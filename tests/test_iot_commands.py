@@ -12,8 +12,8 @@ class Factory:
     def __init__(self,a): self.a=a
     def __call__(self,d): return self.a
 
-def setup(tmp_path,monkeypatch):
-    monkeypatch.setenv('SARA_DATA_DIR',str(tmp_path)); monkeypatch.setenv('SARA_DEVICE_CONTROL_AUTH_TOKEN','device-control'); s=IoTStore.from_env(); d=DeviceRecord(device_id='galaxy-s25',name='S25',device_class='android',model='Galaxy S25',adapter='android',allowed_commands={'health.query'}); s.register_device(d,'x'*24); a=Uncertain(); return CommandService(s,IoTIngressGuard(s),Factory(a)),a
+def setup(tmp_path,monkeypatch,confirmation=False):
+    monkeypatch.setenv('SARA_DATA_DIR',str(tmp_path)); monkeypatch.setenv('SARA_DEVICE_CONTROL_AUTH_TOKEN','device-control'); s=IoTStore.from_env(); d=DeviceRecord(device_id='galaxy-s25',name='S25',device_class='android',model='Galaxy S25',adapter='android',allowed_commands={'health.query'},confirmation_required={'health.query'} if confirmation else set()); s.register_device(d,'x'*24); a=Uncertain(); return CommandService(s,IoTIngressGuard(s),Factory(a)),a
 
 def test_unknown_command_rejected(tmp_path,monkeypatch):
     cs,a=setup(tmp_path,monkeypatch)
@@ -22,3 +22,8 @@ def test_uncertain_not_retried(tmp_path,monkeypatch):
     cs,a=setup(tmp_path,monkeypatch); c=cs.prepare('galaxy-s25','health.query',{},'session-1','owner'); r=cs.execute(c.command_id,'device-control'); assert r.status.value=='SUBMISSION_UNVERIFIED'
     with pytest.raises(SubmissionUnverified): cs.execute(c.command_id,'device-control')
     assert a.calls==1
+def test_confirmation_must_use_separate_verified_authority(tmp_path,monkeypatch):
+    cs,a=setup(tmp_path,monkeypatch,confirmation=True); c=cs.prepare('galaxy-s25','health.query',{},'session-1','owner')
+    monkeypatch.setenv('SARA_DEVICE_CONFIRMATION_TOKEN','confirmation-only')
+    with pytest.raises(PermissionError): cs.execute(c.command_id,'device-control','device-control')
+    assert a.calls==0
