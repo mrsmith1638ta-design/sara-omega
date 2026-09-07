@@ -3,6 +3,8 @@ from __future__ import annotations
 from .models import (
     ApplicabilityScope,
     CertaintyLevel,
+    ProvenanceClass,
+    ScienceAnalysis,
     ScienceClaim,
     TruthGateDecision,
     UniversalityStatus,
@@ -35,6 +37,28 @@ _UNIVERSALIZING_MARKERS = (
     " requires no ",
     " proves ",
 )
+
+_SCOPE_BY_PROVENANCE = {
+    ProvenanceClass.DOCUMENTED_ANCIENT: ApplicabilityScope.HISTORICAL_DOCUMENTATION,
+    ProvenanceClass.HISTORICALLY_COMPATIBLE_RECONSTRUCTION: ApplicabilityScope.HISTORICAL_RECONSTRUCTION,
+    ProvenanceClass.MODERN_ENGINEERING_DERIVATION: ApplicabilityScope.CONFIGURATION_SPECIFIC,
+    ProvenanceClass.ESTABLISHED_PHYSICS: ApplicabilityScope.UNIVERSAL_LAW,
+    ProvenanceClass.DOCUMENTED_TECHNOLOGY: ApplicabilityScope.ARCHITECTURE_SPECIFIC,
+    ProvenanceClass.ENGINEERING_MODEL: ApplicabilityScope.ARCHITECTURE_SPECIFIC,
+    ProvenanceClass.EXPERIMENTAL_TECHNOLOGY: ApplicabilityScope.EXPERIMENTAL_OBSERVATION,
+    ProvenanceClass.SIMULATION_OR_HYPOTHESIS: ApplicabilityScope.CONFIGURATION_SPECIFIC,
+}
+
+_CEILING_BY_PROVENANCE = {
+    ProvenanceClass.DOCUMENTED_ANCIENT: CertaintyLevel.SUPPORTED,
+    ProvenanceClass.HISTORICALLY_COMPATIBLE_RECONSTRUCTION: CertaintyLevel.INFERRED,
+    ProvenanceClass.MODERN_ENGINEERING_DERIVATION: CertaintyLevel.SUPPORTED,
+    ProvenanceClass.ESTABLISHED_PHYSICS: CertaintyLevel.VERIFIED,
+    ProvenanceClass.DOCUMENTED_TECHNOLOGY: CertaintyLevel.SUPPORTED,
+    ProvenanceClass.ENGINEERING_MODEL: CertaintyLevel.INFERRED,
+    ProvenanceClass.EXPERIMENTAL_TECHNOLOGY: CertaintyLevel.SUPPORTED,
+    ProvenanceClass.SIMULATION_OR_HYPOTHESIS: CertaintyLevel.INFERRED,
+}
 
 
 class HighLevelTruthGate:
@@ -89,6 +113,43 @@ class HighLevelTruthGate:
             provenance_class=claim.provenance_class,
             source_ids=list(claim.source_ids),
         )
+
+    def gate_analysis(self, analysis: ScienceAnalysis) -> dict[str, list[dict[str, object]]]:
+        claims: list[ScienceClaim] = []
+        decisions: list[TruthGateDecision] = []
+        for calculation in analysis.calculations:
+            scope = _SCOPE_BY_PROVENANCE[calculation.provenance_class]
+            ceiling = _CEILING_BY_PROVENANCE[calculation.provenance_class]
+            result = calculation.result if isinstance(calculation.result, dict) else {}
+            dependencies = [str(item) for item in result.get("dependencies", []) if str(item).strip()]
+            if not dependencies and scope == ApplicabilityScope.UNIVERSAL_LAW:
+                dependencies = ["law applicability assumptions"]
+            certainty = CertaintyLevel.SUPPORTED if calculation.evidence_status.upper() == "SUPPORTED" else CertaintyLevel.UNVERIFIED
+            universality = (
+                UniversalityStatus.UNIVERSAL_SUPPORTED
+                if scope == ApplicabilityScope.UNIVERSAL_LAW
+                else UniversalityStatus.SYSTEM_DEPENDENT
+            )
+            claim = ScienceClaim(
+                claim_text=f"{analysis.domain}:{calculation.equation_id}",
+                provenance_class=calculation.provenance_class,
+                evidence_status=calculation.evidence_status,
+                applicability_scope=scope,
+                certainty_level=certainty,
+                dependency_conditions=dependencies,
+                source_ids=list(calculation.source_ids),
+                assumptions=list(calculation.assumptions),
+                limitations=list(calculation.limitations),
+                validation_status=calculation.validation_status,
+                universality_status=universality,
+                certainty_ceiling=ceiling,
+            )
+            claims.append(claim)
+            decisions.append(self.evaluate_claim(claim))
+        return {
+            "claims": [item.model_dump(mode="json") for item in claims],
+            "decisions": [item.model_dump(mode="json") for item in decisions],
+        }
 
     def evaluate_final_synthesis(self, text: str, claims: list[ScienceClaim]) -> dict[str, object]:
         normalized = f" {text.strip().lower()} "
