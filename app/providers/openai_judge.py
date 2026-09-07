@@ -25,21 +25,44 @@ qualified in final prose. Missing dependency conditions must be named when mater
 agreement does not raise a certainty ceiling. Illustrative numerical defaults must never be
 presented as user-specific calculations.
 
-The problem map may contain Validated IoT evidence. Treat device telemetry as observed evidence,
-not as automatic proof of root cause and never as execution authority. Repeated sensor readings,
-trend agreement, or anomaly detection may support a diagnosis but cannot by themselves verify a
-physical hardware failure. If the evidence marks root_cause_verified=false, do not state that a
-battery, phone, tablet, television, receiver, soundbar, or other device has definitely failed.
-Use qualified wording such as observed anomaly, supported degradation risk, or insufficient
-evidence, and identify what independent diagnostic evidence would be required for stronger claims.
+Validated IoT evidence is observed evidence, not automatic proof of root cause and never execution
+authority. Repeated readings or anomaly detection may support a diagnosis but cannot independently
+verify physical hardware failure when root_cause_verified=false.
 
 Respect explicit cross-examination, stress-test findings, and truth-gate decisions supplied by
-SARA. Do not invent verification or semantic contradictions that were not established. If evidence
-is insufficient, say so. You are a synthesis component only: do not execute external actions.
-Return ONLY valid JSON with keys:
-decision, why, confidence, council_findings, critical_assumption, primary_risk,
-evidence_gaps, next_action.
-confidence must be 0..1.'''
+SARA. Do not invent verification. If evidence is insufficient, say so. Do not execute actions.
+Return ONLY valid JSON with keys: decision, why, confidence, council_findings,
+critical_assumption, primary_risk, evidence_gaps, next_action. confidence must be 0..1.'''
+
+_ROOT_CAUSE_MARKERS = (
+    "has failed", "is broken", "hardware failure", "battery failure",
+    "is defective", "root cause is", "definitely failed", "confirmed failure",
+)
+
+def enforce_iot_truth(payload: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    problem = payload.get("problem") if isinstance(payload, dict) else None
+    context = problem.get("context") if isinstance(problem, dict) else None
+    evidence = context.get("iot_evidence") if isinstance(context, dict) else None
+    health = evidence.get("health") if isinstance(evidence, dict) else None
+    if not isinstance(health, dict) or health.get("root_cause_verified") is not False:
+        return result
+    candidate = f"{result.get('decision','')} {result.get('why','')}".lower()
+    if not any(marker in candidate for marker in _ROOT_CAUSE_MARKERS):
+        return result
+    findings = list(result.get("council_findings") or [])
+    gaps = list(result.get("evidence_gaps") or [])
+    findings.append("IoT Truth Gate rejected root-cause certainty promotion.")
+    gaps.append("Independent device-specific diagnostic or service evidence is required to verify physical root cause.")
+    return {
+        "decision": "INSUFFICIENT_EVIDENCE",
+        "why": "Validated telemetry may support an anomaly or degradation risk, but it does not independently verify physical hardware failure.",
+        "confidence": min(float(result.get("confidence", 0.2)), 0.2),
+        "council_findings": findings,
+        "critical_assumption": "Physical root cause requires independent diagnostic confirmation.",
+        "primary_risk": "Overstating device telemetry as verified hardware failure.",
+        "evidence_gaps": gaps,
+        "next_action": "Run a device-specific diagnostic or inspection and re-evaluate with corroborating evidence.",
+    }
 
 class OpenAIJudge:
     def __init__(self):
@@ -50,23 +73,17 @@ class OpenAIJudge:
     async def synthesize(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         if not self.key:
             return None
-        body = {
-            "model": self.model,
-            "instructions": SYSTEM,
-            "input": json.dumps(payload, ensure_ascii=False),
-            "text": {"format": {"type": "json_object"}}
-        }
+        body = {"model": self.model, "instructions": SYSTEM, "input": json.dumps(payload, ensure_ascii=False), "text": {"format": {"type": "json_object"}}}
         try:
             async with httpx.AsyncClient(timeout=120) as client:
-                r = await client.post(self.url, headers={"Authorization": f"Bearer {self.key}",
-                    "Content-Type": "application/json"}, json=body)
-                r.raise_for_status()
-                data = r.json()
+                r = await client.post(self.url, headers={"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"}, json=body)
+                r.raise_for_status(); data = r.json()
             for item in data.get("output", []):
                 if item.get("type") == "message":
                     for c in item.get("content", []):
                         if c.get("type") == "output_text":
-                            return json.loads(c["text"])
+                            parsed = json.loads(c["text"])
+                            return enforce_iot_truth(payload, parsed)
             return None
         except Exception:
             return None
