@@ -23,9 +23,11 @@ def test_eds_and_hts_keep_maturity_and_physics_distinct():
     assert hts["provenance_class"] == "EXPERIMENTAL_TECHNOLOGY"
 
 
-def test_comparison_exposes_control_and_stability_tradeoffs():
+def test_comparison_exposes_scoped_control_and_stability_tradeoffs():
     from app.science.comparison import compare_levitation_systems
     result = compare_levitation_systems()
     assert set(result) == {"EMS", "EDS", "HTS"}
-    assert result["EMS"]["active_control"] is True
-    assert result["HTS"]["passive_restoring_behavior"] is True
+    assert result["EMS"]["active_control"] == "REQUIRED"
+    assert result["EDS"]["active_control"] == "SYSTEM_DEPENDENT"
+    assert result["EDS"]["passive_restoring_behavior"] == "SYSTEM_DEPENDENT"
+    assert result["HTS"]["passive_restoring_behavior"] == "SYSTEM_DEPENDENT"
