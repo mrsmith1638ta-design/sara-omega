@@ -21,6 +21,9 @@ class ProblemEngine:
         except Exception:
             iot_context = None
         if iot_context:
+            # Preserve the same validated evidence structurally in the problem payload so
+            # the semantic judge's deterministic post-synthesis IoT gate can inspect it.
+            p.context["iot_evidence"] = iot_context
             facts.append(
                 "Validated IoT evidence: "
                 + json.dumps(iot_context, sort_keys=True, separators=(",", ":"), default=str)[:12000]
