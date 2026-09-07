@@ -19,7 +19,9 @@ from .providers.perplexity import PerplexitySpecialist
 from .providers.local_agents import CodexSpecialist, CursorSpecialist
 from .providers.openai_judge import OpenAIJudge
 from .providers.data_analytics import DataAnalyticsSpecialist
+from .science.models import ScienceClaim
 from .science.provider import ScienceSpecialist
+from .science.truth_gate import HighLevelTruthGate
 
 
 class SaraOmega:
@@ -43,6 +45,7 @@ class SaraOmega:
         self.verifier = verifier or EvidenceVerifier()
         self.history_ledger = history_ledger or DecisionLedger()
         self.judge = judge or OpenAIJudge()
+        self.truth_gate = HighLevelTruthGate()
         self.providers = providers or {
             "perplexity": PerplexitySpecialist(),
             "codex": CodexSpecialist(),
@@ -118,6 +121,32 @@ class SaraOmega:
                 analyses.append(bounded)
         return analyses[:16]
 
+    @staticmethod
+    def _science_truth_gate_data(
+        analyses: list[dict[str, Any]],
+    ) -> tuple[list[ScienceClaim], list[dict[str, Any]]]:
+        claims: list[ScienceClaim] = []
+        decisions: list[dict[str, Any]] = []
+        for analysis in analyses:
+            metadata = analysis.get("metadata") if isinstance(analysis, dict) else None
+            gate = metadata.get("truth_gate") if isinstance(metadata, dict) else None
+            if not isinstance(gate, dict):
+                continue
+            raw_claims = gate.get("claims")
+            if isinstance(raw_claims, list):
+                for raw_claim in raw_claims:
+                    if isinstance(raw_claim, dict):
+                        try:
+                            claims.append(ScienceClaim.model_validate(raw_claim))
+                        except Exception:
+                            continue
+            raw_decisions = gate.get("decisions")
+            if isinstance(raw_decisions, list):
+                for decision in raw_decisions:
+                    if isinstance(decision, dict):
+                        decisions.append(dict(decision))
+        return claims[:64], decisions[:64]
+
     def _fallback_verdict(
         self,
         *,
@@ -125,6 +154,7 @@ class SaraOmega:
         results: list[SpecialistResult],
         claims: list[Claim],
         challenges: list[CouncilChallenge],
+        truth_gate_decisions: list[dict[str, Any]] | None = None,
     ) -> Verdict:
         usable = [r for r in results if r.success]
         gaps = [r.error for r in results if not r.success and r.error]
@@ -148,6 +178,7 @@ class SaraOmega:
             claims=claims,
             providers_used=[r.provider for r in usable],
             science_analyses=self._science_analyses(results),
+            truth_gate_decisions=list(truth_gate_decisions or []),
         )
 
     async def solve(self, p: Problem) -> Verdict:
@@ -183,6 +214,7 @@ class SaraOmega:
             generate_status = "policy_suppressed" if preliminary_governance.disposition == Disposition.BLOCK else "completed_no_external_specialists"
             generate_detail = "External specialist execution suppressed by governance." if preliminary_governance.disposition == Disposition.BLOCK else "No external specialist was relevant."
         science_analyses = self._science_analyses(results)
+        science_truth_claims, truth_gate_decisions = self._science_truth_gate_data(science_analyses)
         self._complete(
             trace,
             CouncilStage.GENERATE,
@@ -191,6 +223,8 @@ class SaraOmega:
             metadata={
                 "assignments": [a.provider for a in assignments],
                 "science_domains": [item.get("domain") for item in science_analyses if item.get("domain")],
+                "truth_gate_claims": len(science_truth_claims),
+                "truth_gate_qualified": sum(1 for item in truth_gate_decisions if item.get("disposition") != "ACCEPTED"),
             },
         )
 
@@ -210,6 +244,8 @@ class SaraOmega:
             metadata={"findings": len(stress_findings)},
         )
 
+        judge_payload: dict[str, Any] | None = None
+        final_truth_gate = {"allowed": True, "status": "NOT_APPLICABLE", "reason": None}
         if preliminary_governance.disposition == Disposition.BLOCK:
             semantic = {
                 "decision": "BLOCKED",
@@ -229,6 +265,12 @@ class SaraOmega:
                 "assignments": [a.model_dump() for a in assignments],
                 "specialists": [r.model_dump() for r in results],
                 "science_analyses": science_analyses,
+                "high_level_truth_gate": {
+                    "rule": "Certainty may only move downward unless stronger independent evidence is explicitly introduced. Scoped or insufficient-evidence claims may not be rendered as universal facts.",
+                    "claims": [item.model_dump(mode="json") for item in science_truth_claims],
+                    "decisions": truth_gate_decisions,
+                    "execution_authority": False,
+                },
                 "science_governance": {
                     "rule": "Science outputs are advisory evidence only; preserve provenance classes and never promote reconstruction or consensus to verified fact.",
                     "execution_authority": False,
@@ -241,7 +283,46 @@ class SaraOmega:
             }
             semantic = await self.judge.synthesize(judge_payload)
             synth_status = "completed" if semantic else "judge_unavailable"
-        self._complete(trace, CouncilStage.SYNTHESIZE, status=synth_status)
+
+            if semantic and science_truth_claims:
+                candidate_text = f"{semantic.get('decision', '')} {semantic.get('why', '')}"
+                final_truth_gate = self.truth_gate.evaluate_final_synthesis(candidate_text, science_truth_claims)
+                if not final_truth_gate.get("allowed"):
+                    correction_payload = dict(judge_payload)
+                    correction_payload["truth_gate_correction"] = {
+                        "previous_candidate": semantic,
+                        "failure": final_truth_gate,
+                        "instruction": "Regenerate once using qualified/system-dependent wording that does not exceed any certainty ceiling.",
+                    }
+                    corrected = await self.judge.synthesize(correction_payload)
+                    if corrected:
+                        corrected_text = f"{corrected.get('decision', '')} {corrected.get('why', '')}"
+                        corrected_gate = self.truth_gate.evaluate_final_synthesis(corrected_text, science_truth_claims)
+                    else:
+                        corrected_gate = {"allowed": False, "status": "INSUFFICIENT_EVIDENCE", "reason": "judge correction unavailable"}
+                    if corrected and corrected_gate.get("allowed"):
+                        semantic = corrected
+                        final_truth_gate = corrected_gate
+                        synth_status = "completed_truth_gate_corrected"
+                    else:
+                        semantic = {
+                            "decision": "SYSTEM_DEPENDENT / INSUFFICIENT_EVIDENCE",
+                            "why": "The candidate synthesis exceeded the High-Level Truth Gate certainty or applicability ceiling, so SARA failed closed instead of emitting an overgeneralized fact.",
+                            "confidence": 0.2,
+                            "council_findings": ["High-Level Truth Gate rejected certainty promotion."],
+                            "critical_assumption": "System-specific dependencies must be known before stronger wording is justified.",
+                            "primary_risk": "Overgeneralizing architecture- or configuration-dependent behavior.",
+                            "evidence_gaps": [str(final_truth_gate.get("reason") or "truth gate qualification required")],
+                            "next_action": "Provide the specific architecture/configuration and stronger independent evidence.",
+                        }
+                        final_truth_gate = corrected_gate
+                        synth_status = "truth_gate_fail_closed"
+        self._complete(
+            trace,
+            CouncilStage.SYNTHESIZE,
+            status=synth_status,
+            metadata={"truth_gate_status": str(final_truth_gate.get("status", "NOT_APPLICABLE"))[:64]},
+        )
 
         final_governance = self.authority.authorize(p, preliminary_governance)
         self._complete(
@@ -250,12 +331,18 @@ class SaraOmega:
             metadata={"disposition": final_governance.disposition.value},
         )
 
+        final_truth_record = list(truth_gate_decisions)
+        if science_truth_claims:
+            final_truth_record.append({"final_synthesis": final_truth_gate})
+
         usable = [r for r in results if r.success]
         if semantic:
             confidence = max(0.0, min(1.0, float(semantic.get("confidence", 0.5))))
             ceilings = [item.confidence_ceiling for item in stress_findings if item.confidence_ceiling is not None]
             if ceilings:
                 confidence = min(confidence, min(ceilings))
+            if final_truth_gate.get("allowed") is False:
+                confidence = min(confidence, 0.2)
             verdict = Verdict(
                 decision=str(semantic.get("decision", "Insufficient evidence")),
                 why=str(semantic.get("why", "")),
@@ -269,6 +356,7 @@ class SaraOmega:
                 claims=claims,
                 providers_used=[r.provider for r in usable],
                 science_analyses=science_analyses,
+                truth_gate_decisions=final_truth_record,
             )
         else:
             verdict = self._fallback_verdict(
@@ -276,6 +364,7 @@ class SaraOmega:
                 results=results,
                 claims=claims,
                 challenges=challenges,
+                truth_gate_decisions=final_truth_record,
             )
 
         if final_governance.disposition == Disposition.ESCALATE:
@@ -293,6 +382,7 @@ class SaraOmega:
             "assignments": [a.model_dump() for a in assignments],
             "specialist_results": [r.model_dump() for r in results],
             "science_analyses": science_analyses,
+            "truth_gate_decisions": final_truth_record,
             "challenges": [item.model_dump() for item in challenges],
             "verdict": verdict.model_dump(exclude={"decision_id", "integrity"}),
         }
