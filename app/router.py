@@ -21,14 +21,4 @@ class OmegaRouter:
             out.append(Assignment(provider="cursor", role="repository analysis", task=p.query))
         if any(k in text for k in DATA_ANALYTICS):
             out.append(Assignment(provider="data_analytics", role="data analytics", task=p.query))
-        if p.council is True:
-            existing = {a.provider for a in out}
-            for provider, role in [
-                ("perplexity","research/evidence"),
-                ("codex","engineering"),
-                ("cursor","repository analysis"),
-                ("data_analytics","data analytics"),
-            ]:
-                if provider not in existing:
-                    out.append(Assignment(provider=provider, role=role, task=p.query))
         return out

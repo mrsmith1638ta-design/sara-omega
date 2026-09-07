@@ -18,5 +18,11 @@ def test_repo_routes_cursor():
 def test_data_analytics_routes_expansion_provider():
     assert "data_analytics" in route("Analyze dashboard metrics and telemetry trends")
 
-def test_forced_council_routes_all():
-    assert route("Evaluate this decision", True) == {"perplexity","codex","cursor","data_analytics"}
+def test_council_true_does_not_blanket_fan_out_specialists():
+    assert route("Evaluate this decision", True) == set()
+
+def test_council_false_cannot_disable_relevant_specialist_routing():
+    assert "data_analytics" in route("Analyze dashboard metrics", False)
+
+def test_trivial_request_can_use_zero_external_specialists():
+    assert route("Explain what a triangle is") == set()
