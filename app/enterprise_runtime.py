@@ -24,6 +24,7 @@ from .titan import (
     TitanEngine,
     VoiceEventRequest,
 )
+from .iot.router import router as iot_router
 from .user_gateway import router as user_gateway_router
 from .user_identity_http import router as user_identity_router
 
@@ -281,7 +282,8 @@ async def titan_sovereignty_sweep(request: SovereigntySweepRequest):
     return titan.sovereignty_sweep(request)
 
 
-# Compose user-facing routers only after all runtime routes are registered. This
-# prevents later router composition from obscuring enrollment/OAuth/user-memory paths.
+# Compose the IoT service plane and user-facing routers only after all runtime
+# routes are registered so they cannot obscure privileged runtime endpoints.
+router.include_router(iot_router)
 router.include_router(user_identity_router)
 router.include_router(user_gateway_router)
