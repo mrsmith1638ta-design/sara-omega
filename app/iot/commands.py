@@ -1,5 +1,5 @@
 from __future__ import annotations
-import hashlib,json,uuid
+import hashlib,hmac,json,os,uuid
 from .adapters.base import AdapterOutcome
 from .models import CapabilityUnavailable,CommandRecord,CommandStatus,DeviceCommandIntent,SubmissionUnverified
 class CommandService:
@@ -7,6 +7,11 @@ class CommandService:
     @staticmethod
     def _hash(device_id,action,parameters,session_id,requested_by):
         return hashlib.sha256(json.dumps({'device_id':device_id,'action':action,'parameters':parameters,'session_id':session_id,'requested_by':requested_by},sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    @staticmethod
+    def _verify_confirmation(supplied):
+        expected=os.getenv('SARA_DEVICE_CONFIRMATION_TOKEN','').strip(); forbidden={os.getenv(x,'').strip() for x in ('OWNER_TOKEN','GPT_ACTION_TOKEN','TEST_TOKEN','SARA_DEVICE_CONTROL_AUTH_TOKEN','SARA_RAILWAY_CONTROL_AUTH_TOKEN','SARA_SOURCE_CONTROL_AUTH_TOKEN')}; forbidden.discard('')
+        if not expected or expected in forbidden: raise PermissionError('device_confirmation_authority_not_separately_configured')
+        if not supplied or supplied in forbidden or not hmac.compare_digest(expected,supplied): raise PermissionError('explicit_confirmation_rejected')
     def prepare(self,device_id,action,parameters,session_id,requested_by):
         d=self.store.get_device(device_id)
         if d is None or not d.enabled: raise CapabilityUnavailable('device_unavailable')
@@ -23,7 +28,7 @@ class CommandService:
         d=self.store.get_device(rec.device_id)
         if d is None: raise CapabilityUnavailable('device_unavailable')
         self.guard.authorize_control(d,control_token,rec.action)
-        if rec.action in d.confirmation_required and not confirmation_token: raise PermissionError('explicit_confirmation_required')
+        if rec.action in d.confirmation_required: self._verify_confirmation(confirmation_token)
         self.store.update_command(command_id,CommandStatus.RESERVED,None)
         intent=DeviceCommandIntent(command_id=rec.command_id,device_id=rec.device_id,action=rec.action,parameters=rec.parameters,session_id=rec.session_id,requested_by=rec.requested_by)
         result=self.adapter_factory(d).execute(intent); payload={'outcome':result.outcome.value,'detail':result.detail,'data':result.data or {}}
