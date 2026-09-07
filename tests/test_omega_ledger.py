@@ -113,3 +113,18 @@ async def test_concurrent_appends_serialize(tmp_path):
     ])
     assert ledger.count() == 8
     assert ledger.verify_chain() is True
+
+
+@pytest.mark.asyncio
+async def test_swapped_signature_metadata_breaks_chain_verification(tmp_path):
+    ledger, _, _ = make_ledger(tmp_path)
+    await ledger.append("d1", {"v": 1})
+    row = ledger.get("d1")
+    with sqlite3.connect(ledger.db) as conn:
+        conn.execute("DROP TRIGGER omega_verdict_ledger_no_update")
+        conn.execute(
+            "UPDATE omega_verdict_ledger SET ed25519_json=?, ml_dsa_json=? WHERE decision_id='d1'",
+            (row["ml_dsa_json"], row["ed25519_json"]),
+        )
+        conn.commit()
+    assert ledger.verify_chain() is False
