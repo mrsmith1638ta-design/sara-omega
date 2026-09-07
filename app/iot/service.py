@@ -16,8 +16,8 @@ class IoTService:
         if device.adapter=='sony_ht_st5000': return SonyHTST5000Adapter()
         raise ValueError('unsupported_device_adapter')
     def health(self):
-        ds=self.store.list_devices(); token=os.getenv('SARA_DEVICE_CONTROL_AUTH_TOKEN','').strip()
-        return {'status':'ok','module':'sara-iot-user-plane','present':True,'store_ready':self.store.db_path.exists(),'registered_devices':len(ds),'telemetry_configured':any(d.enabled and bool(d.metric_allowlist) for d in ds),'control_configured':bool(token) and any(d.enabled and bool(d.allowed_commands) for d in ds),'configured':self.store.db_path.exists(),'execution_authority':False}
+        ds=self.store.list_devices(); token=os.getenv('SARA_DEVICE_CONTROL_AUTH_TOKEN','').strip(); forbidden={os.getenv(x,'').strip() for x in ('OWNER_TOKEN','GPT_ACTION_TOKEN','TEST_TOKEN','SARA_RAILWAY_CONTROL_AUTH_TOKEN','SARA_SOURCE_CONTROL_AUTH_TOKEN')}; forbidden.discard(''); separate=bool(token) and token not in forbidden
+        return {'status':'ok','module':'sara-iot-user-plane','present':True,'store_ready':self.store.db_path.exists(),'registered_devices':len(ds),'telemetry_configured':any(d.enabled and bool(d.metric_allowlist) for d in ds),'control_configured':separate and any(d.enabled and bool(d.allowed_commands) for d in ds),'configured':self.store.db_path.exists(),'execution_authority':False}
     def register_device(self,record,telemetry_secret): return self.store.register_device(record,telemetry_secret)
     def ingest_telemetry(self,envelope,supplied_secret,transport): return self.telemetry.ingest(envelope,supplied_secret,transport)
     def device_health(self,device_id): return self.health_engine.evaluate(device_id)
