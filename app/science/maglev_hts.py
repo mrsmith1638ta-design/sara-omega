@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from .models import ProvenanceClass, ScienceAnalysis, ScienceCalculation
+from .models import EngineeringState, ProvenanceClass, ScienceAnalysis, ScienceCalculation
 from .validation import require_positive
 
 
 class HTSMaglevEngine:
     domain = "maglev_hts"
 
-    def characterize(self, *, temperature_k: float, critical_current_density: float) -> dict[str, float | str | bool]:
+    def characterize(self, *, temperature_k: float, critical_current_density: float) -> dict[str, float | str | bool | list[str]]:
         require_positive("temperature_k", temperature_k)
         require_positive("critical_current_density", critical_current_density)
         return {
@@ -15,7 +15,17 @@ class HTSMaglevEngine:
             "temperature_k": temperature_k,
             "critical_current_density": critical_current_density,
             "flux_pinning": True,
-            "passive_restoring_behavior": True,
+            "passive_restoring_behavior": EngineeringState.SYSTEM_DEPENDENT.value,
+            "active_control": EngineeringState.SYSTEM_DEPENDENT.value,
+            "low_speed_levitation": EngineeringState.SYSTEM_DEPENDENT.value,
+            "dependencies": [
+                "material",
+                "temperature",
+                "field history",
+                "guideway configuration",
+                "geometry",
+                "critical current density",
+            ],
             "provenance_class": ProvenanceClass.EXPERIMENTAL_TECHNOLOGY.value,
         }
 
@@ -33,9 +43,9 @@ class HTSMaglevEngine:
                     provenance_class=ProvenanceClass.EXPERIMENTAL_TECHNOLOGY,
                     evidence_status="SUPPORTED",
                     assumptions=["Representative liquid-nitrogen-scale temperature for analytical comparison"],
-                    limitations=["Material, field history, geometry, and cooling architecture are system-specific"],
+                    limitations=["Transport-level passive restoring behavior depends on material, field history, geometry, guideway configuration, temperature, and cooling architecture"],
                     source_ids=["maglev.hts"],
                     validation_status="VALID",
                 )
             )
-        return ScienceAnalysis(domain=self.domain, summary="High-temperature-superconductor flux-pinning levitation analysis.", calculations=calculations, confidence=0.7 if calculations else 0.5)
+        return ScienceAnalysis(domain=self.domain, summary="High-temperature-superconductor flux-pinning levitation analysis with configuration-dependent transport behavior explicitly scoped.", calculations=calculations, confidence=0.7 if calculations else 0.5)
