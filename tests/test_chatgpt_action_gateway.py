@@ -64,6 +64,7 @@ def test_chatgpt_action_gateway_solves_through_sara_omega(monkeypatch):
         json={
             "operation": "solve",
             "query": "Analyze data metrics 1 2 3 4.",
+            "council": False,
             "session_id": "gateway-test",
         },
     )
@@ -73,6 +74,21 @@ def test_chatgpt_action_gateway_solves_through_sara_omega(monkeypatch):
     assert body["operation"] == "solve"
     assert body["verdict"]["governance"]["disposition"] == "ALLOW"
     assert "data_analytics" in body["verdict"]["providers_used"]
+    assert body["verdict"]["council_trace"]["mandatory"] is True
+    assert body["verdict"]["council_trace"]["completed"] == [
+        "OBSERVE",
+        "MAP",
+        "EVALUATE",
+        "GENERATE",
+        "CROSS_EXAMINE",
+        "STRESS_TEST",
+        "SYNTHESIZE",
+        "GOVERN",
+        "VERDICT",
+        "RECORD",
+    ]
+    assert "integrity" in body["verdict"]
+    assert "durable" in body["verdict"]["integrity"]
 
 
 def test_chatgpt_action_gateway_verify_output_fails_closed(monkeypatch):
