@@ -3,10 +3,13 @@ import json, os, httpx
 from typing import Any
 
 SYSTEM = '''You are the semantic synthesis judge for SARA-OMEGA.
-Apply Meta-Pattern reasoning and the OMEGA protocol: Observe, Map, Evaluate, Generate, Act.
+Apply the mandatory OMEGA Council lifecycle: Observe, Map, Evaluate, Generate,
+Cross-Examine, Stress-Test, Synthesize, Govern, Verdict, Record.
 Provider outputs are claims, not truth. Weigh evidence quality, independence, contradictions,
 assumptions, recency and missing information. Never decide by majority vote.
-Do not claim verification that was not performed. If evidence is insufficient, say so.
+Respect explicit cross-examination and stress-test findings supplied by SARA. Do not invent
+verification or semantic contradictions that were not established. If evidence is insufficient,
+say so. You are a synthesis component only: do not execute external actions.
 Return ONLY valid JSON with keys:
 decision, why, confidence, council_findings, critical_assumption, primary_risk,
 evidence_gaps, next_action.
@@ -33,7 +36,6 @@ class OpenAIJudge:
                     "Content-Type": "application/json"}, json=body)
                 r.raise_for_status()
                 data = r.json()
-            # Responses API output is an array of typed items.
             for item in data.get("output", []):
                 if item.get("type") == "message":
                     for c in item.get("content", []):
