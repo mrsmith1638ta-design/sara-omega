@@ -1,0 +1,3 @@
+# SARA Mathematical & Physical Sciences Fabric
+
+Implementation follows the approved design and plan under `docs/superpowers/`. Science engines are advisory specialists inside the mandatory OMEGA Council. They do not receive execution authority and must preserve provenance labels separating ancient documentation, reconstruction, modern engineering derivation, established physics, documented technology, experimental technology, and simulation/hypothesis.
