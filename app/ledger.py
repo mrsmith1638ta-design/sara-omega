@@ -124,6 +124,14 @@ class OmegaVerdictLedger:
             for row in rows:
                 if str(row["previous_record_hash"]) != expected_previous:
                     return False
+                if str(row["schema_version"]) != SCHEMA_VERSION:
+                    return False
+                ed = json.loads(str(row["ed25519_json"]))
+                ml = json.loads(str(row["ml_dsa_json"]))
+                if str(ed.get("algorithm", "")).lower() != "ed25519" or not bool(ed.get("verified")):
+                    return False
+                if str(ml.get("algorithm", "")).lower().replace("_", "-") != "ml-dsa" or not bool(ml.get("verified")):
+                    return False
                 payload = json.loads(str(row["canonical_payload"]))
                 core = self._core(
                     str(row["decision_id"]),
