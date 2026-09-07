@@ -62,6 +62,12 @@ class ExternalHttpSigner:
         signature_b64 = str(data.get("signature_b64") or "")
         if not signature_b64:
             raise SigningError("signer_response_missing_signature")
+        response_algorithm = data.get("algorithm")
+        response_key_id = data.get("key_id")
+        if response_algorithm is not None and str(response_algorithm) != self.algorithm:
+            raise SigningError("signer_response_identity_mismatch")
+        if response_key_id is not None and str(response_key_id) != self.key_id:
+            raise SigningError("signer_response_identity_mismatch")
         return SignatureRecord(
             algorithm=self.algorithm,
             key_id=self.key_id,
@@ -84,6 +90,12 @@ class ExternalHttpSigner:
                 data = response.json()
         except Exception as exc:
             raise SigningError(f"signer_verify_failed:{type(exc).__name__}") from None
+        response_algorithm = data.get("algorithm")
+        response_key_id = data.get("key_id")
+        if response_algorithm is not None and str(response_algorithm) != self.algorithm:
+            raise SigningError("signer_response_identity_mismatch")
+        if response_key_id is not None and str(response_key_id) != self.key_id:
+            raise SigningError("signer_response_identity_mismatch")
         return bool(data.get("verified") is True)
 
 
@@ -121,6 +133,10 @@ class DualSigner:
         try:
             ed_record = await self.ed25519.sign(digest_bytes)
             ml_record = await self.ml_dsa.sign(digest_bytes)
+            if ed_record.algorithm.lower() != "ed25519":
+                raise SigningError("ed25519_signature_record_algorithm_mismatch")
+            if ml_record.algorithm.lower().replace("_", "-") != "ml-dsa":
+                raise SigningError("ml_dsa_signature_record_algorithm_mismatch")
             ed_ok = await self.ed25519.verify(digest_bytes, ed_record)
             ml_ok = await self.ml_dsa.verify(digest_bytes, ml_record)
         except SigningError:
