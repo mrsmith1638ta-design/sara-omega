@@ -16,20 +16,42 @@ import xml.etree.ElementTree as ET
 
 source_path, merged_path = sys.argv[1:3]
 android = '{http://schemas.android.com/apk/res/android}'
+package_name = 'com.saraomega.companion'
+launcher_name = package_name + '.ui.MainActivity'
 allowed_direct = {
     'android.permission.INTERNET',
     'android.permission.ACCESS_NETWORK_STATE',
 }
 
-def requested_permissions(path):
-    root = ET.parse(path).getroot()
+def requested_permissions(root):
     return {
         node.attrib.get(android + 'name')
         for node in root.findall('uses-permission')
         if node.attrib.get(android + 'name')
     }
 
-source_requested = requested_permissions(source_path)
+def normalize_component(name):
+    if not name:
+        return ''
+    if name.startswith('.'):
+        return package_name + name
+    if '.' not in name:
+        return package_name + '.' + name
+    return name
+
+def exported_components(root):
+    app = root.find('application')
+    if app is None:
+        raise SystemExit('application node missing')
+    found = []
+    for tag in ('activity', 'activity-alias', 'service', 'receiver', 'provider'):
+        for node in app.findall(tag):
+            if node.attrib.get(android + 'exported') == 'true':
+                found.append((tag, normalize_component(node.attrib.get(android + 'name', ''))))
+    return found
+
+source_root = ET.parse(source_path).getroot()
+source_requested = requested_permissions(source_root)
 if source_requested != allowed_direct:
     raise SystemExit(
         'app source manifest permissions must be exactly '
@@ -37,26 +59,27 @@ if source_requested != allowed_direct:
         + '; found '
         + repr(sorted(source_requested))
     )
+source_exported = exported_components(source_root)
+if source_exported != [('activity', launcher_name)]:
+    raise SystemExit('unexpected app-authored exported component(s): ' + repr(source_exported))
 
-root = ET.parse(merged_path).getroot()
-app = root.find('application')
-if app is None:
+merged_root = ET.parse(merged_path).getroot()
+merged_app = merged_root.find('application')
+if merged_app is None:
     raise SystemExit('application node missing')
-if app.attrib.get(android + 'usesCleartextTraffic') == 'true':
+if merged_app.attrib.get(android + 'usesCleartextTraffic') == 'true':
     raise SystemExit('cleartext traffic enabled')
 
-exported = []
-for tag in ('activity', 'activity-alias', 'service', 'receiver', 'provider'):
-    for node in app.findall(tag):
-        if node.attrib.get(android + 'exported') == 'true':
-            exported.append((tag, node.attrib.get(android + 'name', '')))
-if exported != [('activity', 'com.saraomega.companion.ui.MainActivity')]:
-    raise SystemExit('unexpected exported component(s): ' + repr(exported))
+# Dependencies such as WorkManager and ProfileInstaller may contribute their
+# own protected components. They are permitted, but this application may not
+# add any other exported component under the SARA package namespace.
+for tag, name in exported_components(merged_root):
+    if name.startswith(package_name + '.') and not (tag == 'activity' and name == launcher_name):
+        raise SystemExit('unexpected SARA exported component: ' + repr((tag, name)))
 
-# WorkManager/AndroidX may merge normal scheduling permissions needed for its
-# own internal JobService/receivers. Explicitly fail on user-sensitive classes
-# that this V1 design prohibits, regardless of whether a dependency adds them.
-merged_requested = requested_permissions(merged_path)
+# WorkManager/AndroidX may merge normal scheduling permissions. Fail on the
+# user-sensitive permission classes prohibited by the approved V1 design.
+merged_requested = requested_permissions(merged_root)
 forbidden_sensitive = {
     'android.permission.CAMERA',
     'android.permission.RECORD_AUDIO',
