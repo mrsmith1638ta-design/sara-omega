@@ -1,0 +1,40 @@
+name: SARA Android Companion validation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Unit tests, lint, and APK
+        working-directory: android/sara-companion
+        run: |
+          chmod +x gradlew scripts/*.sh
+          ./gradlew testDebugUnitTest lintDebug assembleDebug processDebugMainManifest
+          ./scripts/verify_manifest.sh
+          ./scripts/verify_apk.sh app/build/outputs/apk/debug/app-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk SARA-Android-Companion-v1-debug-installable.apk
+      - name: Upload installable test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SARA-Android-Companion-v1-debug-installable
+          path: android/sara-companion/SARA-Android-Companion-v1-debug-installable.apk
+          if-no-files-found: error
+          retention-days: 14
