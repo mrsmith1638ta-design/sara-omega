@@ -13,7 +13,7 @@ class Factory:
     def __call__(self,d): return self.a
 
 def setup(tmp_path,monkeypatch,confirmation=False):
-    monkeypatch.setenv('SARA_DATA_DIR',str(tmp_path)); monkeypatch.setenv('SARA_DEVICE_CONTROL_AUTH_TOKEN','device-control'); s=IoTStore.from_env(); d=DeviceRecord(device_id='galaxy-s25',name='S25',device_class='android',model='Galaxy S25',adapter='android',allowed_commands={'health.query'},confirmation_required={'health.query'} if confirmation else set()); s.register_device(d,'x'*24); a=Uncertain(); return CommandService(s,IoTIngressGuard(s),Factory(a)),a
+    monkeypatch.setenv('SARA_DATA_DIR',str(tmp_path)); monkeypatch.setenv('SARA_DEVICE_CONTROL_AUTH_TOKEN','device-control'); s=IoTStore.from_env(); d=DeviceRecord(device_id='galaxy-s25',name='S25',device_class='test',model='Galaxy S25',adapter='test_uncertain',allowed_commands={'health.query'},confirmation_required={'health.query'} if confirmation else set()); s.register_device(d,'x'*24); a=Uncertain(); return CommandService(s,IoTIngressGuard(s),Factory(a)),a
 
 def test_unknown_command_rejected(tmp_path,monkeypatch):
     cs,a=setup(tmp_path,monkeypatch)
