@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">SARA Companion</string>
+    <string name="pair_code_hint">SARA pairing code</string>
+    <string name="pair_with_sara">Pair with SARA</string>
+    <string name="check_now">Check Now</string>
+    <string name="send_now">Send Now</string>
+    <string name="unpair">Unpair</string>
+</resources>
