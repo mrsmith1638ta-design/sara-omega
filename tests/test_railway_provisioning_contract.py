@@ -43,3 +43,17 @@ def test_windows_resolver_passes_exact_live_project_id():
     assert 'export SARA_RAILWAY_PROJECT_ID="$TARGET_PROJECT_ID"' in text
     assert 'refusing all Railway writes' in text
     assert 'source "$PROVISION_SCRIPT"' in text
+
+
+def test_perplexity_key_is_optional_and_never_blocks_failsafe_acceptance():
+    text = _text(CANONICAL)
+    assert 'has_variable PERPLEXITY_API_KEY' in text
+    assert 'printf \'%s\' "$PERPLEXITY_API_KEY" | railway variable set PERPLEXITY_API_KEY --stdin' in text
+    assert 'PERPLEXITY_API_KEY not supplied; Perplexity specialist will remain disabled until it is configured' in text
+
+
+def test_perplexity_provisioning_runs_after_failsafe_gate_is_installed():
+    text = _text(CANONICAL)
+    failsafe_idx = text.index('SARA_RELEASE_VERSION=3.2.1')
+    perplexity_idx = text.index('Checking Perplexity research provider configuration')
+    assert failsafe_idx < perplexity_idx

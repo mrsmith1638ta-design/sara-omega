@@ -71,6 +71,9 @@ jobs:
       - name: Provision, deploy, restart, and verify SARA-OMEGA V3.2.1
         if: steps.credential.outputs.available == 'true'
         shell: bash
+        env:
+          PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
+          PERPLEXITY_MODEL: ${{ secrets.PERPLEXITY_MODEL }}
         run: |
           if [ -n "${RAILWAY_ACCOUNT_TOKEN:-}" ]; then
             export RAILWAY_API_TOKEN="$RAILWAY_ACCOUNT_TOKEN"
@@ -96,10 +99,13 @@ jobs:
       - name: Production summary
         if: steps.credential.outputs.available == 'true' && always()
         shell: bash
+        env:
+          PERPLEXITY_KEY_PRESENT: ${{ secrets.PERPLEXITY_API_KEY != '' }}
         run: |
           {
             echo '## SARA-OMEGA V3.2.1 zero-to-production'
             echo "Protected credential source: ${{ steps.credential.outputs.source }}"
+            echo "Perplexity provider secret supplied: ${PERPLEXITY_KEY_PRESENT}"
             if [ -f railway-activation-report.json ]; then
               echo 'Railway provisioning completed and produced a production acceptance report.'
               echo '```json'
