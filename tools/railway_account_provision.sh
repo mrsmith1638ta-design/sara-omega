@@ -181,6 +181,17 @@ railway variable set \
   SARA_RELEASE_VERSION=3.2.1 \
   --skip-deploys --service "$SERVICE_NAME" >/dev/null
 
+# Record the exact commit being deployed so production acceptance evidence
+# can attest to it. --skip-deploys means this value only becomes the running
+# authority once `railway up` below actually deploys the matching source;
+# it is never exposed against stale, already-running code.
+if [ -n "${GITHUB_SHA:-}" ]; then
+  log "Recording exact deployed source commit ${GITHUB_SHA}"
+  railway variable set "SARA_SOURCE_COMMIT_SHA=${GITHUB_SHA}" --skip-deploys --service "$SERVICE_NAME" >/dev/null
+else
+  log "GITHUB_SHA not set; skipping source-commit-sha attestation variable"
+fi
+
 # Use the proven linked-context volume pattern from railway_secure_activate.sh.
 # Railway CLI 5.x accepts volume add in the selected service context and no
 # longer requires/accepts --service for this operation.
