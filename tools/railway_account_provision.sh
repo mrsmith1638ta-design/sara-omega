@@ -173,6 +173,15 @@ else
   log "Existing fail-safe master key retained"
 fi
 
+if ! has_variable SARA_RUNTIME_ASSURANCE_SECRET; then
+  RUNTIME_ASSURANCE_SECRET_GENERATED="$(openssl rand -hex 48)"
+  printf '%s' "$RUNTIME_ASSURANCE_SECRET_GENERATED" | railway variable set SARA_RUNTIME_ASSURANCE_SECRET --stdin --skip-deploys --service "$SERVICE_NAME" >/dev/null
+  unset RUNTIME_ASSURANCE_SECRET_GENERATED
+  log "Generated runtime assurance secret without printing it"
+else
+  log "Existing runtime assurance secret retained"
+fi
+
 railway variable set \
   SARA_FAILSAFE_REQUIRED=true \
   SARA_FAILSAFE_ROOT=/data/sara-failsafe \
