@@ -13,6 +13,7 @@ def _configure(monkeypatch, tmp_path, *, dedicated=False):
     monkeypatch.setenv("SARA_FAILSAFE_REQUIRE_DEDICATED_MOUNT", "true" if dedicated else "false")
     monkeypatch.setenv("SARA_FAILSAFE_MIN_FREE_BYTES", "1024")
     monkeypatch.delenv("SARA_PRODUCTION_ALLOW_INSECURE_OVERRIDE", raising=False)
+    monkeypatch.delenv("SARA_SOURCE_COMMIT_SHA", raising=False)
 
 
 def test_preflight_checkpoint_and_cross_boot_persistence(monkeypatch, tmp_path):
@@ -29,6 +30,27 @@ def test_preflight_checkpoint_and_cross_boot_persistence(monkeypatch, tmp_path):
     assert second["persistence_observed_across_boots"] is True
     assert second["persistence_status"] == "PROVEN"
     assert second["production_accepted"] is True
+
+
+def test_preflight_exposes_valid_source_commit_sha(monkeypatch, tmp_path):
+    _configure(monkeypatch, tmp_path, dedicated=False)
+    source_sha = "A1" * 20
+    monkeypatch.setenv("SARA_SOURCE_COMMIT_SHA", source_sha)
+
+    evidence = bootstrap.run_preflight()
+
+    assert evidence["source_commit_sha"] == source_sha.lower()
+
+
+@pytest.mark.parametrize("source_sha", [None, "", "abc123", "g" * 40, "1" * 39, "1" * 41])
+def test_preflight_omits_invalid_source_commit_sha(monkeypatch, tmp_path, source_sha):
+    _configure(monkeypatch, tmp_path, dedicated=False)
+    if source_sha is not None:
+        monkeypatch.setenv("SARA_SOURCE_COMMIT_SHA", source_sha)
+
+    evidence = bootstrap.run_preflight()
+
+    assert "source_commit_sha" not in evidence
 
 
 def test_preflight_rejects_missing_owner_token(monkeypatch, tmp_path):

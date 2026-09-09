@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -28,6 +29,7 @@ HARDENING_PROFILE = "SIOS-V3.2-FAILSAFE-1"
 DEFAULT_FAILSAFE_ROOT = "/data/sara-failsafe"
 MARKER_NAME = "runtime-persistence-marker.json"
 EVIDENCE_NAME = "production-acceptance.json"
+SOURCE_COMMIT_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 
 logger = logging.getLogger("sara.production_bootstrap")
 
@@ -41,6 +43,13 @@ def _env_bool(name: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _source_commit_sha() -> str | None:
+    raw = os.environ.get("SARA_SOURCE_COMMIT_SHA", "").strip()
+    if not SOURCE_COMMIT_RE.fullmatch(raw):
+        return None
+    return raw.lower()
 
 
 def configure_production_defaults() -> None:
@@ -132,6 +141,7 @@ def run_preflight() -> dict[str, Any]:
     owner_token_configured = bool(os.environ.get("OWNER_TOKEN", "").strip())
     if not owner_token_configured and not insecure_override:
         raise ProductionPreflightError("owner_token_not_configured")
+    source_commit_sha = _source_commit_sha()
 
     runtime = RuntimeFailSafe.from_env()
     try:
@@ -221,6 +231,8 @@ def run_preflight() -> dict[str, Any]:
             and persistence_observed
         ),
     }
+    if source_commit_sha:
+        evidence["source_commit_sha"] = source_commit_sha
     _atomic_json(root / EVIDENCE_NAME, evidence)
     return evidence
 
@@ -249,6 +261,7 @@ def register_acceptance_routes(main_module: Any, evidence: dict[str, Any]) -> No
             "project_name",
             "release_version",
             "hardening_profile",
+            "source_commit_sha",
             "bootstrap_ready",
             "production_accepted",
             "failsafe_required",

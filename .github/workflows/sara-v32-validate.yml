@@ -54,3 +54,13 @@ jobs:
         run: python tools/adversarial_gate.py
       - name: Railway container build
         run: docker build --pull -t sara-omega:v3.2.1 .
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: ROAD MCP validation
+        working-directory: road-mcp
+        run: |
+          npm ci
+          npm test
+          npm run check
+          npm run build
