@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+from .ats_intelligence import ATS_PROFILE_VERSION, router as ats_intelligence_router
 
 from .concentration import ConcentrationGovernor, ConcentrationRequest
 from .hawkins_chaos import HawkinsChaosEngine, HawkinsChaosRequest
@@ -31,6 +32,19 @@ from .user_identity_http import router as user_identity_router
 router = APIRouter()
 runtime_assurance = RuntimeAssuranceEngine()
 module_awareness = ModuleAwarenessEngine()
+module_awareness.register(
+    ModuleRecord(
+        service="sara-ats-intelligence",
+        status="integrated",
+        version=ATS_PROFILE_VERSION,
+        metadata={
+            "execution_authority": False,
+            "truth_preserving_tailoring": True,
+            "business_unit_scope_isolation": True,
+            "stale_rule_suppression": True,
+        },
+    )
+)
 module_awareness.register(
     ModuleRecord(
         service="sara-iot-user-plane",
@@ -160,6 +174,7 @@ async def titan_apex_execute_gate(request: ExecuteGateRequest):
 @router.post("/titan/apex/sovereignty/sweep")
 async def titan_sovereignty_sweep(request: SovereigntySweepRequest): return titan.sovereignty_sweep(request)
 
+router.include_router(ats_intelligence_router)
 router.include_router(iot_router)
 router.include_router(user_identity_router)
 router.include_router(user_gateway_router)

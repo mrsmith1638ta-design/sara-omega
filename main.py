@@ -621,6 +621,7 @@ def health():
             "voice": ENABLE_GCP,
             "vision": ENABLE_GCP and FEATURE_VISION,
             "context_dev_policy_gate": True,
+            "ats_intelligence": True,
         },
         "context_dev": CONTEXT_DEV_LICENSE.public_status(),
         "client_state": {
