@@ -1,0 +1,11 @@
+{
+  "profile_version": "2026-09-08.3",
+  "checked_at": "2026-09-08T19:00:00Z",
+  "sources": [
+    {"provider":"workday","url":"https://doc.workday.com/admin-guide/en-us/human-capital-management/recruiting/candidates/set-up-prospects-and-candidates/hdc1552497830785.html","claim":"resume parsing varies by format/order; image-based styles discouraged; Skills not auto-filled by resume parsing"},
+    {"provider":"workday","url":"https://doc.workday.com/admin-guide/en-us/human-capital-management/recruiting/candidates/candidate-skills-match/bmj1604095304483.html","claim":"skills match compares application/resume skills to requisition skills and weights required skills more heavily"},
+    {"provider":"successfactors","url":"https://help.sap.com/docs/successfactors-recruiting/setting-up-and-maintaining-sap-successfactors-recruiting/working-with-resume-parsing","claim":"resume parsing populates candidate profile; Textkernel is used"},
+    {"provider":"smartrecruiters","url":"https://www.smartrecruiters.com/resources/article/june-2026-product-release-highlights-more-control-confidence-in-hiring-workflows/","claim":"Winston Match prioritizes candidate-verified experience and education when available"},
+    {"provider":"taleo","url":"https://docs.oracle.com/en/cloud/saas/taleo-enterprise/20b/otrec/using-recruiting.pdf","claim":"resume parsing extracts personal, education, and work-experience fields"}
+  ]
+}
