@@ -20,8 +20,8 @@ import {
   CANONICAL_WORKFLOW_PATH,
   CANONICAL_JOB_NAME,
   REQUIRED_STEP_NAMES,
-} from "../src/testEvidence.js";
-import { certificationChecks } from "../src/server.js";
+} from "../dist/testEvidence.js";
+import { certificationChecks } from "../dist/server.js";
 
 const VALID_SHA = "a".repeat(40);
 const OTHER_SHA = "b".repeat(40);

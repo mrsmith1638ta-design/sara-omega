@@ -15,6 +15,14 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
+import {
+  boundedGithubGet,
+  buildTestCiValidationEvidence,
+  parseProductionRuntimeAttestation,
+  TEST_CI_EVIDENCE_ID,
+  type TestCiEvidenceRecord,
+} from "./testEvidence.js";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -264,6 +272,13 @@ async function loadContextdevAuthorizationEvidence(): Promise<EvidenceRecord> {
   };
 }
 
+async function loadTestCiValidationEvidence(productionRaw: unknown): Promise<TestCiEvidenceRecord> {
+  return buildTestCiValidationEvidence(
+    async () => parseProductionRuntimeAttestation(productionRaw),
+    boundedGithubGet
+  );
+}
+
 export interface EvidenceRegistry {
   status: "PARTIAL" | "PASS" | "BLOCKED";
   records: EvidenceRecord[];
@@ -271,10 +286,16 @@ export interface EvidenceRegistry {
 
 export async function buildEvidenceRegistry(): Promise<EvidenceRegistry> {
   const roadmapSource = await loadRoadmapSourceEvidence();
-  const { evidence: productionAttestation } = await loadProductionAttestationEvidence();
+  const { evidence: productionAttestation, raw: productionRaw } = await loadProductionAttestationEvidence();
   const contextdevAuthorization = await loadContextdevAuthorizationEvidence();
+  const testCiValidation = await loadTestCiValidationEvidence(productionRaw);
 
-  const records: EvidenceRecord[] = [roadmapSource, productionAttestation, contextdevAuthorization];
+  const records: EvidenceRecord[] = [
+    roadmapSource,
+    productionAttestation,
+    contextdevAuthorization,
+    testCiValidation,
+  ];
   const allPass = records.every((r) => r.status === "PASS");
   return { status: allPass ? "PASS" : "PARTIAL", records };
 }
@@ -303,6 +324,7 @@ export function certificationChecks(records: EvidenceRecord[]): GateCheck[] {
   const roadmapSource = findEvidence(records, "roadmap-source");
   const productionAttestation = findEvidence(records, "production-attestation");
   const contextdevAuthorization = findEvidence(records, "contextdev-authorization");
+  const testCiValidation = findEvidence(records, TEST_CI_EVIDENCE_ID);
 
   const checks: GateCheck[] = [];
   const upstreamFailures: Gate[] = [];
@@ -330,8 +352,27 @@ export function certificationChecks(records: EvidenceRecord[]): GateCheck[] {
   // BUILD — no dedicated implementation evidence yet.
   pushGate("BUILD", "PARTIAL", [roadmapSource?.id ?? "roadmap-source"], DEFAULT_UNIMPLEMENTED_DETAIL);
 
-  // TEST — falls through to the default path pending dedicated evidence (see plan Task 4/5).
-  pushGate("TEST", "UNVERIFIED", [roadmapSource?.id ?? "roadmap-source"], DEFAULT_UNIMPLEMENTED_DETAIL);
+  // TEST — PASS only from the exact-SHA test-ci-validation evidence record (plan Task 5).
+  if (testCiValidation && testCiValidation.status === "PASS") {
+    pushGate(
+      "TEST",
+      "PASS",
+      [TEST_CI_EVIDENCE_ID],
+      "TEST is PASS because the exact deployed source commit has a completed successful canonical " +
+        "GitHub Actions validation run and live production self-test predicates are true.",
+      false
+    );
+  } else {
+    pushGate(
+      "TEST",
+      "UNVERIFIED",
+      [TEST_CI_EVIDENCE_ID],
+      testCiValidation
+        ? `TEST is UNVERIFIED: ${testCiValidation.detail}`
+        : "TEST is UNVERIFIED: test-ci-validation evidence is unavailable.",
+      false
+    );
+  }
 
   // SECURITY — driven by Context.dev evidence.
   const securityDetail = "SECURITY includes Context.dev authorization when that integration is present.";
