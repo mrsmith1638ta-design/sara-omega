@@ -127,6 +127,12 @@ returns either `BLOCKED` or `READY_FOR_VERIFICATION`.
 Madhouse can block a candidate. It cannot grant PASS, deploy, certify production readiness,
 override SIOS, override ROAD, or promote its own hypothesis to verified truth.
 
+Its evidence ledger distinguishes reproduced failures from deterministic heuristics. Parser/compiler
+failures and recurring failure families can be `VERIFIED`; static code, security-pattern, quality and
+duplication signals remain `SUPPORTED` until independent runtime, test or exploit evidence confirms
+them. Recurrence uses both exact fingerprints and normalized failure-family fingerprints so cosmetic
+renames do not hide repeated repair failures.
+
 Run the API locally:
 
 ```powershell

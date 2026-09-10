@@ -111,10 +111,13 @@ class MadhouseAgent:
                         f"Python parser failure at line {exc.lineno or 'unknown'}: {exc.msg}",
                         reproducible=True,
                         line=exc.lineno,
+                        evidence_state="VERIFIED",
+                        family_fingerprint="SYNTAX:parser-failure",
                     )
                 )
             if tree is not None:
                 findings.extend(self._python_static_findings(tree, code))
+                findings.extend(self._python_structural_duplication_findings(tree))
 
         findings.extend(self._duplication_findings(code))
         findings.extend(self._security_findings(code))
@@ -122,37 +125,7 @@ class MadhouseAgent:
         return findings
 
     def _python_static_findings(self, tree: ast.AST, code: str) -> list[dict[str, Any]]:
-        defined = set(dir(builtins)) | {"True", "False", "None", "__name__"}
-        used: list[tuple[str, int | None]] = []
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
-                defined.add(node.name)
-            elif isinstance(node, ast.arg):
-                defined.add(node.arg)
-            elif isinstance(node, ast.Name):
-                if isinstance(node.ctx, (ast.Store, ast.Param)):
-                    defined.add(node.id)
-                elif isinstance(node.ctx, ast.Load):
-                    used.append((node.id, getattr(node, "lineno", None)))
-            elif isinstance(node, ast.alias):
-                defined.add((node.asname or node.name.split(".")[0]))
-            elif isinstance(node, ast.ExceptHandler) and node.name:
-                defined.add(str(node.name))
-
-        findings = []
-        for name, line in sorted(set(used)):
-            if name not in defined:
-                findings.append(
-                    self._finding(
-                        "UNDEFINED_SYMBOL",
-                        "BLOCKING",
-                        f"Name `{name}` is read before any local definition, import, or known builtin.",
-                        reproducible=True,
-                        line=line,
-                        token=name,
-                    )
-                )
-
+        findings = self._undefined_symbol_findings(tree)
         for node in ast.walk(tree):
             if isinstance(node, ast.Return) and isinstance(node.value, ast.Constant) and node.value.value is True:
                 surrounding = self._line_window(code, getattr(node, "lineno", 0), radius=3).lower()
@@ -164,9 +137,78 @@ class MadhouseAgent:
                             "Failure/error branch appears to return success=True.",
                             reproducible=True,
                             line=getattr(node, "lineno", None),
+                            evidence_state="SUPPORTED",
+                            family_fingerprint="LOGIC:success-return-in-failure-context",
                         )
                     )
         return findings
+
+    def _undefined_symbol_findings(self, tree: ast.AST) -> list[dict[str, Any]]:
+        defined = set(dir(builtins)) | {"True", "False", "None", "__name__"}
+        findings: list[dict[str, Any]] = []
+        seen: set[tuple[str, int | None]] = set()
+
+        def analyze_body(statements: list[ast.stmt], scope_defined: set[str]) -> None:
+            for statement in statements:
+                if isinstance(statement, (ast.Import, ast.ImportFrom)):
+                    scope_defined.update(self._import_names(statement))
+                    continue
+                if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    scope_defined.add(statement.name)
+                    function_defined = set(dir(builtins)) | {arg.arg for arg in statement.args.args}
+                    function_defined.update(arg.arg for arg in statement.args.posonlyargs)
+                    function_defined.update(arg.arg for arg in statement.args.kwonlyargs)
+                    if statement.args.vararg:
+                        function_defined.add(statement.args.vararg.arg)
+                    if statement.args.kwarg:
+                        function_defined.add(statement.args.kwarg.arg)
+                    analyze_body(statement.body, function_defined | scope_defined)
+                    continue
+                if isinstance(statement, ast.ClassDef):
+                    scope_defined.add(statement.name)
+                    analyze_body(statement.body, set(dir(builtins)) | scope_defined)
+                    continue
+                if isinstance(statement, ast.ExceptHandler) and statement.name:
+                    scope_defined.add(str(statement.name))
+
+                for name, line in self._loads(statement):
+                    if name not in scope_defined and (name, line) not in seen:
+                        seen.add((name, line))
+                        findings.append(
+                            self._finding(
+                                "UNDEFINED_SYMBOL",
+                                "BLOCKING",
+                                f"Name `{name}` is read before any local definition, import, or known builtin.",
+                                reproducible=False,
+                                line=line,
+                                token=name,
+                                evidence_state="SUPPORTED",
+                                family_fingerprint="UNDEFINED_SYMBOL:read-before-definition",
+                            )
+                        )
+                scope_defined.update(name for name, _line in self._stores(statement))
+
+        analyze_body(list(getattr(tree, "body", [])), set(defined))
+        return findings
+
+    def _loads(self, node: ast.AST) -> list[tuple[str, int | None]]:
+        return [
+            (child.id, getattr(child, "lineno", None))
+            for child in ast.walk(node)
+            if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load)
+        ]
+
+    def _stores(self, node: ast.AST) -> list[tuple[str, int | None]]:
+        stores = []
+        for child in ast.walk(node):
+            if isinstance(child, ast.Name) and isinstance(child.ctx, (ast.Store, ast.Param)):
+                stores.append((child.id, getattr(child, "lineno", None)))
+            elif isinstance(child, ast.ExceptHandler) and child.name:
+                stores.append((str(child.name), getattr(child, "lineno", None)))
+        return stores
+
+    def _import_names(self, node: ast.Import | ast.ImportFrom) -> set[str]:
+        return {alias.asname or alias.name.split(".")[0] for alias in node.names}
 
     def _duplication_findings(self, code: str) -> list[dict[str, Any]]:
         logical_lines = [
@@ -183,10 +225,53 @@ class MadhouseAgent:
                 "DUPLICATION",
                 "HIGH",
                 f"{len(duplicate_lines)} repeated code line pattern(s) appear at least 3 times.",
-                reproducible=True,
+                reproducible=False,
                 token=self._short_hash("|".join(duplicate_lines)),
+                evidence_state="SUPPORTED",
+                family_fingerprint="DUPLICATION:repeated-logical-lines",
             )
         ]
+
+    def _python_structural_duplication_findings(self, tree: ast.AST) -> list[dict[str, Any]]:
+        patterns = [
+            self._normalized_ast(statement)
+            for statement in getattr(tree, "body", [])
+            if isinstance(statement, (ast.Assign, ast.AnnAssign, ast.AugAssign, ast.Expr, ast.Return, ast.If, ast.For))
+        ]
+        counts = Counter(pattern for pattern in patterns if pattern)
+        duplicated = [pattern for pattern, count in counts.items() if count >= 3]
+        if not duplicated:
+            return []
+        return [
+            self._finding(
+                "DUPLICATION",
+                "HIGH",
+                f"{len(duplicated)} structurally similar AST statement pattern(s) appear at least 3 times.",
+                reproducible=False,
+                token=self._short_hash("|".join(duplicated)),
+                evidence_state="SUPPORTED",
+                family_fingerprint="DUPLICATION:normalized-ast-statement",
+            )
+        ]
+
+    def _normalized_ast(self, node: ast.AST) -> str:
+        class Normalizer(ast.NodeTransformer):
+            def visit_Name(self, child: ast.Name) -> ast.AST:
+                return ast.copy_location(ast.Name(id="NAME", ctx=child.ctx), child)
+
+            def visit_arg(self, child: ast.arg) -> ast.arg:
+                return ast.copy_location(ast.arg(arg="ARG", annotation=None, type_comment=None), child)
+
+            def visit_Constant(self, child: ast.Constant) -> ast.AST:
+                return ast.copy_location(ast.Constant(value="CONST"), child)
+
+            def visit_Attribute(self, child: ast.Attribute) -> ast.AST:
+                self.generic_visit(child)
+                child.attr = "ATTR"
+                return child
+
+        normalized = Normalizer().visit(ast.fix_missing_locations(ast.copy_location(node, node)))
+        return ast.dump(normalized, include_attributes=False)
 
     def _security_findings(self, code: str) -> list[dict[str, Any]]:
         findings = []
@@ -199,8 +284,10 @@ class MadhouseAgent:
                         "SECURITY",
                         "BLOCKING",
                         f"Risky execution marker `{marker}` requires security review before promotion.",
-                        reproducible=True,
+                        reproducible=False,
                         token=marker,
+                        evidence_state="SUPPORTED",
+                        family_fingerprint=f"SECURITY:{marker}",
                     )
                 )
         if re.search(r"(api[_-]?key|secret|token)\s*=\s*['\"][^'\"]{12,}", code, re.IGNORECASE):
@@ -209,7 +296,9 @@ class MadhouseAgent:
                     "SECRET_EXPOSURE",
                     "BLOCKING",
                     "Code appears to contain a hard-coded credential-like value.",
-                    reproducible=True,
+                    reproducible=False,
+                    evidence_state="SUPPORTED",
+                    family_fingerprint="SECRET_EXPOSURE:credential-like-literal",
                 )
             )
         return findings
@@ -227,6 +316,8 @@ class MadhouseAgent:
                     "MEDIUM",
                     "Candidate has unusually dense statements; maintainability review is required.",
                     reproducible=False,
+                    evidence_state="SUPPORTED",
+                    family_fingerprint="QUALITY:dense-statements",
                 )
             ]
         return []
@@ -236,20 +327,31 @@ class MadhouseAgent:
         request: MadhouseReviewRequest,
         current_findings: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        previous = Counter(str(item.get("fingerprint", "")) for item in request.previous_failures)
+        previous = Counter()
+        for item in request.previous_failures:
+            recorded = False
+            for key in ("fingerprint", "family_fingerprint"):
+                if item.get(key):
+                    previous[str(item[key])] += 1
+                    recorded = True
+            if not recorded and item.get("class"):
+                previous[f"{item['class']}:read-before-definition"] += 1
         recurring = []
         for finding in current_findings:
             fingerprint = finding["fingerprint"]
-            repeat_count = previous.get(fingerprint, 0) + 1
+            family = finding["family_fingerprint"]
+            repeat_count = max(previous.get(fingerprint, 0), previous.get(family, 0)) + 1
             if repeat_count > request.recurring_failure_threshold:
                 recurring.append(
                     self._finding(
                         "RECURRING_FAILURE",
                         "CRITICAL",
-                        f"Failure fingerprint `{fingerprint}` has survived {repeat_count} candidate attempts.",
+                        f"Failure family `{family}` has survived {repeat_count} candidate attempts.",
                         reproducible=True,
                         token=fingerprint,
                         repeat_count=repeat_count,
+                        evidence_state="VERIFIED",
+                        family_fingerprint=f"RECURRING_FAILURE:{family}",
                     )
                 )
         return recurring
@@ -264,8 +366,9 @@ class MadhouseAgent:
                 "fixed": False,
                 "retested": False,
                 "evidence": finding["evidence"],
-                "state": "VERIFIED" if finding["reproducible"] else "SUPPORTED",
+                "state": finding["state"],
                 "fingerprint": finding["fingerprint"],
+                "family_fingerprint": finding["family_fingerprint"],
             }
             for finding in findings
         ]
@@ -297,15 +400,19 @@ class MadhouseAgent:
         line: int | None = None,
         token: str | None = None,
         repeat_count: int | None = None,
+        evidence_state: str | None = None,
+        family_fingerprint: str | None = None,
     ) -> dict[str, Any]:
         fingerprint = f"{klass}:{token or self._short_hash(evidence)}"
+        state = evidence_state or ("VERIFIED" if reproducible else "SUPPORTED")
         out = {
             "class": klass,
             "severity": severity,
             "evidence": evidence,
             "reproducible": reproducible,
-            "state": "VERIFIED" if reproducible else "SUPPORTED",
+            "state": state,
             "fingerprint": fingerprint,
+            "family_fingerprint": family_fingerprint or fingerprint,
         }
         if line is not None:
             out["line"] = line

@@ -62,6 +62,88 @@ def test_madhouse_escalates_recurring_failed_repair_strategy():
     assert result["required_actions"][0] == "Discard the current repair strategy and isolate the root assumption."
 
 
+def test_madhouse_detects_recurring_structural_failures_after_symbol_renames():
+    result = MadhouseAgent().review(
+        MadhouseReviewRequest(
+            candidate_id="build-055",
+            language="python",
+            generated_code="print(missing_value)\n",
+            previous_failures=[
+                {
+                    "candidate_id": "build-053",
+                    "class": "UNDEFINED_SYMBOL",
+                    "family_fingerprint": "UNDEFINED_SYMBOL:read-before-definition",
+                },
+                {
+                    "candidate_id": "build-054",
+                    "class": "UNDEFINED_SYMBOL",
+                    "family_fingerprint": "UNDEFINED_SYMBOL:read-before-definition",
+                },
+            ],
+        )
+    )
+
+    recurring = [finding for finding in result["findings"] if finding["class"] == "RECURRING_FAILURE"]
+
+    assert recurring
+    assert recurring[0]["repeat_count"] == 3
+    assert recurring[0]["family_fingerprint"] == "RECURRING_FAILURE:UNDEFINED_SYMBOL:read-before-definition"
+
+
+def test_madhouse_marks_security_patterns_supported_until_exploit_is_confirmed():
+    result = MadhouseAgent().review(
+        MadhouseReviewRequest(
+            candidate_id="build-056",
+            language="python",
+            generated_code="def run(user_code):\n    return eval(user_code)\n",
+        )
+    )
+
+    security = [finding for finding in result["findings"] if finding["class"] == "SECURITY"][0]
+    ledger = [entry for entry in result["evidence_ledger"] if entry["issue"] == "SECURITY"][0]
+
+    assert security["state"] == "SUPPORTED"
+    assert ledger["state"] == "SUPPORTED"
+    assert ledger["reproduced"] is False
+
+
+def test_madhouse_detects_read_before_later_assignment():
+    result = MadhouseAgent().review(
+        MadhouseReviewRequest(
+            candidate_id="build-057",
+            language="python",
+            generated_code="print(value)\nvalue = 10\n",
+        )
+    )
+
+    undefined = [finding for finding in result["findings"] if finding["class"] == "UNDEFINED_SYMBOL"]
+
+    assert result["decision"] == "BLOCKED"
+    assert undefined
+    assert undefined[0]["line"] == 1
+    assert undefined[0]["state"] == "SUPPORTED"
+
+
+def test_madhouse_detects_structural_duplication_after_identifier_renames():
+    result = MadhouseAgent().review(
+        MadhouseReviewRequest(
+            candidate_id="build-058",
+            language="python",
+            generated_code=(
+                "user = load_user(id)\n"
+                "admin = load_admin(id)\n"
+                "guest = load_guest(id)\n"
+            ),
+        )
+    )
+
+    duplication = [finding for finding in result["findings"] if finding["class"] == "DUPLICATION"]
+
+    assert duplication
+    assert duplication[0]["state"] == "SUPPORTED"
+    assert "structurally similar" in duplication[0]["evidence"]
+
+
 def test_madhouse_never_promotes_clean_code_beyond_verification_handoff():
     result = MadhouseAgent().review(
         MadhouseReviewRequest(
