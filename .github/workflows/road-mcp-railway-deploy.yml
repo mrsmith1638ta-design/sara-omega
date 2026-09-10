@@ -50,7 +50,6 @@ jobs:
 
       - name: Deploy ROAD MCP service
         if: steps.credential.outputs.available == 'true'
-        working-directory: road-mcp
         shell: bash
         run: |
           if [ -n "${RAILWAY_ACCOUNT_TOKEN:-}" ]; then
