@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import inspect
+import itertools
 import math
 import random
 import time
 from functools import partial
+import struct
 from typing import Any
 
 from app.madhouse import MadhouseAgent, MadhouseReviewRequest
@@ -268,6 +270,132 @@ def comparative_algorithm_laboratory(
     }
 
 
+def _quantize(value: float, precision: str) -> float:
+    if precision == "float64":
+        return float(value)
+    if precision == "float32":
+        return struct.unpack("f", struct.pack("f", float(value)))[0]
+    raise ValueError("precision_must_be_float32_or_float64")
+
+
+def _quantize_state(values: list[float], precision: str) -> list[float]:
+    return [_quantize(value, precision) for value in values]
+
+
+def parameter_regime_campaign(
+    *,
+    chain_lengths: tuple[int, ...] = (2, 4, 8),
+    stiffness_ratios: tuple[float, ...] = (1.0, 10.0, 100.0),
+    durations: tuple[float, ...] = (0.1, 1.0, 10.0),
+    euler_steps: tuple[int, ...] = (128, 512),
+    rk4_steps: tuple[int, ...] = (128, 512),
+    uncertainty_magnitudes: tuple[float, ...] = (0.0, 0.05, 0.2),
+    precisions: tuple[str, ...] = ("float64", "float32"),
+    cases_per_regime: int = 4,
+    seed: int = 0,
+    error_threshold: float = 1e-3,
+) -> dict[str, Any]:
+    """Map method behavior across controlled numerical parameter regimes."""
+    if cases_per_regime < 1 or error_threshold < 0:
+        raise ValueError("campaign_cases_and_error_threshold_must_be_valid")
+    if any(length < 2 for length in chain_lengths) or any(ratio < 1.0 for ratio in stiffness_ratios):
+        raise ValueError("campaign_chain_lengths_and_stiffness_must_be_valid")
+    if any(step < 1 for step in (*euler_steps, *rk4_steps)):
+        raise ValueError("campaign_steps_must_be_positive")
+    if any(magnitude < 0 for magnitude in uncertainty_magnitudes):
+        raise ValueError("campaign_uncertainty_must_be_non_negative")
+    if any(precision not in {"float32", "float64"} for precision in precisions):
+        raise ValueError("campaign_precision_must_be_float32_or_float64")
+
+    generator = random.Random(seed)
+    records: list[dict[str, Any]] = []
+    for length, stiffness, duration, euler_count, rk4_count, uncertainty, precision in itertools.product(
+        chain_lengths,
+        stiffness_ratios,
+        durations,
+        euler_steps,
+        rk4_steps,
+        uncertainty_magnitudes,
+        precisions,
+    ):
+        method_outputs: dict[str, list[float]] = {"egyptian_dyadic": [], "euler": [], "rk4": [], "matrix_exponential": []}
+        for _ in range(cases_per_regime):
+            initial = [0.0] * length
+            initial[0] = 1.0
+            base_rate = generator.uniform(0.01, 0.5)
+            rates = [base_rate * stiffness ** (index / max(1, length - 2)) for index in range(length - 1)]
+            rates = [max(0.0, rate * (1.0 + generator.gauss(0.0, uncertainty))) for rate in rates]
+            quantized_initial = _quantize_state(initial, precision)
+            quantized_rates = _quantize_state(rates, precision)
+            quantized_duration = _quantize(duration, precision)
+            reference = matrix_exponential_decay_chain(quantized_initial, quantized_rates, quantized_duration)
+            outputs = {
+                "egyptian_dyadic": historical_fusion_decay(quantized_initial, quantized_rates, quantized_duration),
+                "euler": euler_decay_chain(quantized_initial, quantized_rates, quantized_duration, steps=euler_count),
+                "rk4": rk4_decay_chain(quantized_initial, quantized_rates, quantized_duration, steps=rk4_count),
+                "matrix_exponential": reference,
+            }
+            for name, output in outputs.items():
+                method_outputs[name].append(max(abs(value - expected) for value, expected in zip(output, reference)))
+        records.append(
+            {
+                "chain_length": length,
+                "stiffness_ratio": stiffness,
+                "duration": duration,
+                "euler_steps": euler_count,
+                "rk4_steps": rk4_count,
+                "uncertainty_magnitude": uncertainty,
+                "precision": precision,
+                "methods": {
+                    name: {"mean_absolute_error": sum(errors) / len(errors), "max_absolute_error": max(errors)}
+                    for name, errors in method_outputs.items()
+                },
+            }
+        )
+
+    qualifying = [
+        record
+        for record in records
+        if record["methods"]["egyptian_dyadic"]["mean_absolute_error"] <= error_threshold
+        and record["methods"]["egyptian_dyadic"]["mean_absolute_error"] <= record["methods"]["rk4"]["mean_absolute_error"]
+    ]
+    challenge = madhouse_challenge(_madhouse_candidate_source())
+    return {
+        "algorithm": ALGORITHM_ID,
+        "campaign": "parameter-regime-comparison",
+        "regime_count": len(records),
+        "cases_per_regime": cases_per_regime,
+        "error_threshold": error_threshold,
+        "dimensions": {
+            "chain_length": list(chain_lengths),
+            "stiffness_ratio": list(stiffness_ratios),
+            "duration": list(durations),
+            "euler_steps": list(euler_steps),
+            "rk4_steps": list(rk4_steps),
+            "uncertainty_magnitude": list(uncertainty_magnitudes),
+            "precision": list(precisions),
+        },
+        "qualifying_regimes": len(qualifying),
+        "narrow_claim": {
+            "status": "SUPPORTED" if qualifying else "UNSUPPORTED",
+            "statement": "Within listed regimes, the fused method met the error threshold and was no less accurate than RK4." if qualifying else "No listed regime supported the scoped fused-method claim.",
+            "scope": "Only the enumerated generated regimes and stated error threshold.",
+        },
+        "universal_superiority_claim": {
+            "status": "UNSUPPORTED",
+            "statement": "The campaign does not establish universal superiority for any method.",
+        },
+        "records": records,
+        "madhouse": {
+            "decision": challenge["decision"],
+            "finding_count": len(challenge["findings"]),
+            "can_pass": challenge["can_pass"],
+            "promotion_authority": challenge["promotion_authority"],
+        },
+        "execution_authority": False,
+    }
+
+
 def madhouse_challenge(candidate_code: str) -> dict[str, Any]:
     return MadhouseAgent().review(
         MadhouseReviewRequest(
@@ -351,5 +479,9 @@ class HistoricalNuclearFusionEngine:
             ],
             confidence=0.7,
             execution_authority=False,
-            metadata={"madhouse_required": True, "scope": "educational_nuclear_physics"},
+            metadata={
+                "madhouse_required": True,
+                "scope": "educational_nuclear_physics",
+                "parameter_campaign_command": "python tools/benchmark_historical_nuclear_fusion.py --campaign --seed 0 --cases-per-regime 4",
+            },
         )

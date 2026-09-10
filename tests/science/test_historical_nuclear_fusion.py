@@ -11,6 +11,7 @@ from app.science.historical_nuclear_fusion import (
     matrix_exponential_decay_chain,
     madhouse_challenge,
     monte_carlo_uncertainty,
+    parameter_regime_campaign,
     rk4_decay_chain,
 )
 
@@ -71,6 +72,27 @@ def test_monte_carlo_uncertainty_is_reproducible_and_bounded():
     assert result["samples"] == 12
     assert result["mean"][0] >= 0.0
     assert result["standard_deviation"][0] >= 0.0
+
+
+def test_parameter_regime_campaign_reports_narrow_claims_not_universal_superiority():
+    report = parameter_regime_campaign(
+        chain_lengths=(2, 3),
+        stiffness_ratios=(1.0, 10.0),
+        durations=(0.5,),
+        euler_steps=(64,),
+        rk4_steps=(64,),
+        uncertainty_magnitudes=(0.0, 0.1),
+        precisions=("float64", "float32"),
+        cases_per_regime=1,
+        seed=3,
+        error_threshold=0.01,
+    )
+
+    assert report["regime_count"] == 16
+    assert report["dimensions"]["precision"] == ["float64", "float32"]
+    assert report["narrow_claim"]["status"] in {"SUPPORTED", "UNSUPPORTED"}
+    assert report["universal_superiority_claim"]["status"] == "UNSUPPORTED"
+    assert report["madhouse"]["can_pass"] is False
 
 
 def test_benchmark_reports_historical_provenance_and_madhouse_result():

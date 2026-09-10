@@ -25,11 +25,19 @@ python tools/benchmark_historical_nuclear_fusion.py --samples 100 --seed 0
 
 # comparative laboratory
 python tools/benchmark_historical_nuclear_fusion.py --laboratory --samples 100 --seed 0 --uncertainty-samples 100
+
+# parameter-regime campaign
+python tools/benchmark_historical_nuclear_fusion.py --campaign --seed 0 --cases-per-regime 4
 ```
 
 The laboratory reports a scoped numerical claim rather than declaring a
 general advantage. A claim is `SUPPORTED` only for the generated sample set
 when its measured conditions hold; otherwise it is `UNSUPPORTED`.
+
+The parameter campaign varies chain length, stiffness ratio, duration,
+Euler/RK4 step counts, uncertainty magnitude, and float32/float64 input-output
+quantization. It reports qualifying regimes and explicitly keeps any universal
+superiority claim `UNSUPPORTED`.
 
 Madhouse reviews the solver source as part of the benchmark. A broken
 candidate is `BLOCKED`; a clean candidate is only `READY_FOR_VERIFICATION`.
