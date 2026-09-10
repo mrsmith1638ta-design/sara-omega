@@ -15,6 +15,7 @@ on:
       - 'tools/railway_runtime_acceptance.py'
       - 'sara_production_bootstrap.py'
       - 'Procfile'
+      - 'road-mcp/**'
       - '.github/workflows/railway-production-activate.yml'
 
 permissions:
