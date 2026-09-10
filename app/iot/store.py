@@ -32,11 +32,14 @@ CREATE TABLE IF NOT EXISTS commands(command_id TEXT PRIMARY KEY,device_id TEXT N
 CREATE TABLE IF NOT EXISTS health_baselines(device_id TEXT NOT NULL,metric TEXT NOT NULL,baseline_json TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(device_id,metric));
 CREATE TABLE IF NOT EXISTS anomalies(anomaly_id INTEGER PRIMARY KEY AUTOINCREMENT,device_id TEXT NOT NULL,detail_json TEXT NOT NULL,created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS quarantine_events(id INTEGER PRIMARY KEY AUTOINCREMENT,device_id TEXT NOT NULL,kind TEXT NOT NULL,created_at TEXT NOT NULL,quarantine_until TEXT);
+CREATE TABLE IF NOT EXISTS pairing_codes(id TEXT PRIMARY KEY,code_salt TEXT NOT NULL,code_hash TEXT NOT NULL,device_class TEXT NOT NULL,model_prefix TEXT,expires_at TEXT NOT NULL,consumed_at TEXT,created_at TEXT NOT NULL);
 ''')
         try: os.chmod(self.db_path,0o600)
         except OSError: pass
     @staticmethod
     def _hash_secret(secret,salt_hex): return hashlib.pbkdf2_hmac('sha256',secret.encode(),bytes.fromhex(salt_hex),200000).hex()
+    @staticmethod
+    def _normalize_pairing_code(code): return ''.join(ch for ch in str(code).upper() if ch.isalnum())
     def register_device(self,record:DeviceRecord,telemetry_secret:str|None=None)->DeviceRecord:
         now=_iso()
         with closing(self._connect()) as c:
@@ -109,6 +112,39 @@ CREATE TABLE IF NOT EXISTS quarantine_events(id INTEGER PRIMARY KEY AUTOINCREMEN
         with closing(self._connect()) as c:
             with c: c.execute('UPDATE commands SET status=?,record_json=?,updated_at=? WHERE command_id=?',(status.value,up.model_dump_json(),_iso(up.updated_at),command_id))
         return up
+    def pending_commands_for_device(self,device_id,limit=10):
+        limit=max(1,min(int(limit),10))
+        with closing(self._connect()) as c:
+            rows=c.execute("SELECT record_json FROM commands WHERE device_id=? AND status=? ORDER BY created_at ASC LIMIT ?",(device_id,CommandStatus.RESERVED.value,limit)).fetchall()
+        return [CommandRecord.model_validate_json(r['record_json']) for r in rows]
+    def acknowledge_device_command(self,device_id,command_id,status:CommandStatus,result):
+        if status not in {CommandStatus.COMPLETED,CommandStatus.REJECTED,CommandStatus.SUBMISSION_UNVERIFIED}: raise ValueError('invalid_device_ack_status')
+        cur=self.get_command(command_id)
+        if cur is None or cur.device_id!=device_id: raise KeyError('command_not_found')
+        if cur.status!=CommandStatus.RESERVED: raise ValueError('command_not_acknowledgeable')
+        return self.update_command(command_id,status,result)
+    def create_pairing_code(self,code,device_class,model_prefix,expires_at):
+        normalized=self._normalize_pairing_code(code); salt=secrets.token_hex(16); digest=self._hash_secret(normalized,salt); now=_iso()
+        with closing(self._connect()) as c:
+            with c: c.execute('INSERT INTO pairing_codes VALUES(?,?,?,?,?,?,?,?)',(secrets.token_hex(16),salt,digest,device_class,model_prefix,_iso(expires_at),None,now))
+    def consume_pairing_code(self,code,model):
+        import hmac
+        normalized=self._normalize_pairing_code(code); now=datetime.now(timezone.utc)
+        with closing(self._connect()) as c:
+            c.execute('BEGIN IMMEDIATE')
+            rows=c.execute('SELECT * FROM pairing_codes WHERE consumed_at IS NULL AND expires_at>=? ORDER BY created_at DESC',(_iso(now),)).fetchall()
+            match=None
+            for row in rows:
+                if hmac.compare_digest(self._hash_secret(normalized,row['code_salt']),row['code_hash']):
+                    prefix=row['model_prefix']
+                    if prefix and not model.startswith(prefix): break
+                    match=row; break
+            if match is None:
+                c.rollback(); return None
+            changed=c.execute('UPDATE pairing_codes SET consumed_at=? WHERE id=? AND consumed_at IS NULL',(_iso(now),match['id'])).rowcount
+            if changed!=1:
+                c.rollback(); return None
+            c.commit(); return {'device_class':match['device_class'],'model_prefix':match['model_prefix']}
     def record_anomaly(self,device_id,detail):
         with closing(self._connect()) as c:
             with c: c.execute('INSERT INTO anomalies(device_id,detail_json,created_at) VALUES(?,?,?)',(device_id,json.dumps(detail,sort_keys=True,separators=(',',':')),_iso()))
