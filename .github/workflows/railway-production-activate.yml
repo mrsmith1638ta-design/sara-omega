@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - 'main.py'
+      - 'app/**'
       - 'context_dev_resolver.py'
       - 'chatgpt-gpt-action.yaml'
       - 'GPT_V321_CONFIG.md'
@@ -13,6 +14,9 @@ on:
       - 'tests/test_context_dev_*.py'
       - 'tools/railway_account_provision.sh'
       - 'tools/railway_runtime_acceptance.py'
+      - 'tools/benchmark_historical_nuclear_fusion.py'
+      - 'docs/HISTORICAL_NUCLEAR_FUSION.md'
+      - 'tests/science/**'
       - 'sara_production_bootstrap.py'
       - 'Procfile'
       - 'road-mcp/**'
