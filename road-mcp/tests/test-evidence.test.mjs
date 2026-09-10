@@ -21,10 +21,16 @@ import {
   CANONICAL_JOB_NAME,
   REQUIRED_STEP_NAMES,
 } from "../dist/testEvidence.js";
+import {
+  MADHOUSE_ADVERSARIAL_EVIDENCE_ID,
+  buildMadhouseAdversarialEvidence,
+  computeMadhouseAdversarialEvidence,
+} from "../dist/madhouseEvidence.js";
 import { certificationChecks } from "../dist/server.js";
 
 const VALID_SHA = "a".repeat(40);
 const OTHER_SHA = "b".repeat(40);
+const BLOCKING_SHA = "c".repeat(40);
 
 function attestation(overrides = {}) {
   return {
@@ -81,6 +87,47 @@ function validateJob(overrides = {}) {
   };
 }
 
+function madhouseHealth(overrides = {}) {
+  return {
+    status: "ok",
+    service: "sara-madhouse-agent",
+    can_block: true,
+    can_pass: false,
+    promotion_authority: "NONE",
+    boundary: "may_block_candidates; never certifies production PASS",
+    ...overrides,
+  };
+}
+
+function madhouseReview(overrides = {}) {
+  return {
+    service: "sara-madhouse-agent",
+    candidate_id: VALID_SHA,
+    decision: "READY_FOR_VERIFICATION",
+    can_block: true,
+    can_pass: false,
+    promotion_authority: "NONE",
+    execution_authority: "NONE",
+    findings: [],
+    evidence_ledger: [],
+    failure_fingerprints: [],
+    required_validation: ["compile", "unit_tests", "security_review"],
+    boundary: "Madhouse absence of findings is not proof of correctness; send survivors to Verification/ROAD/SIOS.",
+    ...overrides,
+  };
+}
+
+function makeMadhouseFetch({ health, healthError, review, reviewError } = {}) {
+  return async (url, init) => {
+    if (init?.method === "POST") {
+      if (reviewError) return { ok: false, error: reviewError, url };
+      return { ok: true, status: 200, json: review ?? madhouseReview(), url };
+    }
+    if (healthError) return { ok: false, error: healthError, url };
+    return { ok: true, status: 200, json: health ?? madhouseHealth(), url };
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Positive contract
 // ---------------------------------------------------------------------------
@@ -102,6 +149,60 @@ test("PASS: buildTestCiValidationEvidence produces id=test-ci-validation with sa
   assert.ok(!record.source.includes("token123"), "source URL must not leak query strings/tokens");
   assert.ok(!record.source.includes("?"), "source URL must be sanitized of query strings");
   assert.match(record.hash, /^[0-9a-f]{64}$/);
+});
+
+test("PASS: Madhouse adversarial evidence binds health + review artifact to exact deployed SHA", async () => {
+  const fetcher = makeMadhouseFetch();
+  const summary = await computeMadhouseAdversarialEvidence(attestation(), fetcher);
+  assert.equal(summary.status, "PASS");
+  assert.equal(summary.sourceCommitSha, VALID_SHA);
+  assert.equal(summary.health.canBlock, true);
+  assert.equal(summary.health.canPass, false);
+  assert.equal(summary.health.promotionAuthority, "NONE");
+  assert.equal(summary.review.candidateId, VALID_SHA);
+  assert.equal(summary.review.decision, "READY_FOR_VERIFICATION");
+  assert.equal(summary.review.canPass, false);
+  assert.equal(summary.review.promotionAuthority, "NONE");
+  assert.equal(summary.review.executionAuthority, "NONE");
+});
+
+test("PASS: buildMadhouseAdversarialEvidence produces a verified ROAD evidence artifact", async () => {
+  const record = await buildMadhouseAdversarialEvidence(async () => attestation(), makeMadhouseFetch());
+  assert.equal(record.id, MADHOUSE_ADVERSARIAL_EVIDENCE_ID);
+  assert.equal(record.status, "PASS");
+  assert.equal(record.evidenceState, "VERIFIED");
+  assert.ok(record.detail.includes(VALID_SHA));
+  assert.match(record.hash, /^[0-9a-f]{64}$/);
+});
+
+test("BLOCKED: Madhouse BLOCKED review blocks the adversarial evidence record", async () => {
+  const fetcher = makeMadhouseFetch({
+    review: madhouseReview({
+      candidate_id: BLOCKING_SHA,
+      decision: "BLOCKED",
+      findings: [{ class: "SYNTAX", severity: "BLOCKING" }],
+      evidence_ledger: [{ issue: "SYNTAX", severity: "BLOCKING" }],
+      failure_fingerprints: ["SYNTAX:parser-failure"],
+    }),
+  });
+  const summary = await computeMadhouseAdversarialEvidence(attestation({ sourceCommitSha: BLOCKING_SHA }), fetcher);
+  assert.equal(summary.status, "BLOCKED");
+  assert.match(summary.reason, /madhouse_review_blocked/);
+  assert.equal(summary.review.decision, "BLOCKED");
+});
+
+test("UNVERIFIED: Madhouse health cannot claim promotion authority or PASS authority", async () => {
+  const fetcher = makeMadhouseFetch({ health: madhouseHealth({ can_pass: true, promotion_authority: "PASS" }) });
+  const summary = await computeMadhouseAdversarialEvidence(attestation(), fetcher);
+  assert.equal(summary.status, "UNVERIFIED");
+  assert.match(summary.reason, /madhouse_health_authority_boundary_failed/);
+});
+
+test("UNVERIFIED: Madhouse review artifact must match exact deployed SHA", async () => {
+  const fetcher = makeMadhouseFetch({ review: madhouseReview({ candidate_id: OTHER_SHA }) });
+  const summary = await computeMadhouseAdversarialEvidence(attestation(), fetcher);
+  assert.equal(summary.status, "UNVERIFIED");
+  assert.match(summary.reason, /madhouse_review_sha_mismatch/);
 });
 
 // ---------------------------------------------------------------------------
@@ -347,6 +448,23 @@ function baseRecords(overrides = {}) {
   ];
 }
 
+function baseRecordsWithMadhouse(testOverrides = {}, madhouseOverrides = {}) {
+  return [
+    ...baseRecords(testOverrides),
+    {
+      id: MADHOUSE_ADVERSARIAL_EVIDENCE_ID,
+      subject: "SARA-OMEGA Madhouse adversarial review",
+      status: "UNVERIFIED",
+      evidenceState: "UNVERIFIED",
+      source: "x",
+      checkedAt: "2026-01-01T00:00:00.000Z",
+      detail: "x",
+      hash: "x",
+      ...madhouseOverrides,
+    },
+  ];
+}
+
 test("TEST gate is PASS only when test-ci-validation evidence is PASS, with evidenceIds=[test-ci-validation]", () => {
   const records = baseRecords({ status: "PASS", evidenceState: "VERIFIED" });
   const checks = certificationChecks(records);
@@ -384,4 +502,33 @@ test("TEST=PASS never manufactured from roadmap completion, release version, or 
   const checks = certificationChecks(records);
   const testCheck = checks.find((c) => c.gate === "TEST");
   assert.notEqual(testCheck.status, "PASS");
+});
+
+test("ADVERSARIAL gate is PASS only from madhouse-adversarial-review evidence", () => {
+  const records = baseRecordsWithMadhouse(
+    { status: "PASS", evidenceState: "VERIFIED" },
+    { status: "PASS", evidenceState: "VERIFIED" }
+  );
+  const checks = certificationChecks(records);
+  const adversarialCheck = checks.find((c) => c.gate === "ADVERSARIAL");
+  assert.equal(adversarialCheck.status, "PASS");
+  assert.deepEqual(adversarialCheck.evidenceIds, [MADHOUSE_ADVERSARIAL_EVIDENCE_ID]);
+});
+
+test("ADVERSARIAL gate is UNVERIFIED when Madhouse evidence is absent", () => {
+  const checks = certificationChecks(baseRecords({ status: "PASS", evidenceState: "VERIFIED" }));
+  const adversarialCheck = checks.find((c) => c.gate === "ADVERSARIAL");
+  assert.equal(adversarialCheck.status, "UNVERIFIED");
+  assert.deepEqual(adversarialCheck.evidenceIds, [MADHOUSE_ADVERSARIAL_EVIDENCE_ID]);
+});
+
+test("ADVERSARIAL gate is BLOCKED when Madhouse evidence reports BLOCKED", () => {
+  const records = baseRecordsWithMadhouse(
+    { status: "PASS", evidenceState: "VERIFIED" },
+    { status: "BLOCKED", evidenceState: "VERIFIED" }
+  );
+  const checks = certificationChecks(records);
+  const adversarialCheck = checks.find((c) => c.gate === "ADVERSARIAL");
+  assert.equal(adversarialCheck.status, "BLOCKED");
+  assert.deepEqual(adversarialCheck.evidenceIds, [MADHOUSE_ADVERSARIAL_EVIDENCE_ID]);
 });

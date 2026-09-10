@@ -22,6 +22,11 @@ import {
   TEST_CI_EVIDENCE_ID,
   type TestCiEvidenceRecord,
 } from "./testEvidence.js";
+import {
+  buildMadhouseAdversarialEvidence,
+  MADHOUSE_ADVERSARIAL_EVIDENCE_ID,
+  type MadhouseEvidenceRecord,
+} from "./madhouseEvidence.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -162,7 +167,7 @@ async function boundedJsonGet(url: string): Promise<{ ok: boolean; json?: unknow
 export interface EvidenceRecord {
   id: string;
   subject: string;
-  status: "PASS" | "UNVERIFIED";
+  status: "PASS" | "BLOCKED" | "UNVERIFIED";
   evidenceState: "VERIFIED" | "UNVERIFIED";
   source: string;
   checkedAt: string;
@@ -279,6 +284,10 @@ async function loadTestCiValidationEvidence(productionRaw: unknown): Promise<Tes
   );
 }
 
+async function loadMadhouseAdversarialEvidence(productionRaw: unknown): Promise<MadhouseEvidenceRecord> {
+  return buildMadhouseAdversarialEvidence(async () => parseProductionRuntimeAttestation(productionRaw));
+}
+
 export interface EvidenceRegistry {
   status: "PARTIAL" | "PASS" | "BLOCKED";
   records: EvidenceRecord[];
@@ -289,13 +298,18 @@ export async function buildEvidenceRegistry(): Promise<EvidenceRegistry> {
   const { evidence: productionAttestation, raw: productionRaw } = await loadProductionAttestationEvidence();
   const contextdevAuthorization = await loadContextdevAuthorizationEvidence();
   const testCiValidation = await loadTestCiValidationEvidence(productionRaw);
+  const madhouseAdversarial = await loadMadhouseAdversarialEvidence(productionRaw);
 
   const records: EvidenceRecord[] = [
     roadmapSource,
     productionAttestation,
     contextdevAuthorization,
     testCiValidation,
+    madhouseAdversarial,
   ];
+  if (records.some((r) => r.status === "BLOCKED")) {
+    return { status: "BLOCKED", records };
+  }
   const allPass = records.every((r) => r.status === "PASS");
   return { status: allPass ? "PASS" : "PARTIAL", records };
 }
@@ -325,6 +339,7 @@ export function certificationChecks(records: EvidenceRecord[]): GateCheck[] {
   const productionAttestation = findEvidence(records, "production-attestation");
   const contextdevAuthorization = findEvidence(records, "contextdev-authorization");
   const testCiValidation = findEvidence(records, TEST_CI_EVIDENCE_ID);
+  const madhouseAdversarial = findEvidence(records, MADHOUSE_ADVERSARIAL_EVIDENCE_ID);
 
   const checks: GateCheck[] = [];
   const upstreamFailures: Gate[] = [];
@@ -383,9 +398,38 @@ export function certificationChecks(records: EvidenceRecord[]): GateCheck[] {
     securityDetail
   );
 
-  // ADVERSARIAL .. MULTI-CLOUD — unchanged, still UNVERIFIED pending their own evidence.
+  // ADVERSARIAL — PASS/BLOCKED/UNVERIFIED only from Madhouse's exact-SHA artifact.
+  if (madhouseAdversarial?.status === "PASS") {
+    pushGate(
+      "ADVERSARIAL",
+      "PASS",
+      [MADHOUSE_ADVERSARIAL_EVIDENCE_ID],
+      "ADVERSARIAL is PASS because Madhouse produced an exact deployed source-commit review artifact " +
+        "while preserving can_pass=false and no promotion or execution authority.",
+      false
+    );
+  } else if (madhouseAdversarial?.status === "BLOCKED") {
+    pushGate(
+      "ADVERSARIAL",
+      "BLOCKED",
+      [MADHOUSE_ADVERSARIAL_EVIDENCE_ID],
+      `ADVERSARIAL is BLOCKED: ${madhouseAdversarial.detail}`,
+      false
+    );
+  } else {
+    pushGate(
+      "ADVERSARIAL",
+      "UNVERIFIED",
+      [MADHOUSE_ADVERSARIAL_EVIDENCE_ID],
+      madhouseAdversarial
+        ? `ADVERSARIAL is UNVERIFIED: ${madhouseAdversarial.detail}`
+        : "ADVERSARIAL is UNVERIFIED: madhouse-adversarial-review evidence is unavailable.",
+      false
+    );
+  }
+
+  // EPISTEMIC .. MULTI-CLOUD — unchanged, still UNVERIFIED pending their own evidence.
   const remainingGates: Gate[] = [
-    "ADVERSARIAL",
     "EPISTEMIC",
     "GOVERNANCE",
     "PRIVACY",
