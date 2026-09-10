@@ -17,4 +17,8 @@ class ScienceRouter:
             selected.append("maglev_eds")
         if any(token in q for token in ("hts", "high-temperature superconductor", "flux pinning")):
             selected.append("maglev_hts")
+        if any(token in q for token in ("nuclear physics", "nuclear", "radioactive decay", "decay chain", "bateman", "laplace", "neutron") ) and any(
+            token in q for token in ("egypt", "egyptian", "rhind", "ancient", "historical", "18th century", "eighteenth century", "mathematics")
+        ):
+            selected.append("historical_nuclear_fusion")
         return list(dict.fromkeys(selected))

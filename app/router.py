@@ -17,6 +17,7 @@ SCIENCE_PROVIDER_MAP = {
     "maglev_ems": ("science_maglev_ems", "EMS maglev physics"),
     "maglev_eds": ("science_maglev_eds", "EDS maglev physics"),
     "maglev_hts": ("science_maglev_hts", "HTS levitation physics"),
+    "historical_nuclear_fusion": ("science_historical_nuclear_fusion", "historical mathematics and nuclear decay research"),
 }
 
 class OmegaRouter:

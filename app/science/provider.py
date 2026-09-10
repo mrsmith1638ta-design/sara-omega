@@ -9,6 +9,7 @@ from .engineering import EngineeringPhysicsEngine
 from .maglev_ems import EMSMaglevEngine
 from .maglev_eds import EDSMaglevEngine
 from .maglev_hts import HTSMaglevEngine
+from .historical_nuclear_fusion import HistoricalNuclearFusionEngine
 from .truth_gate import HighLevelTruthGate
 
 
@@ -19,6 +20,7 @@ _ENGINES = {
     "science_maglev_ems": EMSMaglevEngine,
     "science_maglev_eds": EDSMaglevEngine,
     "science_maglev_hts": HTSMaglevEngine,
+    "science_historical_nuclear_fusion": HistoricalNuclearFusionEngine,
 }
 
 

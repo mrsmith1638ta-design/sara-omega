@@ -148,6 +148,41 @@ class MadhouseAgent:
         findings: list[dict[str, Any]] = []
         seen: set[tuple[str, int | None]] = set()
 
+        def direct_stores(statement: ast.stmt) -> set[str]:
+            targets: list[ast.AST] = []
+            if isinstance(statement, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+                if isinstance(statement, ast.Assign):
+                    targets.extend(statement.targets)
+                else:
+                    targets.append(statement.target)
+            elif isinstance(statement, (ast.For, ast.AsyncFor)):
+                targets.append(statement.target)
+            elif isinstance(statement, (ast.With, ast.AsyncWith)):
+                targets.extend(item.optional_vars for item in statement.items if item.optional_vars)
+            elif isinstance(statement, ast.NamedExpr):
+                targets.append(statement.target)
+            stores: set[str] = set()
+            for target in targets:
+                stores.update(name for name, _line in self._stores(target))
+            return stores
+
+        def report_loads(statement: ast.AST, scope_defined: set[str]) -> None:
+            for name, line in self._loads(statement):
+                if name not in scope_defined and (name, line) not in seen:
+                    seen.add((name, line))
+                    findings.append(
+                        self._finding(
+                            "UNDEFINED_SYMBOL",
+                            "BLOCKING",
+                            f"Name `{name}` is read before any local definition, import, or known builtin.",
+                            reproducible=False,
+                            line=line,
+                            token=name,
+                            evidence_state="SUPPORTED",
+                            family_fingerprint="UNDEFINED_SYMBOL:read-before-definition",
+                        )
+                    )
+
         def analyze_body(statements: list[ast.stmt], scope_defined: set[str]) -> None:
             for statement in statements:
                 if isinstance(statement, (ast.Import, ast.ImportFrom)):
@@ -171,38 +206,51 @@ class MadhouseAgent:
                 if isinstance(statement, ast.ExceptHandler) and statement.name:
                     scope_defined.add(str(statement.name))
 
-                for name, line in self._loads(statement):
-                    if name not in scope_defined and (name, line) not in seen:
-                        seen.add((name, line))
-                        findings.append(
-                            self._finding(
-                                "UNDEFINED_SYMBOL",
-                                "BLOCKING",
-                                f"Name `{name}` is read before any local definition, import, or known builtin.",
-                                reproducible=False,
-                                line=line,
-                                token=name,
-                                evidence_state="SUPPORTED",
-                                family_fingerprint="UNDEFINED_SYMBOL:read-before-definition",
-                            )
-                        )
-                scope_defined.update(name for name, _line in self._stores(statement))
+                if isinstance(statement, (ast.For, ast.AsyncFor)):
+                    report_loads(statement.iter, scope_defined)
+                    loop_scope = set(scope_defined) | direct_stores(statement)
+                    analyze_body(statement.body, loop_scope)
+                    analyze_body(statement.orelse, set(scope_defined))
+                    continue
+                if isinstance(statement, ast.If):
+                    report_loads(statement.test, scope_defined)
+                    body_scope = set(scope_defined)
+                    else_scope = set(scope_defined)
+                    analyze_body(statement.body, body_scope)
+                    analyze_body(statement.orelse, else_scope)
+                    scope_defined.update(body_scope & else_scope)
+                    continue
+                report_loads(statement, scope_defined)
+                scope_defined.update(direct_stores(statement))
 
         analyze_body(list(getattr(tree, "body", [])), set(defined))
         return findings
 
     def _loads(self, node: ast.AST) -> list[tuple[str, int | None]]:
+        comprehension_bound: set[str] = set()
+        loop_bound: set[str] = set()
+        for child in ast.walk(node):
+            if isinstance(child, ast.comprehension):
+                loop_bound.update(name for name, _line in self._stores(child.target))
+            elif isinstance(child, (ast.For, ast.AsyncFor)):
+                loop_bound.update(name for name, _line in self._stores(child.target))
+        bound = comprehension_bound | loop_bound
         return [
             (child.id, getattr(child, "lineno", None))
             for child in ast.walk(node)
-            if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load)
+            if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load) and child.id not in bound
         ]
 
     def _stores(self, node: ast.AST) -> list[tuple[str, int | None]]:
         stores = []
+        comprehension_bound: set[str] = set()
+        for child in ast.walk(node):
+            if isinstance(child, ast.comprehension):
+                comprehension_bound.update(name for name, _line in self._stores(child.target))
         for child in ast.walk(node):
             if isinstance(child, ast.Name) and isinstance(child.ctx, (ast.Store, ast.Param)):
-                stores.append((child.id, getattr(child, "lineno", None)))
+                if child.id not in comprehension_bound:
+                    stores.append((child.id, getattr(child, "lineno", None)))
             elif isinstance(child, ast.ExceptHandler) and child.name:
                 stores.append((str(child.name), getattr(child, "lineno", None)))
         return stores

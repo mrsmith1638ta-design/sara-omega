@@ -9,5 +9,8 @@
   {"id":"maglev.ems","title":"Electromagnetic suspension analytical model","domain":"maglev_ems","source_type":"engineering model","provenance_class":"ENGINEERING_MODEL","evidence_status":"SUPPORTED"},
   {"id":"maglev.eds","title":"Electrodynamic suspension analytical model","domain":"maglev_eds","source_type":"engineering model","provenance_class":"ENGINEERING_MODEL","evidence_status":"SUPPORTED"},
   {"id":"maglev.hts","title":"High-temperature-superconductor flux-pinning levitation research model","domain":"maglev_hts","source_type":"experimental technology","provenance_class":"EXPERIMENTAL_TECHNOLOGY","evidence_status":"SUPPORTED"},
-  {"id":"china.maglev.official","title":"China high-speed EMS maglev official program descriptions","domain":"maglev_ems","source_type":"official technology source","provenance_class":"DOCUMENTED_TECHNOLOGY","evidence_status":"SUPPORTED"}
+  {"id":"china.maglev.official","title":"China high-speed EMS maglev official program descriptions","domain":"maglev_ems","source_type":"official technology source","provenance_class":"DOCUMENTED_TECHNOLOGY","evidence_status":"SUPPORTED"},
+  {"id":"egypt.rhind.doubling","title":"Rhind Mathematical Papyrus doubling-based arithmetic procedures","domain":"historical_nuclear_fusion","source_type":"primary historical mathematical text","provenance_class":"DOCUMENTED_ANCIENT","evidence_status":"SUPPORTED"},
+  {"id":"math.laplace.decay","title":"Eighteenth-century Laplace transform and linear differential-equation tradition","domain":"historical_nuclear_fusion","source_type":"historical mathematical tradition","provenance_class":"MODERN_ENGINEERING_DERIVATION","evidence_status":"SUPPORTED"},
+  {"id":"physics.decay.chain","title":"Established radioactive decay-chain differential-equation model","domain":"historical_nuclear_fusion","source_type":"established physics model","provenance_class":"ESTABLISHED_PHYSICS","evidence_status":"VERIFIED"}
 ]

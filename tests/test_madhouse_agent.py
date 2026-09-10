@@ -144,6 +144,25 @@ def test_madhouse_detects_structural_duplication_after_identifier_renames():
     assert "structurally similar" in duplication[0]["evidence"]
 
 
+def test_madhouse_does_not_mark_valid_loop_and_comprehension_bindings_undefined():
+    result = MadhouseAgent().review(
+        MadhouseReviewRequest(
+            candidate_id="build-059",
+            language="python",
+            generated_code=(
+                "def transform(values):\n"
+                "    total = 0\n"
+                "    for value in values:\n"
+                "        total += value\n"
+                "    return [value * 2 for value in values]\n"
+            ),
+        )
+    )
+
+    undefined = [finding for finding in result["findings"] if finding["class"] == "UNDEFINED_SYMBOL"]
+    assert not undefined
+
+
 def test_madhouse_never_promotes_clean_code_beyond_verification_handoff():
     result = MadhouseAgent().review(
         MadhouseReviewRequest(
