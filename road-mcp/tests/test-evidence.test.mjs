@@ -26,6 +26,11 @@ import {
   buildMadhouseAdversarialEvidence,
   computeMadhouseAdversarialEvidence,
 } from "../dist/madhouseEvidence.js";
+import {
+  EPISTEMIC_EVIDENCE_ID,
+  buildEpistemicEvidence,
+  computeEpistemicEvidence,
+} from "../dist/epistemicEvidence.js";
 import { certificationChecks, createApp } from "../dist/server.js";
 
 const VALID_SHA = "a".repeat(40);
@@ -85,6 +90,24 @@ function validateJob(overrides = {}) {
     steps: stepList(),
     ...overrides,
   };
+}
+
+function epistemicReview(overrides = {}) {
+  return {
+    service: "sara-epistemic-agent",
+    candidate_id: VALID_SHA,
+    decision: "READY_FOR_VERIFICATION",
+    can_pass: false,
+    promotion_authority: "NONE",
+    execution_authority: "NONE",
+    claims: [{ state: "SUPPORTED" }],
+    ...overrides,
+  };
+}
+
+function makeEpistemicFetch(overrides = {}) {
+  const review = epistemicReview(overrides);
+  return async () => ({ ok: true, status: 200, json: review, url: "https://example.test/epistemic/review" });
 }
 
 function madhouseHealth(overrides = {}) {
@@ -479,6 +502,76 @@ function baseRecordsWithMadhouse(testOverrides = {}, madhouseOverrides = {}) {
   ];
 }
 
+function baseRecordsWithEpistemic(testOverrides = {}, madhouseOverrides = {}, epistemicOverrides = {}) {
+  return [
+    ...baseRecordsWithMadhouse(testOverrides, madhouseOverrides),
+    {
+      id: EPISTEMIC_EVIDENCE_ID,
+      subject: "SARA-OMEGA Epistemic claim audit",
+      status: "UNVERIFIED",
+      evidenceState: "UNVERIFIED",
+      source: "x",
+      checkedAt: "2026-01-01T00:00:00.000Z",
+      detail: "x",
+      hash: "x",
+      ...epistemicOverrides,
+    },
+  ];
+}
+
+test("Epistemic evidence passes only for exact-SHA scope-consistent claims", async () => {
+  const summary = await computeEpistemicEvidence(
+    attestation(),
+    "293 repository tests passed in validation run 123.",
+    makeEpistemicFetch()
+  );
+  assert.equal(summary.status, "PASS");
+  assert.equal(summary.sourceCommitSha, VALID_SHA);
+});
+
+test("Epistemic evidence blocks overstated claims", async () => {
+  const summary = await computeEpistemicEvidence(
+    attestation(),
+    "293 repository tests passed in validation run 123.",
+    makeEpistemicFetch({
+      decision: "BLOCKED",
+      claims: [{ state: "OVERSTATED" }],
+      can_pass: false,
+      promotion_authority: "NONE",
+      execution_authority: "NONE",
+    })
+  );
+  assert.equal(summary.status, "BLOCKED");
+});
+
+test("Epistemic evidence rejects authority boundary violations and SHA mismatches", async () => {
+  const authority = await computeEpistemicEvidence(
+    attestation(),
+    "293 repository tests passed in validation run 123.",
+    makeEpistemicFetch({ can_pass: true })
+  );
+  assert.equal(authority.status, "UNVERIFIED");
+  const mismatch = await computeEpistemicEvidence(
+    attestation(),
+    "293 repository tests passed in validation run 123.",
+    makeEpistemicFetch({ candidate_id: OTHER_SHA })
+  );
+  assert.equal(mismatch.status, "UNVERIFIED");
+});
+
+test("buildEpistemicEvidence produces the ROAD evidence record", async () => {
+  const record = await buildEpistemicEvidence(
+    async () => attestation(),
+    "293 repository tests passed in validation run 123.",
+    makeEpistemicFetch(),
+    () => new Date("2026-01-01T00:00:00.000Z")
+  );
+  assert.equal(record.id, EPISTEMIC_EVIDENCE_ID);
+  assert.equal(record.status, "PASS");
+  assert.equal(record.evidenceState, "VERIFIED");
+  assert.match(record.detail, new RegExp(VALID_SHA));
+});
+
 test("TEST gate is PASS only when test-ci-validation evidence is PASS, with evidenceIds=[test-ci-validation]", () => {
   const records = baseRecords({ status: "PASS", evidenceState: "VERIFIED" });
   const checks = certificationChecks(records);
@@ -545,4 +638,33 @@ test("ADVERSARIAL gate is BLOCKED when Madhouse evidence reports BLOCKED", () =>
   const adversarialCheck = checks.find((c) => c.gate === "ADVERSARIAL");
   assert.equal(adversarialCheck.status, "BLOCKED");
   assert.deepEqual(adversarialCheck.evidenceIds, [MADHOUSE_ADVERSARIAL_EVIDENCE_ID]);
+});
+
+test("EPISTEMIC gate is PASS only from epistemic-claim-audit evidence", () => {
+  const checks = certificationChecks(baseRecordsWithEpistemic(
+    { status: "PASS", evidenceState: "VERIFIED" },
+    { status: "PASS", evidenceState: "VERIFIED" },
+    { status: "PASS", evidenceState: "VERIFIED" }
+  ));
+  const check = checks.find((c) => c.gate === "EPISTEMIC");
+  assert.equal(check.status, "PASS");
+  assert.deepEqual(check.evidenceIds, [EPISTEMIC_EVIDENCE_ID]);
+});
+
+test("EPISTEMIC gate is BLOCKED when claim audit reports an overstatement", () => {
+  const checks = certificationChecks(baseRecordsWithEpistemic(
+    { status: "PASS", evidenceState: "VERIFIED" },
+    { status: "PASS", evidenceState: "VERIFIED" },
+    { status: "BLOCKED", evidenceState: "VERIFIED", detail: "claim is OVERSTATED" }
+  ));
+  const check = checks.find((c) => c.gate === "EPISTEMIC");
+  assert.equal(check.status, "BLOCKED");
+  assert.deepEqual(check.evidenceIds, [EPISTEMIC_EVIDENCE_ID]);
+});
+
+test("EPISTEMIC gate stays UNVERIFIED when the claim audit is absent", () => {
+  const checks = certificationChecks(baseRecordsWithMadhouse({ status: "PASS", evidenceState: "VERIFIED" }, { status: "PASS", evidenceState: "VERIFIED" }));
+  const check = checks.find((c) => c.gate === "EPISTEMIC");
+  assert.equal(check.status, "UNVERIFIED");
+  assert.deepEqual(check.evidenceIds, [EPISTEMIC_EVIDENCE_ID]);
 });

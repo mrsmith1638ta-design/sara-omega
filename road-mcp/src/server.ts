@@ -27,6 +27,11 @@ import {
   MADHOUSE_ADVERSARIAL_EVIDENCE_ID,
   type MadhouseEvidenceRecord,
 } from "./madhouseEvidence.js";
+import {
+  buildEpistemicEvidence,
+  EPISTEMIC_EVIDENCE_ID,
+  type EpistemicEvidenceRecord,
+} from "./epistemicEvidence.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -288,6 +293,10 @@ async function loadMadhouseAdversarialEvidence(productionRaw: unknown): Promise<
   return buildMadhouseAdversarialEvidence(async () => parseProductionRuntimeAttestation(productionRaw));
 }
 
+async function loadEpistemicEvidence(productionRaw: unknown, testDetail: string): Promise<EpistemicEvidenceRecord> {
+  return buildEpistemicEvidence(async () => parseProductionRuntimeAttestation(productionRaw), testDetail);
+}
+
 export interface EvidenceRegistry {
   status: "PARTIAL" | "PASS" | "BLOCKED";
   records: EvidenceRecord[];
@@ -299,6 +308,7 @@ export async function buildEvidenceRegistry(): Promise<EvidenceRegistry> {
   const contextdevAuthorization = await loadContextdevAuthorizationEvidence();
   const testCiValidation = await loadTestCiValidationEvidence(productionRaw);
   const madhouseAdversarial = await loadMadhouseAdversarialEvidence(productionRaw);
+  const epistemic = await loadEpistemicEvidence(productionRaw, testCiValidation.detail);
 
   const records: EvidenceRecord[] = [
     roadmapSource,
@@ -306,6 +316,7 @@ export async function buildEvidenceRegistry(): Promise<EvidenceRegistry> {
     contextdevAuthorization,
     testCiValidation,
     madhouseAdversarial,
+    epistemic,
   ];
   if (records.some((r) => r.status === "BLOCKED")) {
     return { status: "BLOCKED", records };
@@ -340,6 +351,7 @@ export function certificationChecks(records: EvidenceRecord[]): GateCheck[] {
   const contextdevAuthorization = findEvidence(records, "contextdev-authorization");
   const testCiValidation = findEvidence(records, TEST_CI_EVIDENCE_ID);
   const madhouseAdversarial = findEvidence(records, MADHOUSE_ADVERSARIAL_EVIDENCE_ID);
+  const epistemic = findEvidence(records, EPISTEMIC_EVIDENCE_ID);
 
   const checks: GateCheck[] = [];
   const upstreamFailures: Gate[] = [];
@@ -428,9 +440,16 @@ export function certificationChecks(records: EvidenceRecord[]): GateCheck[] {
     );
   }
 
-  // EPISTEMIC .. MULTI-CLOUD — unchanged, still UNVERIFIED pending their own evidence.
+  // EPISTEMIC — PASS only from a scope-consistent, exact-SHA Epistemic artifact.
+  if (epistemic?.status === "PASS") {
+    pushGate("EPISTEMIC", "PASS", [EPISTEMIC_EVIDENCE_ID], "EPISTEMIC is PASS because the exact deployed source commit's claims are scope-consistent with verified evidence.");
+  } else if (epistemic?.status === "BLOCKED") {
+    pushGate("EPISTEMIC", "BLOCKED", [EPISTEMIC_EVIDENCE_ID], `EPISTEMIC is BLOCKED: ${epistemic.detail}`);
+  } else {
+    pushGate("EPISTEMIC", "UNVERIFIED", [EPISTEMIC_EVIDENCE_ID], epistemic ? `EPISTEMIC is UNVERIFIED: ${epistemic.detail}` : "EPISTEMIC is UNVERIFIED: epistemic-claim-audit evidence is unavailable.");
+  }
+
   const remainingGates: Gate[] = [
-    "EPISTEMIC",
     "GOVERNANCE",
     "PRIVACY",
     "PERFORMANCE",

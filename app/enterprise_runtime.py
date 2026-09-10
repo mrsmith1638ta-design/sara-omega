@@ -4,6 +4,7 @@ from .ats_intelligence import ATS_PROFILE_VERSION, router as ats_intelligence_ro
 from .concentration import ConcentrationGovernor, ConcentrationRequest
 from .hawkins_chaos import HawkinsChaosEngine, HawkinsChaosRequest
 from .madhouse import MadhouseAgent, MadhouseReviewRequest
+from .epistemic import EpistemicAgent, EpistemicReviewRequest
 from .module_awareness import (
     HarmonizeRequest,
     MemoryConsolidation,
@@ -63,6 +64,7 @@ titan = TitanEngine(module_awareness)
 hawkins_chaos = HawkinsChaosEngine()
 concentration_governor = ConcentrationGovernor()
 madhouse = MadhouseAgent()
+epistemic = EpistemicAgent()
 
 
 @router.get("/runtime-assurance/health")
@@ -140,6 +142,10 @@ async def hawkins_chaos_analyze(request: HawkinsChaosRequest): return hawkins_ch
 async def madhouse_health(): return madhouse.health()
 @router.post("/madhouse/review")
 async def madhouse_review(request: MadhouseReviewRequest): return madhouse.review(request)
+@router.get("/epistemic/health")
+async def epistemic_health(): return epistemic.health()
+@router.post("/epistemic/review")
+async def epistemic_review(request: EpistemicReviewRequest): return epistemic.review(request)
 @router.get("/concentration/health")
 async def concentration_health(): return concentration_governor.health()
 @router.post("/concentration/analyze")
