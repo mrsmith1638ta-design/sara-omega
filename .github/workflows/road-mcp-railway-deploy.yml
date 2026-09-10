@@ -1,0 +1,76 @@
+name: ROAD MCP Railway deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'road-mcp/**'
+      - '.github/workflows/road-mcp-railway-deploy.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: road-mcp-railway-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      RAILWAY_ACCOUNT_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+      RAILWAY_LEGACY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      ROAD_MCP_PROJECT_ID: 495f4e9d-1f63-4511-8a02-a971452e9170
+      ROAD_MCP_ENVIRONMENT_NAME: production
+      ROAD_MCP_SERVICE_NAME: sara-omega-road-mcp
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve protected Railway credential
+        id: credential
+        shell: bash
+        run: |
+          if [ -n "${RAILWAY_ACCOUNT_TOKEN:-}" ]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+            echo 'source=RAILWAY_API_TOKEN' >> "$GITHUB_OUTPUT"
+          elif [ -n "${RAILWAY_LEGACY_TOKEN:-}" ]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+            echo 'source=RAILWAY_TOKEN' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo 'source=none' >> "$GITHUB_OUTPUT"
+            echo 'ROAD MCP deployment blocked: Railway credential secret unavailable.' >&2
+            exit 1
+          fi
+
+      - name: Install Railway CLI
+        if: steps.credential.outputs.available == 'true'
+        run: npm install --global @railway/cli
+
+      - name: Deploy ROAD MCP service
+        if: steps.credential.outputs.available == 'true'
+        working-directory: road-mcp
+        shell: bash
+        run: |
+          if [ -n "${RAILWAY_ACCOUNT_TOKEN:-}" ]; then
+            export RAILWAY_API_TOKEN="$RAILWAY_ACCOUNT_TOKEN"
+          else
+            export RAILWAY_API_TOKEN="$RAILWAY_LEGACY_TOKEN"
+          fi
+          unset RAILWAY_ACCOUNT_TOKEN RAILWAY_LEGACY_TOKEN
+          railway link --project "$ROAD_MCP_PROJECT_ID" --environment "$ROAD_MCP_ENVIRONMENT_NAME"
+          railway service "$ROAD_MCP_SERVICE_NAME"
+          railway up --service sara-omega-road-mcp --ci
+
+      - name: Deployment summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## ROAD MCP Railway deploy'
+            echo "Protected credential source: ${{ steps.credential.outputs.source }}"
+            echo "Project: $ROAD_MCP_PROJECT_ID"
+            echo "Environment: $ROAD_MCP_ENVIRONMENT_NAME"
+            echo "Service: $ROAD_MCP_SERVICE_NAME"
+          } >> "$GITHUB_STEP_SUMMARY"
