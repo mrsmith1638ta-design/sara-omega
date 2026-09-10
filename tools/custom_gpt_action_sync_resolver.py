@@ -33,6 +33,7 @@ REQUIRED_GATEWAY_OPERATIONS = {
     "runtime_assurance",
     "concentration",
     "hawkins_chaos",
+    "madhouse_review",
     "titan_health",
     "solve",
     "verify_output",

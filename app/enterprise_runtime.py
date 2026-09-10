@@ -3,6 +3,7 @@ from .ats_intelligence import ATS_PROFILE_VERSION, router as ats_intelligence_ro
 
 from .concentration import ConcentrationGovernor, ConcentrationRequest
 from .hawkins_chaos import HawkinsChaosEngine, HawkinsChaosRequest
+from .madhouse import MadhouseAgent, MadhouseReviewRequest
 from .module_awareness import (
     HarmonizeRequest,
     MemoryConsolidation,
@@ -61,6 +62,7 @@ module_awareness.register(
 titan = TitanEngine(module_awareness)
 hawkins_chaos = HawkinsChaosEngine()
 concentration_governor = ConcentrationGovernor()
+madhouse = MadhouseAgent()
 
 
 @router.get("/runtime-assurance/health")
@@ -134,6 +136,10 @@ async def titan_health(): return titan.health()
 async def hawkins_chaos_health(): return hawkins_chaos.health()
 @router.post("/hawkins-chaos/analyze")
 async def hawkins_chaos_analyze(request: HawkinsChaosRequest): return hawkins_chaos.analyze(request)
+@router.get("/madhouse/health")
+async def madhouse_health(): return madhouse.health()
+@router.post("/madhouse/review")
+async def madhouse_review(request: MadhouseReviewRequest): return madhouse.review(request)
 @router.get("/concentration/health")
 async def concentration_health(): return concentration_governor.health()
 @router.post("/concentration/analyze")
