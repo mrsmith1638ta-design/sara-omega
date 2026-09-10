@@ -940,6 +940,15 @@ export function createApp(): express.Express {
   const app = express();
   app.use(express.json({ limit: "1mb" }));
 
+  app.get("/health", (_req, res) => {
+    res.json({
+      status: "ok",
+      service: "sara-omega-road-mcp",
+      role: "road_gate_evidence_mcp",
+      version: SERVER_VERSION,
+    });
+  });
+
   app.post("/mcp", async (req, res) => {
     try {
       const server = createRoadServer();

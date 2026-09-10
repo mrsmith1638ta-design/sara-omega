@@ -26,7 +26,7 @@ import {
   buildMadhouseAdversarialEvidence,
   computeMadhouseAdversarialEvidence,
 } from "../dist/madhouseEvidence.js";
-import { certificationChecks } from "../dist/server.js";
+import { certificationChecks, createApp } from "../dist/server.js";
 
 const VALID_SHA = "a".repeat(40);
 const OTHER_SHA = "b".repeat(40);
@@ -173,6 +173,20 @@ test("PASS: buildMadhouseAdversarialEvidence produces a verified ROAD evidence a
   assert.equal(record.evidenceState, "VERIFIED");
   assert.ok(record.detail.includes(VALID_SHA));
   assert.match(record.hash, /^[0-9a-f]{64}$/);
+});
+
+test("PASS: ROAD MCP exposes GET /health for Railway healthchecks", async (t) => {
+  const app = createApp();
+  const server = app.listen(0);
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+
+  const response = await fetch(`http://127.0.0.1:${address.port}/health`);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.status, "ok");
+  assert.equal(body.service, "sara-omega-road-mcp");
 });
 
 test("BLOCKED: Madhouse BLOCKED review blocks the adversarial evidence record", async () => {
