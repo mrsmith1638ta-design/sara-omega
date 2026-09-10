@@ -54,6 +54,7 @@ from app.memory import ConversationMemory, MemoryStoreError
 from app.models import Problem
 from app.orchestrator import SaraOmega
 from app.runtime_assurance import RuntimeAssuranceConfigurationError, RuntimeAssuranceRequest
+from app.road_gates import RoadGateAgent, RoadGateReviewRequest
 
 BASE_VERSION = "2.5.2"
 RELEASE_VERSION = "3.2.1"
@@ -88,6 +89,7 @@ stt_client = tts_client = vision_client = translate_client = llm_client = None
 gcp_init_error = GCP_IMPORT_ERROR
 openai_init_error = OPENAI_IMPORT_ERROR
 gateway_sara = SaraOmega()
+road_gate_agent = RoadGateAgent()
 
 GPTActionOperation = Literal[
     "status",
@@ -328,6 +330,7 @@ def production_acceptance_snapshot() -> Dict[str, Any]:
             with evidence_path.open("r", encoding="utf-8") as handle:
                 evidence = json.load(handle)
             public_keys = {
+                "source_commit_sha",
                 "project_name",
                 "release_version",
                 "hardening_profile",
@@ -897,3 +900,14 @@ def restore_latest(req: Request):
         "fallback_used": result.fallback_used,
         "authority_note": "Restored state does not bypass current request authentication or current execution gates.",
     }
+
+
+@app.get("/road/gates/health")
+def road_gate_health():
+    return road_gate_agent.health()
+
+
+@app.post("/road/gates/review")
+def road_gate_review(request: RoadGateReviewRequest):
+    production = production_acceptance_snapshot()
+    return road_gate_agent.review(request.model_copy(update={"production": production}))

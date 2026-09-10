@@ -32,6 +32,7 @@ import {
   EPISTEMIC_EVIDENCE_ID,
   type EpistemicEvidenceRecord,
 } from "./epistemicEvidence.js";
+import { buildRoadGateEvidence, ROAD_GATE_EVIDENCE_IDS } from "./roadGateEvidence.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -309,15 +310,10 @@ export async function buildEvidenceRegistry(): Promise<EvidenceRegistry> {
   const testCiValidation = await loadTestCiValidationEvidence(productionRaw);
   const madhouseAdversarial = await loadMadhouseAdversarialEvidence(productionRaw);
   const epistemic = await loadEpistemicEvidence(productionRaw, testCiValidation.detail);
+  const baseRecords: EvidenceRecord[] = [roadmapSource, productionAttestation, contextdevAuthorization, testCiValidation, madhouseAdversarial, epistemic];
+  const roadGateEvidence = await buildRoadGateEvidence(parseProductionRuntimeAttestation(productionRaw), baseRecords);
 
-  const records: EvidenceRecord[] = [
-    roadmapSource,
-    productionAttestation,
-    contextdevAuthorization,
-    testCiValidation,
-    madhouseAdversarial,
-    epistemic,
-  ];
+  const records: EvidenceRecord[] = [...baseRecords, ...roadGateEvidence];
   if (records.some((r) => r.status === "BLOCKED")) {
     return { status: "BLOCKED", records };
   }
@@ -352,6 +348,11 @@ export function certificationChecks(records: EvidenceRecord[]): GateCheck[] {
   const testCiValidation = findEvidence(records, TEST_CI_EVIDENCE_ID);
   const madhouseAdversarial = findEvidence(records, MADHOUSE_ADVERSARIAL_EVIDENCE_ID);
   const epistemic = findEvidence(records, EPISTEMIC_EVIDENCE_ID);
+  const governance = findEvidence(records, ROAD_GATE_EVIDENCE_IDS.GOVERNANCE);
+  const privacy = findEvidence(records, ROAD_GATE_EVIDENCE_IDS.PRIVACY);
+  const performance = findEvidence(records, ROAD_GATE_EVIDENCE_IDS.PERFORMANCE);
+  const recovery = findEvidence(records, ROAD_GATE_EVIDENCE_IDS.RECOVERY);
+  const multiCloud = findEvidence(records, ROAD_GATE_EVIDENCE_IDS["MULTI-CLOUD"]);
 
   const checks: GateCheck[] = [];
   const upstreamFailures: Gate[] = [];
@@ -449,15 +450,9 @@ export function certificationChecks(records: EvidenceRecord[]): GateCheck[] {
     pushGate("EPISTEMIC", "UNVERIFIED", [EPISTEMIC_EVIDENCE_ID], epistemic ? `EPISTEMIC is UNVERIFIED: ${epistemic.detail}` : "EPISTEMIC is UNVERIFIED: epistemic-claim-audit evidence is unavailable.");
   }
 
-  const remainingGates: Gate[] = [
-    "GOVERNANCE",
-    "PRIVACY",
-    "PERFORMANCE",
-    "RECOVERY",
-    "MULTI-CLOUD",
-  ];
-  for (const gate of remainingGates) {
-    pushGate(gate, "UNVERIFIED", [roadmapSource?.id ?? "roadmap-source"], DEFAULT_UNIMPLEMENTED_DETAIL);
+  for (const [gate, evidence] of [["GOVERNANCE", governance], ["PRIVACY", privacy], ["PERFORMANCE", performance], ["RECOVERY", recovery], ["MULTI-CLOUD", multiCloud]] as const) {
+    if (evidence?.status === "PASS") pushGate(gate, "PASS", [evidence.id], `${gate} is PASS from exact-SHA gate evidence: ${evidence.detail}`);
+    else pushGate(gate, "UNVERIFIED", [evidence?.id ?? ROAD_GATE_EVIDENCE_IDS[gate]], evidence ? `${gate} is UNVERIFIED: ${evidence.detail}` : `${gate} is UNVERIFIED: gate evidence is unavailable.`);
   }
 
   // ACCEPTANCE — unchanged: driven only by production-attestation.

@@ -32,6 +32,7 @@ import {
   computeEpistemicEvidence,
 } from "../dist/epistemicEvidence.js";
 import { certificationChecks, createApp } from "../dist/server.js";
+import { buildRoadGateEvidence, ROAD_GATE_EVIDENCE_IDS } from "../dist/roadGateEvidence.js";
 
 const VALID_SHA = "a".repeat(40);
 const OTHER_SHA = "b".repeat(40);
@@ -667,4 +668,39 @@ test("EPISTEMIC gate stays UNVERIFIED when the claim audit is absent", () => {
   const check = checks.find((c) => c.gate === "EPISTEMIC");
   assert.equal(check.status, "UNVERIFIED");
   assert.deepEqual(check.evidenceIds, [EPISTEMIC_EVIDENCE_ID]);
+});
+
+test("remaining ROAD gates consume exact-SHA gate evidence", async () => {
+  const observations = [
+    { id: "contextdev-authorization", status: "PASS", source: "context-dev", detail: "authorized" },
+    { id: "madhouse-adversarial-review", status: "PASS", source: "madhouse", detail: "ready" },
+    { id: "epistemic-claim-audit", status: "PASS", source: "epistemic", detail: "supported" },
+    { id: "test-ci-validation", status: "PASS", source: "github", detail: "validated" },
+    { id: "production-attestation", status: "PASS", source: "railway", detail: "accepted" },
+  ];
+  const records = await buildRoadGateEvidence(
+    attestation(),
+    observations,
+    async () => ({
+      ok: true,
+      status: 200,
+      url: "https://example.test/road/gates/review",
+      json: {
+        candidate_id: VALID_SHA,
+        decision: "READY_FOR_VERIFICATION",
+        can_pass: false,
+        promotion_authority: "NONE",
+        execution_authority: "NONE",
+        gates: [
+          { gate: "GOVERNANCE", status: "PASS", detail: "governance" },
+          { gate: "PRIVACY", status: "PASS", detail: "privacy" },
+          { gate: "PERFORMANCE", status: "PASS", detail: "performance" },
+          { gate: "RECOVERY", status: "PASS", detail: "recovery" },
+          { gate: "MULTI-CLOUD", status: "PASS", detail: "multi-cloud" },
+        ],
+      },
+    })
+  );
+  assert.deepEqual(records.map((record) => record.id), Object.values(ROAD_GATE_EVIDENCE_IDS));
+  assert.ok(records.every((record) => record.status === "PASS" && record.evidenceState === "VERIFIED"));
 });
