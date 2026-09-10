@@ -113,3 +113,12 @@ def test_reviewed_written_authorization_enables_required_commercial_scope():
     assert status["production_authorization"] == "SCOPE_VERIFIED"
     assert status["credentials_configured"] is False
     assert status["vendor_transport_enabled"] is False
+
+
+def test_context_dev_evidence_hash_is_stable_across_line_endings(tmp_path):
+    lf = tmp_path / "evidence-lf.md"
+    crlf = tmp_path / "evidence-crlf.md"
+    lf.write_bytes(b"line one\nline two\n")
+    crlf.write_bytes(b"line one\r\nline two\r\n")
+
+    assert resolver._sha256_file(lf) == resolver._sha256_file(crlf)

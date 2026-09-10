@@ -237,7 +237,8 @@ def _repository_evidence_path(relative_path: str) -> Path:
 
 
 def _sha256_file(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    canonical = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def load_context_dev_license(
