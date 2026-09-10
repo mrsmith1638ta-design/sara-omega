@@ -28,6 +28,8 @@ for SARA-OMEGA.
 - FastAPI service
 - enterprise Runtime Assurance API with audit receipts, evidence adapters,
   live module truth and fail-closed claim suppression
+- Madhouse Agent adversarial code critique gate with syntax, logic, security,
+  duplication, recurring-failure fingerprinting and evidence-led BLOCK decisions
 - Cursor/agent repository rules
 - offline unit tests
 - preserved original SARA documentation
@@ -115,6 +117,33 @@ and a signed audit receipt.
 
 Set `SARA_RUNTIME_ASSURANCE_SECRET` before using the runtime assurance endpoints.
 The service fails closed if it cannot issue or verify receipts.
+
+## Madhouse Agent
+
+Madhouse is SARA's controlled divergence and hostile code-quality gate. It reviews generated
+code as an untrusted candidate, emits findings, records evidence-led failure fingerprints, and
+returns either `BLOCKED` or `READY_FOR_VERIFICATION`.
+
+Madhouse can block a candidate. It cannot grant PASS, deploy, certify production readiness,
+override SIOS, override ROAD, or promote its own hypothesis to verified truth.
+
+Run the API locally:
+
+```powershell
+uvicorn main:app --reload
+```
+
+Review a code candidate:
+
+```powershell
+curl -X POST http://127.0.0.1:8000/madhouse/review `
+  -H "Content-Type: application/json" `
+  -d "{\"candidate_id\":\"build-047\",\"language\":\"python\",\"generated_code\":\"def broken(:`n    return True`n\"}"
+```
+
+The ChatGPT action gateway also exposes `operation: "madhouse_review"` with the candidate fields
+inside `context`: `candidate_id`, `language`, `generated_code`, `requirements`, and
+`previous_failures`.
 
 ## Module Awareness and TITAN
 

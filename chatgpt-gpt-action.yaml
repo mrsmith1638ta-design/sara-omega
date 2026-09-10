@@ -375,6 +375,7 @@ components:
             - runtime_assurance
             - concentration
             - hawkins_chaos
+            - madhouse_review
             - titan_health
             - solve
             - verify_output
@@ -397,7 +398,7 @@ components:
         context:
           type: object
           additionalProperties: true
-          description: Non-secret context, live module truth, or evidence hints.
+          description: Non-secret context, live module truth, evidence hints, or Madhouse review fields such as candidate_id, language, generated_code, requirements, and previous_failures.
         evidence:
           type: array
           items:

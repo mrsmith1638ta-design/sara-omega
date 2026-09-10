@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 
 from .concentration import ConcentrationGovernor, ConcentrationRequest
 from .hawkins_chaos import HawkinsChaosEngine, HawkinsChaosRequest
+from .madhouse import MadhouseAgent, MadhouseReviewRequest
 from .module_awareness import (
     HarmonizeRequest,
     MemoryConsolidation,
@@ -31,6 +32,7 @@ module_awareness = ModuleAwarenessEngine()
 titan = TitanEngine(module_awareness)
 hawkins_chaos = HawkinsChaosEngine()
 concentration_governor = ConcentrationGovernor()
+madhouse = MadhouseAgent()
 
 
 @router.get("/runtime-assurance/health")
@@ -194,6 +196,16 @@ async def hawkins_chaos_health():
 @router.post("/hawkins-chaos/analyze")
 async def hawkins_chaos_analyze(request: HawkinsChaosRequest):
     return hawkins_chaos.analyze(request)
+
+
+@router.get("/madhouse/health")
+async def madhouse_health():
+    return madhouse.health()
+
+
+@router.post("/madhouse/review")
+async def madhouse_review(request: MadhouseReviewRequest):
+    return madhouse.review(request)
 
 
 @router.get("/concentration/health")

@@ -42,6 +42,7 @@ from sara_v32_hardening import BackupError, FailSafeEvent, RuntimeFailSafe
 from app.enterprise_runtime import (
     concentration_governor,
     hawkins_chaos,
+    madhouse,
     module_awareness,
     router as enterprise_runtime_router,
     runtime_assurance,
@@ -49,6 +50,7 @@ from app.enterprise_runtime import (
 )
 from app.concentration import ConcentrationRequest
 from app.hawkins_chaos import HawkinsChaosRequest
+from app.madhouse import MadhouseReviewRequest
 from app.models import Problem
 from app.orchestrator import SaraOmega
 from app.runtime_assurance import RuntimeAssuranceConfigurationError, RuntimeAssuranceRequest
@@ -94,6 +96,7 @@ GPTActionOperation = Literal[
     "runtime_assurance",
     "concentration",
     "hawkins_chaos",
+    "madhouse_review",
     "titan_health",
     "solve",
     "verify_output",
@@ -409,6 +412,7 @@ def gateway_status() -> Dict[str, Any]:
         "module_awareness": module_awareness.count(),
         "concentration_governor": concentration_governor.health(),
         "hawkins_chaos": hawkins_chaos.health(),
+        "madhouse": madhouse.health(),
         "titan": titan.health(),
         "allowed_operations": list(GPTActionOperation.__args__),
     }
@@ -470,6 +474,19 @@ async def chatgpt_action_gateway(req: Request, body: GPTActionGatewayRequest):
                 },
                 evidence=body.evidence,
                 action={"requested_action": body.requested_action} if body.requested_action else {},
+            )
+        )
+
+    if body.operation == "madhouse_review":
+        return madhouse.review(
+            MadhouseReviewRequest(
+                candidate_id=str(body.context.get("candidate_id", body.session_id or "gpt-action-candidate")),
+                language=str(body.context.get("language", "python")),
+                generated_code=str(body.context.get("generated_code", body.output or body.query or "")),
+                requirements=list(body.context.get("requirements", [])),
+                previous_failures=list(body.context.get("previous_failures", [])),
+                recurring_failure_threshold=int(body.context.get("recurring_failure_threshold", 2)),
+                context=body.context,
             )
         )
 
