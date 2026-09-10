@@ -223,7 +223,13 @@ class MadhouseAgent:
                 report_loads(statement, scope_defined)
                 scope_defined.update(direct_stores(statement))
 
-        analyze_body(list(getattr(tree, "body", [])), set(defined))
+        module_scope = set(defined)
+        module_scope.update(
+            statement.name
+            for statement in getattr(tree, "body", [])
+            if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        )
+        analyze_body(list(getattr(tree, "body", [])), module_scope)
         return findings
 
     def _loads(self, node: ast.AST) -> list[tuple[str, int | None]]:
