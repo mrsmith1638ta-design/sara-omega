@@ -40,6 +40,7 @@ from context_dev_resolver import (
 from sara_v32_hardening import BackupError, FailSafeEvent, RuntimeFailSafe
 from app.enterprise_runtime import (
     concentration_governor,
+    epistemic,
     hawkins_chaos,
     madhouse,
     module_awareness,
@@ -899,6 +900,38 @@ def restore_latest(req: Request):
         "snapshot_id": result.snapshot_id,
         "fallback_used": result.fallback_used,
         "authority_note": "Restored state does not bypass current request authentication or current execution gates.",
+    }
+
+
+@app.get("/public/live-state")
+def public_live_state():
+    """Expose sanitized production observability without OAuth or action authority."""
+    production = production_acceptance_snapshot()
+    return {
+        "service": "sara-omega-public-observability",
+        "access_mode": "public_read_only",
+        "oauth_required": False,
+        "production": production,
+        "agents": {
+            "madhouse": madhouse.health(),
+            "epistemic": epistemic.health(),
+            "governance": {
+                "role": "authority_boundary",
+                "promotion_authority": "NONE",
+                "execution_authority": "NONE",
+            },
+            "road": {
+                "role": "release_acceptance_evidence",
+                "promotion_authority": "NONE",
+                "execution_authority": "NONE",
+            },
+        },
+        "authority": {
+            "promotion_authority": "NONE",
+            "execution_authority": "NONE",
+            "personal_continuity": "oauth_only",
+        },
+        "boundary": "Public endpoint is read-only observability. Personal continuity, mutations, execution, and promotion remain authenticated or unavailable.",
     }
 
 

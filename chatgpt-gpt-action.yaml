@@ -47,6 +47,19 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+  /public/live-state:
+    get:
+      operationId: getSaraOmegaPublicLiveState
+      summary: Get public read-only live production state
+      description: Returns sanitized live production observability without OAuth. This surface exposes no personal continuity, credentials, mutation, execution, or promotion authority.
+      responses:
+        '200':
+          description: Public read-only live state
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
   /context-dev/status:
     get:
       operationId: getContextDevAuthorizationStatus
