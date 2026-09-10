@@ -935,6 +935,35 @@ def public_live_state():
     }
 
 
+@app.get("/road/production-acceptance")
+def road_public_production_acceptance():
+    """Expose ROAD's sanitized production attestation without personal OAuth."""
+    production = production_acceptance_snapshot()
+    accepted = production.get("production_accepted") is True
+    return {
+        "service": "sara-road-public-attestation",
+        "access_mode": "public_read_only",
+        "oauth_required": False,
+        "production": production,
+        "road_acceptance": {
+            "status": "PASS" if accepted else "UNVERIFIED",
+            "evidence_state": "VERIFIED" if accepted else "UNVERIFIED",
+            "source_commit_sha": production.get("source_commit_sha"),
+            "detail": (
+                "Live production attestation reports production_accepted=true."
+                if accepted
+                else "Live production attestation does not report production_accepted=true."
+            ),
+        },
+        "authority": {
+            "promotion_authority": "NONE",
+            "execution_authority": "NONE",
+            "personal_continuity": "oauth_only",
+        },
+        "boundary": "This endpoint supplies release evidence only. It never promotes, executes, mutates, or grants personal SARA continuity.",
+    }
+
+
 @app.get("/road/gates/health")
 def road_gate_health():
     return road_gate_agent.health()

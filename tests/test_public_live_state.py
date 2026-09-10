@@ -34,3 +34,19 @@ def test_public_live_state_does_not_require_authorization_header():
 
     assert response.status_code != 401
     assert response.status_code != 403
+
+
+def test_road_production_acceptance_is_public_read_only_without_oauth(monkeypatch):
+    monkeypatch.setattr(
+        main,
+        "production_acceptance_snapshot",
+        lambda: {"production_accepted": True, "source_commit_sha": "b" * 40},
+    )
+
+    response = client.get("/road/production-acceptance")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["oauth_required"] is False
+    assert body["road_acceptance"]["status"] == "PASS"
+    assert body["authority"]["promotion_authority"] == "NONE"

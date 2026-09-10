@@ -60,6 +60,19 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+  /road/production-acceptance:
+    get:
+      operationId: getRoadProductionAcceptance
+      summary: Read ROAD production acceptance evidence without OAuth
+      description: Returns sanitized live production attestation for ROAD. This is read-only evidence and never grants execution, promotion, mutation, or personal continuity authority.
+      responses:
+        '200':
+          description: Public ROAD production attestation
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
   /context-dev/status:
     get:
       operationId: getContextDevAuthorizationStatus
