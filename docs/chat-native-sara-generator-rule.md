@@ -20,8 +20,28 @@ The novelty rule is strict:
 
 A candidate question that repeats any prior meaning, answer principle, reasoning path, distractor structure, or cosmetic substitution must be rejected before presentation.
 
+## Live Runtime Configuration Gate
+
+Current deployed-runtime status remains `LIVE ACCEPTANCE: BLOCKED_CONFIGURATION` until the Railway service has all required live provider configuration present and valid:
+
+- `SARA_GENERATOR_URL`
+- `SARA_GENERATOR_TOKEN`
+- `ROAD_VERIFIER_URL`
+- `ROAD_VERIFIER_TOKEN`
+- `SARA_TUTOR_HMAC_SECRET`
+
+The architecture may be deployed while acceptance remains blocked. Binding the live SARA and ROAD services securely to the tutor runtime is the next required step before live acceptance can be attempted.
+
+## Production Acceptance Transaction
+
+Once the variables above are configured, acceptance must prove this exact production sequence:
+
+`question request -> SARA candidate generation -> global semantic novelty rejection/acceptance -> ROAD verification -> question delivery -> answer submission -> grading -> mastery persistence`
+
+The promotion standard is fail-closed. Do not claim `LIVE ACCEPTANCE PASS` merely because the route returns `200 OK`; evidence must show the full chain completed successfully, including ROAD verification and a persisted mastery update.
+
 ## Status Boundary
 
-Current deployed-runtime status remains `LIVE ACCEPTANCE BLOCKED_CONFIGURATION` until the Railway service has the required live provider configuration and the full deployed flow passes.
-
 Chat-native operation may continue as a separate acceptance-support mode, but it must preserve the stricter novelty gate above.
+
+Until the live production transaction succeeds with evidence, the correct deployed-runtime status remains `LIVE ACCEPTANCE: BLOCKED_CONFIGURATION`.
