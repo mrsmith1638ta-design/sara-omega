@@ -19,9 +19,22 @@ jobs:
       - name: Install validation dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+          python -m pip install -r requirements-dev.txt
+      - name: Validate critical imports
+        run: |
+          python - <<'PY'
+          import cryptography
+          import fastapi
+          import httpx
+          import pydantic
+          import pytest
+          import pytest_asyncio
+          import uvicorn
+          import SARA_AI_Product_Manager_Adaptive_Tutor_UNIFIED
+          print("critical dependency imports passed")
+          PY
       - name: Compile
-        run: python -m py_compile main.py sara_v32_hardening.py sara_production_bootstrap.py sara_web.py tools/*.py
+        run: python -m py_compile main.py sara_v32_hardening.py sara_production_bootstrap.py sara_web.py SARA_AI_Product_Manager_Adaptive_Tutor_UNIFIED.py tools/*.py
       - name: Deployment shell sanitation
         run: |
           bash -n tools/*.sh
@@ -48,6 +61,8 @@ jobs:
               exit 1
             }
           }
+      - name: Adaptive tutor tests
+        run: pytest -q tests/test_adaptive_tutor.py
       - name: Production bootstrap tests
         run: pytest -q
       - name: Focused adversarial gate
