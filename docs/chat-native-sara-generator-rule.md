@@ -32,6 +32,12 @@ Current deployed-runtime status remains `LIVE ACCEPTANCE: BLOCKED_CONFIGURATION`
 
 The architecture may be deployed while acceptance remains blocked. Binding the live SARA and ROAD services securely to the tutor runtime is the next required step before live acceptance can be attempted.
 
+## Next Legitimate Milestone
+
+The next legitimate milestone is runtime secret and endpoint binding followed by one exact end-to-end acceptance transaction with evidence preserved for every stage.
+
+That evidence must prove each production handoff in order, with no inferred promotion from partial success.
+
 ## Production Acceptance Transaction
 
 Once the variables above are configured, acceptance must prove this exact production sequence:
