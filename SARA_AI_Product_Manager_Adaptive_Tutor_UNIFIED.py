@@ -598,43 +598,32 @@ def build_service_from_env() -> TutorService:
     )
 
 
-def create_app(service: TutorService | None = None) -> FastAPI:
-    @asynccontextmanager
-    async def lifespan(app_instance: FastAPI):
-        if app_instance.state.service is None:
-            app_instance.state.service = build_service_from_env()
-        yield
+def register_tutor_routes(application: FastAPI, service: TutorService | None = None) -> None:
+    application.state.adaptive_tutor_service = service
 
-    application = FastAPI(
-        title="SARA AI Product Manager Adaptive Tutor",
-        version="1.0.0",
-        lifespan=lifespan,
-    )
-    application.state.service = service
-
-    @application.get("/healthz")
-    def healthz() -> dict[str, bool]:
-        return {"ok": True}
-
-    @application.get("/readyz")
-    def readyz() -> dict[str, bool]:
-        if application.state.service is None:
-            raise HTTPException(503, "service not configured")
-        return {"ready": True}
+    def get_service() -> TutorService:
+        current = application.state.adaptive_tutor_service
+        if current is None:
+            try:
+                current = build_service_from_env()
+            except RuntimeError as exc:
+                raise HTTPException(503, str(exc)) from exc
+            application.state.adaptive_tutor_service = current
+        return current
 
     @application.post("/v1/session/{learner_id}/questions/next")
     async def next_question(learner_id: str) -> dict[str, Any]:
         if len(learner_id) > 200:
             raise HTTPException(400, "learner_id too long")
         try:
-            return await application.state.service.next_question(learner_id)
+            return await get_service().next_question(learner_id)
         except (GenerationBlocked, ProviderError) as exc:
             raise HTTPException(503, str(exc)) from exc
 
     @application.post("/v1/session/{learner_id}/questions/{question_id}/answer")
     def answer(learner_id: str, question_id: str, request: AnswerRequest) -> dict[str, Any]:
         try:
-            return application.state.service.answer(learner_id, question_id, request.choice_index)
+            return get_service().answer(learner_id, question_id, request.choice_index)
         except QuestionNotFound as exc:
             raise HTTPException(404, "question not found") from exc
         except QuestionAlreadyCompleted as exc:
@@ -644,12 +633,37 @@ def create_app(service: TutorService | None = None) -> FastAPI:
 
     @application.get("/v1/session/{learner_id}/mastery")
     def mastery(learner_id: str) -> dict[str, Any]:
-        states = application.state.service.store.get_mastery(learner_id)
+        states = get_service().store.get_mastery(learner_id)
         return {
             "learner_id": learner_id,
             "competencies": {name: state.__dict__ for name, state in states.items()},
         }
 
+
+def create_app(service: TutorService | None = None) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(app_instance: FastAPI):
+        if app_instance.state.adaptive_tutor_service is None:
+            app_instance.state.adaptive_tutor_service = build_service_from_env()
+        yield
+
+    application = FastAPI(
+        title="SARA AI Product Manager Adaptive Tutor",
+        version="1.0.0",
+        lifespan=lifespan,
+    )
+
+    @application.get("/healthz")
+    def healthz() -> dict[str, bool]:
+        return {"ok": True}
+
+    @application.get("/readyz")
+    def readyz() -> dict[str, bool]:
+        if application.state.adaptive_tutor_service is None:
+            raise HTTPException(503, "service not configured")
+        return {"ready": True}
+
+    register_tutor_routes(application, service)
     return application
 
 
