@@ -1,5 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
+from fastapi import FastAPI
 
 from SARA_AI_Product_Manager_Adaptive_Tutor_UNIFIED import (
     AnswerSealer,
@@ -11,6 +12,7 @@ from SARA_AI_Product_Manager_Adaptive_Tutor_UNIFIED import (
     Store,
     TutorService,
     create_app,
+    register_tutor_routes,
 )
 
 
@@ -137,3 +139,34 @@ def test_answer_requires_correct_choice_to_advance(tmp_path):
     assert right.status_code == 200
     assert right.json()["advance"] is True
     assert right.json()["correct"] is True
+
+
+def test_tutor_routes_can_be_registered_on_existing_fastapi_app(tmp_path):
+    application = FastAPI()
+    register_tutor_routes(application, make_service(tmp_path))
+    client = TestClient(application)
+
+    response = client.post("/v1/session/learner-1/questions/next")
+
+    assert response.status_code == 200
+    assert response.json()["question_id"]
+
+
+def test_sara_web_launcher_registers_tutor_routes(monkeypatch):
+    import sara_web
+
+    captured = {}
+    monkeypatch.setenv("PORT", "8001")
+    monkeypatch.setattr(sara_web, "configure_production_defaults", lambda: None)
+    monkeypatch.setattr(sara_web, "run_preflight", lambda: {"bootstrap_ready": True})
+    monkeypatch.setattr(sara_web, "register_acceptance_routes", lambda module, evidence: None)
+    monkeypatch.setattr(
+        sara_web.uvicorn,
+        "run",
+        lambda app, host, port: captured.setdefault("app", app),
+    )
+
+    sara_web.run()
+
+    paths = {getattr(route, "path", None) for route in captured["app"].routes}
+    assert "/v1/session/{learner_id}/questions/next" in paths
