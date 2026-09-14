@@ -1466,51 +1466,154 @@ def _build_internal_question(payload: dict[str, Any]) -> dict[str, Any]:
     weak_name = "portfolio evidence"
     if weak and isinstance(weak[0], dict):
         weak_name = str(weak[0].get("competency") or weak_name)
-    scenario = (
-        f"{competency} production decision {nonce} with conflicting retention, "
-        f"support-load, and trust evidence"
-    )
-    question = {
-        "prompt": (
-            "A SARA product team is deciding whether to release an adaptive tutor "
-            f"change for `{competency}` at difficulty {difficulty}. The pilot shows "
-            "higher completion among advanced learners, increased support tickets "
-            "from new learners, and one unresolved evidence gap in the verification "
-            "trail. Which action should the PM take first?"
-        ),
-        "choices": [
-            (
-                "Hold broad rollout, segment the pilot evidence, close the "
-                "verification gap, and define the next guarded release criterion."
+    archetypes = [
+        {
+            "scenario": "enterprise pilot expansion constrained by legal review and low admin activation",
+            "prompt": (
+                "An enterprise pilot for the SARA tutor has strong learner NPS, "
+                "but admin activation is weak and legal has not approved data "
+                "retention language for expansion. Which PM action is best first?"
             ),
-            "Ship to all learners because completion improved in one segment.",
-            "Discard the tutor change because support tickets increased.",
-            "Change the metric target so the pilot appears ready for launch.",
-        ],
+            "correct": (
+                "Pause expansion, resolve the legal retention review, and run an "
+                "admin-activation diagnosis before increasing rollout scope."
+            ),
+            "wrong": [
+                "Expand because learner NPS is already strong.",
+                "Remove admin activation from the launch criteria.",
+                "Ask sales to promise retention terms before legal review finishes.",
+            ],
+            "reasoning": "enterprise expansion requires legal readiness and admin activation diagnosis",
+            "correct_sig": "gate enterprise expansion on legal retention approval and admin activation diagnosis",
+            "distractors": [
+                "overweight learner nps while ignoring buyer admin activation",
+                "remove weak operational metric instead of diagnosing adoption",
+                "let sales override unresolved legal retention approval",
+            ],
+        },
+        {
+            "scenario": "pricing packaging test with conversion lift but higher refund risk",
+            "prompt": (
+                "A pricing test for the SARA tutor raises paid conversion but also "
+                "increases early refund requests among novice users. Which decision "
+                "should the PM make before scaling the package?"
+            ),
+            "correct": (
+                "Segment refund causes by learner maturity and adjust packaging or "
+                "onboarding before scaling the higher-converting offer."
+            ),
+            "wrong": [
+                "Scale immediately because paid conversion increased.",
+                "Cancel the package because any refund increase invalidates it.",
+                "Exclude novice users from reporting so the test looks cleaner.",
+            ],
+            "reasoning": "pricing scale decision depends on segmented refund-cause analysis",
+            "correct_sig": "diagnose refund causes by learner maturity before scaling pricing change",
+            "distractors": [
+                "treat conversion lift as sufficient despite refund harm",
+                "discard pricing evidence because one risk metric worsened",
+                "hide novice learner evidence to preserve metric appearance",
+            ],
+        },
+        {
+            "scenario": "model evaluation drift with stable satisfaction but weaker rubric alignment",
+            "prompt": (
+                "A new tutor-generation model keeps satisfaction flat but weakens "
+                "rubric alignment on reasoning-path diversity. What should the PM "
+                "do before approving the model swap?"
+            ),
+            "correct": (
+                "Block the swap until evaluation coverage explains the rubric drift "
+                "and the generation policy restores reasoning-path diversity."
+            ),
+            "wrong": [
+                "Approve the swap because learner satisfaction did not decrease.",
+                "Delete the reasoning-path metric from the rubric.",
+                "Use the new model only for learners who do not complain.",
+            ],
+            "reasoning": "model swap requires rubric-aligned evaluation not satisfaction alone",
+            "correct_sig": "block model swap until rubric drift is explained and diversity restored",
+            "distractors": [
+                "use satisfaction stability as sole model acceptance evidence",
+                "remove failing evaluation criterion instead of fixing drift",
+                "route around complaints while leaving rubric failure unresolved",
+            ],
+        },
+        {
+            "scenario": "privacy consent change with support deflection gains and consent comprehension risk",
+            "prompt": (
+                "A consent-flow redesign reduces support tickets, but user research "
+                "shows learners misunderstand what tutor mastery data is stored. "
+                "Which PM response is most appropriate?"
+            ),
+            "correct": (
+                "Keep the deflection improvement only after revising consent copy "
+                "and retesting comprehension of stored mastery data."
+            ),
+            "wrong": [
+                "Ship because fewer support tickets means the flow is better.",
+                "Hide the mastery-data detail to avoid confusing learners.",
+                "Roll back all consent work without testing clearer copy.",
+            ],
+            "reasoning": "privacy UX improvement must preserve informed consent comprehension",
+            "correct_sig": "revise consent copy and retest mastery-data comprehension before shipping",
+            "distractors": [
+                "equate lower support volume with valid informed consent",
+                "reduce transparency to avoid learner confusion",
+                "discard support improvement without testing clearer consent language",
+            ],
+        },
+        {
+            "scenario": "incident rollback choice with partial mitigation and unresolved mastery writes",
+            "prompt": (
+                "After a tutor incident, question delivery is fixed but some mastery "
+                "writes may have failed for affected learners. What should the PM "
+                "prioritize before declaring recovery complete?"
+            ),
+            "correct": (
+                "Keep recovery open, reconcile affected mastery records, and publish "
+                "the learner-impact criteria for closing the incident."
+            ),
+            "wrong": [
+                "Close the incident because question delivery works again.",
+                "Manually mark all affected learners as mastered.",
+                "Avoid learner-impact review because it may slow the release.",
+            ],
+            "reasoning": "incident recovery requires data reconciliation not only route restoration",
+            "correct_sig": "reconcile affected mastery records before closing tutor incident recovery",
+            "distractors": [
+                "declare recovery from route health while ignoring failed writes",
+                "overwrite learner mastery without evidence reconciliation",
+                "skip learner impact review to preserve release speed",
+            ],
+        },
+    ]
+    archetype = random.choice(archetypes)
+    scenario = f"{competency} {archetype['scenario']} {weak_name} {nonce}"
+    question = {
+        "prompt": f"{archetype['prompt']} Context: `{competency}` at difficulty {difficulty}.",
+        "choices": [archetype["correct"], *archetype["wrong"]],
         "correct_index": 0,
         "explanation": (
-            "The PM should preserve the promising signal while resolving the "
-            "verification gap and segment-risk evidence before broad rollout."
+            "The PM should use the strongest positive signal without allowing it "
+            "to override the specific unresolved risk in the scenario."
         ),
         "competency": competency,
         "difficulty": max(1, min(5, difficulty)),
-        "reasoning_archetype": "segmented evidence gate before broad rollout",
+        "reasoning_archetype": archetype["reasoning"],
         "evidence_notes": (
-            "Tests whether the learner weighs positive adoption, learner-risk "
-            "signals, support burden, and release-governance evidence together."
+            "Tests whether the learner identifies the decision constraint that "
+            "must be resolved before scaling or declaring success."
         ),
-        "learning_objective_id": f"{competency} gated rollout evidence {nonce}",
+        "learning_objective_id": f"{competency} {archetype['scenario']} decision constraint {nonce}",
         "reasoning_signature": (
-            f"prefer guarded segmented rollout decision over vanity metric or "
-            f"single-signal launch for {weak_name} {nonce}"
+            f"{archetype['reasoning']} for {competency} with {weak_name} {nonce}"
         ),
-        "correct_answer_signature": (
-            f"close verification gap and segment pilot evidence before broad rollout {nonce}"
-        ),
+        "correct_answer_signature": f"{archetype['correct_sig']} {nonce}",
         "distractor_signatures": [
-            f"overweight advanced learner completion and ignore support evidence {nonce}",
-            f"reject change solely from support ticket increase {nonce}",
-            f"manipulate metric target instead of resolving evidence gap {nonce}",
+            f"{archetype['distractors'][0]} {nonce}",
+            f"{archetype['distractors'][1]} {nonce}",
+            f"{archetype['distractors'][2]} {nonce}",
         ],
         "scenario_signature": scenario,
     }
