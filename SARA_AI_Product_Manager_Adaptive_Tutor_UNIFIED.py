@@ -755,6 +755,16 @@ class Store:
                                    "mastery=excluded.mastery,difficulty=excluded.difficulty",
                                    (learner_id, current.competency,current.attempts,current.first_try_correct,
                                     current.eventual_correct,current.streak,current.mastery,current.difficulty))
+            elif correct:
+                current.eventual_correct += 1
+                current.streak += 1
+                if current.streak >= 4 and current.mastery >= 0.55:
+                    current.difficulty = min(5, current.difficulty + 1)
+                    current.streak = 0
+                connection.execute("UPDATE mastery SET eventual_correct=?,streak=?,mastery=?,difficulty=? "
+                                   "WHERE learner_id=? AND competency=?",
+                                   (current.eventual_correct,current.streak,current.mastery,current.difficulty,
+                                    learner_id,current.competency))
             return current
 
     def save_mastery(self, learner_id: str, state: MasteryState) -> None:
