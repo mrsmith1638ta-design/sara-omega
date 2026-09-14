@@ -12,6 +12,7 @@ from SARA_AI_Product_Manager_Adaptive_Tutor_UNIFIED import (
     Store,
     TutorService,
     create_app,
+    issue_learner_token,
     register_tutor_routes,
 )
 
@@ -45,6 +46,15 @@ def make_question():
         "explanation": "Activation and conversion are in tension, so the PM should diagnose segment quality before scaling.",
         "reasoning_archetype": "metric_tradeoff_root_cause",
         "evidence_notes": "Tests tradeoff reasoning between activation and paid conversion.",
+        "learning_objective_id": "activation conversion quality diagnosis",
+        "reasoning_signature": "segment funnel quality before scaling paid acquisition",
+        "correct_answer_signature": "diagnose activation quality by acquisition channel before scaling",
+        "distractor_signatures": [
+            "scale paid acquisition from activation alone",
+            "hide pricing until activation improves",
+            "ignore conversion because activation leads",
+        ],
+        "scenario_signature": "activation rises while paid conversion drops",
     }
 
 
@@ -55,6 +65,11 @@ def make_service(tmp_path):
         road=FakeRoadClient("https://road.example/verify", "token"),
         sealer=AnswerSealer(b"x" * 32),
     )
+
+
+def auth_headers(service, learner_id="learner-1"):
+    token = issue_learner_token(learner_id, service.sealer.secret)
+    return {"Authorization": f"Bearer {token}"}
 
 
 def test_answer_sealer_accepts_only_the_committed_choice():
@@ -122,15 +137,24 @@ def test_answer_requires_correct_choice_to_advance(tmp_path):
     service = make_service(tmp_path)
     client = TestClient(create_app(service))
 
-    question = client.post("/v1/session/learner-1/questions/next").json()
+    question = client.post(
+        "/v1/session/learner-1/questions/next",
+        headers=auth_headers(service),
+    ).json()
+    correct_index = question["choices"].index(
+        "Segment the funnel and inspect activation quality by acquisition channel."
+    )
+    wrong_index = next(index for index in range(4) if index != correct_index)
 
     wrong = client.post(
         f"/v1/session/learner-1/questions/{question['question_id']}/answer",
-        json={"choice_index": 1},
+        json={"choice_index": wrong_index},
+        headers=auth_headers(service),
     )
     right = client.post(
         f"/v1/session/learner-1/questions/{question['question_id']}/answer",
-        json={"choice_index": 0},
+        json={"choice_index": correct_index},
+        headers=auth_headers(service),
     )
 
     assert wrong.status_code == 200
@@ -145,8 +169,12 @@ def test_tutor_routes_can_be_registered_on_existing_fastapi_app(tmp_path):
     application = FastAPI()
     register_tutor_routes(application, make_service(tmp_path))
     client = TestClient(application)
+    service = application.state.adaptive_tutor_service
 
-    response = client.post("/v1/session/learner-1/questions/next")
+    response = client.post(
+        "/v1/session/learner-1/questions/next",
+        headers=auth_headers(service),
+    )
 
     assert response.status_code == 200
     assert response.json()["question_id"]
