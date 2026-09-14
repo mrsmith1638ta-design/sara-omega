@@ -5,6 +5,7 @@ __pycache__/
 *.pyc
 data/*.db
 data/*.jsonl
+*.sqlite3
 dist/
 sara_omega.egg-info/
 .cursor/
