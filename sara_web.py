@@ -11,7 +11,10 @@ import os
 import uvicorn
 from fastapi.responses import HTMLResponse
 
-from SARA_AI_Product_Manager_Adaptive_Tutor_UNIFIED import register_tutor_routes
+from SARA_AI_Product_Manager_Adaptive_Tutor_UNIFIED import (
+    register_internal_provider_routes,
+    register_tutor_routes,
+)
 from sara_production_bootstrap import (
     configure_production_defaults,
     failed_evidence,
@@ -132,6 +135,7 @@ def run() -> None:
         main_module.FAILSAFE.init_error = "production_bootstrap_gate_failed"
 
     register_acceptance_routes(main_module, evidence)
+    register_internal_provider_routes(main_module.app)
     register_tutor_routes(main_module.app)
     register_ui_routes(main_module.app)
     port = int(os.environ.get("PORT", "8000"))

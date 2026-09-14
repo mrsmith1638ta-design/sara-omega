@@ -52,7 +52,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Request
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 
@@ -419,6 +419,16 @@ class RoadVerdict(BaseModel):
     reason: str | None = None
 
 
+def _require_bearer_token(authorization: str | None, expected: str, label: str) -> None:
+    if not expected:
+        raise HTTPException(503, f"{label} token is not configured")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, f"{label} authorization required")
+    token = authorization.removeprefix("Bearer ").strip()
+    if not hmac.compare_digest(token, expected):
+        raise HTTPException(403, f"{label} authorization rejected")
+
+
 class SaraQuestionClient:
     def __init__(
         self,
@@ -673,6 +683,14 @@ class Store:
                     scenario_signature TEXT NOT NULL UNIQUE,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
+                CREATE TABLE IF NOT EXISTS tutor_audit(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    learner_id TEXT NOT NULL,
+                    question_id TEXT NOT NULL,
+                    stage TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
                 """
             )
             # Older databases had a UNIQUE objective index. Rebuild to permit
@@ -820,6 +838,52 @@ class Store:
                     record["reasoning"],
                 ),
             )
+
+    def save_audit(
+        self,
+        learner_id: str,
+        question_id: str,
+        stage: str,
+        payload: dict[str, Any],
+    ) -> None:
+        with self._lock, self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO tutor_audit(
+                    learner_id, question_id, stage, payload_json
+                ) VALUES(?,?,?,?)
+                """,
+                (
+                    learner_id,
+                    question_id,
+                    stage,
+                    json.dumps(payload, sort_keys=True),
+                ),
+            )
+
+    def audit_for_question(
+        self,
+        learner_id: str,
+        question_id: str,
+    ) -> list[dict[str, Any]]:
+        with self._lock, self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT stage, payload_json, created_at
+                FROM tutor_audit
+                WHERE learner_id=? AND question_id=?
+                ORDER BY id ASC
+                """,
+                (learner_id, question_id),
+            ).fetchall()
+        return [
+            {
+                "stage": row["stage"],
+                "payload": json.loads(row["payload_json"]),
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
 
     @staticmethod
     def _ledger_row_to_item(row: sqlite3.Row) -> dict[str, Any]:
@@ -1122,6 +1186,31 @@ class TutorService:
                     "fingerprint": semantic_fingerprint,
                 }
             )
+            self.store.save_audit(
+                learner_id,
+                question_id,
+                "road_verdict",
+                {
+                    "status": verdict.get("status"),
+                    "verified": verdict.get("verified"),
+                    "reason": verdict.get("reason"),
+                    "semantic_fingerprint": semantic_fingerprint,
+                },
+            )
+            self.store.save_audit(
+                learner_id,
+                question_id,
+                "question_served",
+                {
+                    "prompt_sha256": hashlib.sha256(
+                        candidate["prompt"].encode()
+                    ).hexdigest(),
+                    "choice_count": len(candidate["choices"]),
+                    "competency": candidate["competency"],
+                    "difficulty": candidate["difficulty"],
+                    "answer_key_exposed": False,
+                },
+            )
             # The raw correct_index never leaves this method and is not persisted.
             return {
                 "question_id": question_id,
@@ -1153,6 +1242,21 @@ class TutorService:
 
         correct = self.sealer.verify(question_id, choice_index, question["answer_commitment"])
         updated = self.store.score_answer(learner_id, question, choice_index, correct, self.mastery_engine)
+        attempts = self.store.attempts_for_question(learner_id, question_id)
+        self.store.save_audit(
+            learner_id,
+            question_id,
+            "answer_recorded",
+            {
+                "choice_index": choice_index,
+                "correct": correct,
+                "attempts_for_question": attempts,
+                "retry_allowed": not correct,
+                "mastery": round(updated.mastery, 3),
+                "difficulty": updated.difficulty,
+                "competency": question["competency"],
+            },
+        )
 
         return {
             "correct": correct,
@@ -1315,6 +1419,150 @@ def register_tutor_routes(
             "competencies": {
                 name: state.__dict__ for name, state in states.items()
             },
+        }
+
+    @application.get("/v1/session/{learner_id}/questions/{question_id}/audit")
+    def question_audit(
+        learner_id: str,
+        question_id: str,
+        authorization: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        current = authorize(learner_id, authorization)
+        question = current.store.get_question(question_id)
+        if question is None or question["learner_id"] != learner_id:
+            raise HTTPException(404, "question not found")
+        return {
+            "learner_id": learner_id,
+            "question_id": question_id,
+            "stages": current.store.audit_for_question(learner_id, question_id),
+        }
+
+
+def _build_internal_question(payload: dict[str, Any]) -> dict[str, Any]:
+    requirements = payload.get("requirements") or {}
+    learner_context = payload.get("learner_context") or {}
+    competency = str(
+        requirements.get("competency")
+        or learner_context.get("target_competency")
+        or "product_strategy"
+    )
+    difficulty = int(
+        requirements.get("difficulty")
+        or learner_context.get("target_difficulty")
+        or 2
+    )
+    nonce = uuid.uuid4().hex[:12]
+    weak = learner_context.get("weak_competencies") or []
+    weak_name = "portfolio evidence"
+    if weak and isinstance(weak[0], dict):
+        weak_name = str(weak[0].get("competency") or weak_name)
+    scenario = (
+        f"{competency} production decision {nonce} with conflicting retention, "
+        f"support-load, and trust evidence"
+    )
+    question = {
+        "prompt": (
+            "A SARA product team is deciding whether to release an adaptive tutor "
+            f"change for `{competency}` at difficulty {difficulty}. The pilot shows "
+            "higher completion among advanced learners, increased support tickets "
+            "from new learners, and one unresolved evidence gap in the verification "
+            "trail. Which action should the PM take first?"
+        ),
+        "choices": [
+            (
+                "Hold broad rollout, segment the pilot evidence, close the "
+                "verification gap, and define the next guarded release criterion."
+            ),
+            "Ship to all learners because completion improved in one segment.",
+            "Discard the tutor change because support tickets increased.",
+            "Change the metric target so the pilot appears ready for launch.",
+        ],
+        "correct_index": 0,
+        "explanation": (
+            "The PM should preserve the promising signal while resolving the "
+            "verification gap and segment-risk evidence before broad rollout."
+        ),
+        "competency": competency,
+        "difficulty": max(1, min(5, difficulty)),
+        "reasoning_archetype": "segmented evidence gate before broad rollout",
+        "evidence_notes": (
+            "Tests whether the learner weighs positive adoption, learner-risk "
+            "signals, support burden, and release-governance evidence together."
+        ),
+        "learning_objective_id": f"{competency} gated rollout evidence {nonce}",
+        "reasoning_signature": (
+            f"prefer guarded segmented rollout decision over vanity metric or "
+            f"single-signal launch for {weak_name} {nonce}"
+        ),
+        "correct_answer_signature": (
+            f"close verification gap and segment pilot evidence before broad rollout {nonce}"
+        ),
+        "distractor_signatures": [
+            f"overweight advanced learner completion and ignore support evidence {nonce}",
+            f"reject change solely from support ticket increase {nonce}",
+            f"manipulate metric target instead of resolving evidence gap {nonce}",
+        ],
+        "scenario_signature": scenario,
+    }
+    return GeneratedQuestion.model_validate(question).model_dump()
+
+
+def register_internal_provider_routes(application: FastAPI) -> None:
+    @application.post("/internal/sara/generate-question", include_in_schema=False)
+    async def internal_generate_question(
+        request: Request,
+        authorization: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        _require_bearer_token(
+            authorization,
+            os.getenv("SARA_GENERATOR_TOKEN", ""),
+            "SARA generator",
+        )
+        payload = await request.json()
+        if payload.get("task") != "generate_ai_product_manager_assessment_item":
+            raise HTTPException(400, "unsupported generator task")
+        return _build_internal_question(payload)
+
+    @application.post("/internal/road/verify-question", include_in_schema=False)
+    async def internal_verify_question(
+        request: Request,
+        authorization: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        _require_bearer_token(
+            authorization,
+            os.getenv("ROAD_VERIFIER_TOKEN", ""),
+            "ROAD verifier",
+        )
+        payload = await request.json()
+        if payload.get("task") != "verify_ai_product_manager_assessment_item":
+            raise HTTPException(400, "unsupported ROAD task")
+        try:
+            question = GeneratedQuestion.model_validate(payload.get("question"))
+        except ValidationError as exc:
+            return {
+                "status": "FAIL",
+                "verified": False,
+                "reason": f"question contract failed: {exc.errors()[0]['msg']}",
+            }
+        if question.correct_index not in range(len(question.choices)):
+            return {
+                "status": "FAIL",
+                "verified": False,
+                "reason": "correct answer index is outside the choices",
+            }
+        if len(set(question.distractor_signatures)) != 3:
+            return {
+                "status": "FAIL",
+                "verified": False,
+                "reason": "distractor signatures are not unique",
+            }
+        return {
+            "status": "PASS",
+            "verified": True,
+            "reason": (
+                "ROAD verified a single defensible answer, distinct distractor "
+                "logic, canonical novelty descriptors, and explanation support."
+            ),
         }
 
 
