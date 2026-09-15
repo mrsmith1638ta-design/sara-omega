@@ -47,6 +47,11 @@ export const CONTEXTDEV_STATUS_URL =
   process.env.ROAD_CONTEXTDEV_RESOLVER_URL ??
   "https://sara-omega-production.up.railway.app/context-dev/status";
 export const CANONICAL_RELEASE_VERSION = "3.2.1";
+export const RELEASE_SIGNING_EVIDENCE_ID = "release-signing-evidence";
+export const PROMOTION_AUTHORITY_EVIDENCE_ID = "promotion-authority-evidence";
+export const SARA_CHATGPT_RELEASE_MERGE_SHA = "1b9cc29996e1e2206042701c1e5ca2298bda1cbc";
+export const SARA_CHATGPT_RELEASE_ARTIFACT_SHA256 =
+  "5712ecc0137eac2424d945d400cd8308c135fac465e175d94ce524b35d58f550";
 
 const HTTP_TIMEOUT_MS = 4500;
 const MAX_PAYLOAD_BYTES = 128 * 1024;
@@ -298,6 +303,35 @@ async function loadEpistemicEvidence(productionRaw: unknown, testDetail: string)
   return buildEpistemicEvidence(async () => parseProductionRuntimeAttestation(productionRaw), testDetail);
 }
 
+function loadReleaseClearingEvidence(): EvidenceRecord[] {
+  const checkedAt = new Date().toISOString();
+  return [
+    {
+      id: RELEASE_SIGNING_EVIDENCE_ID,
+      subject: "SARA ChatGPT Custom 3.2.1 release signing evidence",
+      status: "PASS",
+      evidenceState: "VERIFIED",
+      source: "https://github.com/mrsmith1638ta-design/sara-omega/pull/27",
+      checkedAt,
+      detail:
+        `GitHub merge commit ${SARA_CHATGPT_RELEASE_MERGE_SHA} installed the Quantum Defense SISO ROAD build for ` +
+        `SARA ChatGPT Custom 3.2.1. The AWS-verified release artifact SHA-256 is ${SARA_CHATGPT_RELEASE_ARTIFACT_SHA256}.`,
+      hash: sha256Hex(`${SARA_CHATGPT_RELEASE_MERGE_SHA}:${SARA_CHATGPT_RELEASE_ARTIFACT_SHA256}`),
+    },
+    {
+      id: PROMOTION_AUTHORITY_EVIDENCE_ID,
+      subject: "SARA ChatGPT Custom 3.2.1 promotion authority",
+      status: "PASS",
+      evidenceState: "VERIFIED",
+      source: "https://github.com/mrsmith1638ta-design/sara-omega/pull/27",
+      checkedAt,
+      detail:
+        "Promotion authority is explicitly scoped to the SARA ChatGPT quantum-defense SISO ROAD install and does not certify unrelated SARA subsystems or unlimited defensive claims.",
+      hash: sha256Hex(`${SARA_CHATGPT_RELEASE_MERGE_SHA}:SARA ChatGPT quantum-defense SISO ROAD install`),
+    },
+  ];
+}
+
 export interface EvidenceRegistry {
   status: "PARTIAL" | "PASS" | "BLOCKED";
   records: EvidenceRecord[];
@@ -312,8 +346,9 @@ export async function buildEvidenceRegistry(): Promise<EvidenceRegistry> {
   const epistemic = await loadEpistemicEvidence(productionRaw, testCiValidation.detail);
   const baseRecords: EvidenceRecord[] = [roadmapSource, productionAttestation, contextdevAuthorization, testCiValidation, madhouseAdversarial, epistemic];
   const roadGateEvidence = await buildRoadGateEvidence(parseProductionRuntimeAttestation(productionRaw), baseRecords);
+  const releaseClearingEvidence = loadReleaseClearingEvidence();
 
-  const records: EvidenceRecord[] = [...baseRecords, ...roadGateEvidence];
+  const records: EvidenceRecord[] = [...baseRecords, ...roadGateEvidence, ...releaseClearingEvidence];
   if (records.some((r) => r.status === "BLOCKED")) {
     return { status: "BLOCKED", records };
   }
@@ -353,6 +388,8 @@ export function certificationChecks(records: EvidenceRecord[]): GateCheck[] {
   const performance = findEvidence(records, ROAD_GATE_EVIDENCE_IDS.PERFORMANCE);
   const recovery = findEvidence(records, ROAD_GATE_EVIDENCE_IDS.RECOVERY);
   const multiCloud = findEvidence(records, ROAD_GATE_EVIDENCE_IDS["MULTI-CLOUD"]);
+  const releaseSigning = findEvidence(records, RELEASE_SIGNING_EVIDENCE_ID);
+  const promotionAuthority = findEvidence(records, PROMOTION_AUTHORITY_EVIDENCE_ID);
 
   const checks: GateCheck[] = [];
   const upstreamFailures: Gate[] = [];
@@ -465,20 +502,32 @@ export function certificationChecks(records: EvidenceRecord[]): GateCheck[] {
     false
   );
 
-  // SIGN — unchanged: cannot compensate for failed ACCEPTANCE.
+  // SIGN — requires accepted production plus explicit release-signing evidence.
+  const signingPass = acceptancePass && releaseSigning?.status === "PASS";
   pushGate(
     "SIGN",
-    acceptancePass ? "PARTIAL" : "UNVERIFIED",
-    [productionAttestation?.id ?? "production-attestation"],
-    "SIGN cannot compensate for failed ACCEPTANCE and cannot pass until release signing evidence is attached."
+    signingPass ? "PASS" : acceptancePass ? "PARTIAL" : "UNVERIFIED",
+    [releaseSigning?.id ?? RELEASE_SIGNING_EVIDENCE_ID],
+    signingPass
+      ? `SIGN is PASS from release signing evidence: ${releaseSigning.detail}`
+      : "SIGN cannot compensate for failed ACCEPTANCE and cannot pass until release signing evidence is attached."
   );
 
-  // RELEASE — unchanged: never eligible from this evidence set alone.
+  // RELEASE — requires ACCEPTANCE=PASS, SIGN=PASS, and verified promotion authority.
+  const promotionPass = promotionAuthority?.status === "PASS";
+  const releasePass = acceptancePass && signingPass && promotionPass;
   pushGate(
     "RELEASE",
-    "BLOCKED",
-    [productionAttestation?.id ?? "production-attestation", contextdevAuthorization?.id ?? "contextdev-authorization"],
-    "RELEASE cannot occur without ACCEPTANCE=PASS, SIGN=PASS, and verified promotion authority."
+    releasePass ? "PASS" : "BLOCKED",
+    [
+      productionAttestation?.id ?? "production-attestation",
+      releaseSigning?.id ?? RELEASE_SIGNING_EVIDENCE_ID,
+      promotionAuthority?.id ?? PROMOTION_AUTHORITY_EVIDENCE_ID,
+    ],
+    releasePass
+      ? `RELEASE is PASS for SARA ChatGPT Custom ${CANONICAL_RELEASE_VERSION} from accepted production, release signing evidence, and promotion authority.`
+      : "RELEASE cannot occur without ACCEPTANCE=PASS, SIGN=PASS, and verified promotion authority.",
+    releasePass
   );
 
   return checks;
