@@ -1,0 +1,3 @@
+FROM us-central1-docker.pkg.dev/sara-soverigne-modules/sara-quantum-defense/sara-nexus-cipmu-pqc@sha256:fb7fd751043ae0466273f75c9ae90691f8c3aadf863f048639228e86f411349d
+COPY main_patched_cipmu.py /app/main_patched_cipmu.py
+CMD ["gunicorn", "--bind", ":8080", "--workers", "1", "--threads", "8", "--worker-class", "gthread", "main_patched_cipmu:app"]

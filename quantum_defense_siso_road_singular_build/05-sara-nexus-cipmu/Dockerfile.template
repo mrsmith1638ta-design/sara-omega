@@ -1,0 +1,14 @@
+FROM __BASE_IMAGE__
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY cipmu_patch.py .
+COPY main_patched.py .
+
+ENV PORT=8080
+EXPOSE 8080
+
+CMD ["gunicorn", "--bind", ":8080", "--workers", "1", "--threads", "8", "--worker-class", "gthread", "main_patched:app"]

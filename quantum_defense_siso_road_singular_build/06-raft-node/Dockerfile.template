@@ -1,0 +1,9 @@
+FROM us-central1-docker.pkg.dev/sara-soverigne-modules/sara-quantum-defense/raft-node-fix@sha256:9b17aec7f70e0d6bd3e228d2a7f233ea179d8b490dca33a60878a5bb9ffde215
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY raft_pqc_patch.py .
+COPY main_patched.py .
+ENV PORT=8080
+EXPOSE 8080
+CMD ["gunicorn", "--bind", ":8080", "--workers", "1", "--threads", "8", "--worker-class", "gthread", "main_patched:app"]
