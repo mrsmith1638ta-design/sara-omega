@@ -520,6 +520,33 @@ function baseRecordsWithEpistemic(testOverrides = {}, madhouseOverrides = {}, ep
   ];
 }
 
+function releaseEvidenceRecords(overrides = {}) {
+  return [
+    {
+      id: "release-signing-evidence",
+      subject: "SARA ChatGPT Custom 3.2.1 release signing evidence",
+      status: "PASS",
+      evidenceState: "VERIFIED",
+      source: "https://github.com/mrsmith1638ta-design/sara-omega/pull/27",
+      checkedAt: "2026-09-15T05:04:53.000Z",
+      detail: "Merge commit 1b9cc29996e1e2206042701c1e5ca2298bda1cbc signed artifact sha256:5712ecc0137eac2424d945d400cd8308c135fac465e175d94ce524b35d58f550.",
+      hash: "5712ecc0137eac2424d945d400cd8308c135fac465e175d94ce524b35d58f550",
+      ...overrides.signing,
+    },
+    {
+      id: "promotion-authority-evidence",
+      subject: "SARA ChatGPT Custom 3.2.1 promotion authority",
+      status: "PASS",
+      evidenceState: "VERIFIED",
+      source: "https://github.com/mrsmith1638ta-design/sara-omega/pull/27",
+      checkedAt: "2026-09-15T05:04:53.000Z",
+      detail: "Authorized promotion scope: SARA ChatGPT quantum-defense SISO ROAD install.",
+      hash: "1b9cc29996e1e2206042701c1e5ca2298bda1cbc",
+      ...overrides.promotion,
+    },
+  ];
+}
+
 test("Epistemic evidence passes only for exact-SHA scope-consistent claims", async () => {
   const summary = await computeEpistemicEvidence(
     attestation(),
@@ -668,6 +695,52 @@ test("EPISTEMIC gate stays UNVERIFIED when the claim audit is absent", () => {
   const check = checks.find((c) => c.gate === "EPISTEMIC");
   assert.equal(check.status, "UNVERIFIED");
   assert.deepEqual(check.evidenceIds, [EPISTEMIC_EVIDENCE_ID]);
+});
+
+test("SIGN and RELEASE pass from accepted production, release signing, and promotion authority evidence", () => {
+  const records = [
+    ...baseRecordsWithEpistemic(
+      { status: "PASS", evidenceState: "VERIFIED" },
+      { status: "PASS", evidenceState: "VERIFIED" },
+      { status: "PASS", evidenceState: "VERIFIED" }
+    ),
+    ...releaseEvidenceRecords(),
+  ];
+  const checks = certificationChecks(records);
+  const signCheck = checks.find((c) => c.gate === "SIGN");
+  const releaseCheck = checks.find((c) => c.gate === "RELEASE");
+
+  assert.equal(signCheck.status, "PASS");
+  assert.deepEqual(signCheck.evidenceIds, ["release-signing-evidence"]);
+  assert.equal(releaseCheck.status, "PASS");
+  assert.deepEqual(releaseCheck.evidenceIds, [
+    "production-attestation",
+    "release-signing-evidence",
+    "promotion-authority-evidence",
+  ]);
+  assert.equal(releaseCheck.releaseEligible, true);
+});
+
+test("RELEASE remains blocked without promotion authority even when ACCEPTANCE and SIGN pass", () => {
+  const records = [
+    ...baseRecordsWithEpistemic(
+      { status: "PASS", evidenceState: "VERIFIED" },
+      { status: "PASS", evidenceState: "VERIFIED" },
+      { status: "PASS", evidenceState: "VERIFIED" }
+    ),
+    ...releaseEvidenceRecords().filter((r) => r.id !== "promotion-authority-evidence"),
+  ];
+  const checks = certificationChecks(records);
+  const signCheck = checks.find((c) => c.gate === "SIGN");
+  const releaseCheck = checks.find((c) => c.gate === "RELEASE");
+
+  assert.equal(signCheck.status, "PASS");
+  assert.equal(releaseCheck.status, "BLOCKED");
+  assert.deepEqual(releaseCheck.evidenceIds, [
+    "production-attestation",
+    "release-signing-evidence",
+    "promotion-authority-evidence",
+  ]);
 });
 
 test("remaining ROAD gates consume exact-SHA gate evidence", async () => {
