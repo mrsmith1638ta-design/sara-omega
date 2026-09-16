@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import os
+import secrets
 import wave
 from pathlib import Path
 from typing import Protocol
@@ -11,6 +13,8 @@ from pydantic import BaseModel, Field
 
 
 MODEL_ID = "en_GB-cori-high"
+EXPECTED_MODEL_FILENAME = f"{MODEL_ID}.onnx"
+EXPECTED_MODEL_SHA256 = "470b4dd634c98f8a4850d7626ffc3dfc90774628eeef6605a6dd8f88f30a5903"
 
 
 class SynthesisRequest(BaseModel):
@@ -31,6 +35,24 @@ class VoiceEngine(Protocol):
         noise_w_scale: float,
         volume: float,
     ) -> bytes: ...
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _validate_model_identity(model: Path) -> None:
+    if model.name != EXPECTED_MODEL_FILENAME:
+        raise RuntimeError(f"Piper model must be {EXPECTED_MODEL_FILENAME}")
+    if not model.is_file():
+        raise RuntimeError("Piper model file is required")
+    actual_digest = _file_sha256(model)
+    if not secrets.compare_digest(actual_digest, EXPECTED_MODEL_SHA256):
+        raise RuntimeError("Piper model SHA-256 does not match the approved Cori model")
 
 
 class PiperEngine:
@@ -66,9 +88,10 @@ def _load_engine_from_env() -> VoiceEngine:
     if not model_path:
         raise RuntimeError("Piper model path is required")
     model = Path(model_path)
+    _validate_model_identity(model)
     config = Path(f"{model_path}.json")
-    if not model.is_file() or not config.is_file():
-        raise RuntimeError("Piper model and matching .onnx.json configuration are required")
+    if not config.is_file():
+        raise RuntimeError("Piper matching .onnx.json configuration is required")
     return PiperEngine(str(model))
 
 
@@ -89,7 +112,7 @@ def create_voice_service(*, engine: VoiceEngine | None = None, service_token: st
         request: SynthesisRequest,
         x_sara_voice_token: str | None = Header(default=None),
     ):
-        if x_sara_voice_token != token:
+        if x_sara_voice_token is None or not secrets.compare_digest(x_sara_voice_token, token):
             raise HTTPException(status_code=401, detail="unauthorized")
         text = request.text.strip()
         if not text:
