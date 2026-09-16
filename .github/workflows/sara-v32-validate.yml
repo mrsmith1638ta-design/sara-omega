@@ -38,8 +38,21 @@ jobs:
           python -m pip install pip-audit
           python -m pip_audit -r requirements.txt
           python -m pip_audit -r requirements-dev.txt
+          python -m pip_audit -r voice_service/requirements.txt
+      - name: Voice dependency boundary
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          core = Path("requirements.txt").read_text(encoding="utf-8").lower()
+          pyproject = Path("pyproject.toml").read_text(encoding="utf-8").lower()
+          voice = Path("voice_service/requirements.txt").read_text(encoding="utf-8").lower()
+          assert "piper-tts" not in core
+          assert "piper-tts" not in pyproject
+          assert "piper-tts==1.8.0" in voice
+          print("Piper remains isolated from SARA core dependencies")
+          PY
       - name: Compile
-        run: python -m py_compile main.py sara_v32_hardening.py sara_production_bootstrap.py sara_web.py SARA_AI_Product_Manager_Adaptive_Tutor_UNIFIED.py tools/*.py
+        run: python -m compileall -q sara_unified voice_service && python -m py_compile main.py sara_v32_hardening.py sara_production_bootstrap.py sara_web.py SARA_AI_Product_Manager_Adaptive_Tutor_UNIFIED.py tools/*.py
       - name: Deployment shell sanitation
         run: |
           bash -n tools/*.sh
@@ -74,6 +87,8 @@ jobs:
         run: python tools/adversarial_gate.py
       - name: Railway container build
         run: docker build --pull -t sara-omega:v3.2.1 .
+      - name: Piper voice service container build
+        run: docker build --pull -f voice_service/Dockerfile -t sara-piper-voice:1.0.0 .
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
