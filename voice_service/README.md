@@ -26,7 +26,15 @@ Provision both model files outside Git:
 /models/en_GB-cori-high.onnx.json
 ```
 
-The service intentionally fails startup when the token, model, or matching model configuration is missing.
+The approved ONNX artifact is pinned to SHA-256:
+
+```text
+470b4dd634c98f8a4850d7626ffc3dfc90774628eeef6605a6dd8f88f30a5903
+```
+
+At startup the service verifies both the exact filename `en_GB-cori-high.onnx` and this SHA-256 before Piper is allowed to load the model. A different or tampered model fails closed. The matching `.onnx.json` configuration must also be present.
+
+The service intentionally fails startup when the token, approved model, model digest, or matching model configuration is missing or invalid.
 
 ## Run
 
