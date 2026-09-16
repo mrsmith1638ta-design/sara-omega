@@ -31,7 +31,12 @@ import {
   buildEpistemicEvidence,
   computeEpistemicEvidence,
 } from "../dist/epistemicEvidence.js";
-import { certificationChecks, createApp } from "../dist/server.js";
+import {
+  BUILD_IMPLEMENTATION_EVIDENCE_ID,
+  SECURITY_AUDIT_EVIDENCE_ID,
+  certificationChecks,
+  createApp,
+} from "../dist/server.js";
 import { buildRoadGateEvidence, ROAD_GATE_EVIDENCE_IDS } from "../dist/roadGateEvidence.js";
 
 const VALID_SHA = "a".repeat(40);
@@ -483,6 +488,26 @@ function baseRecords(overrides = {}) {
       hash: "x",
       ...overrides,
     },
+    {
+      id: BUILD_IMPLEMENTATION_EVIDENCE_ID,
+      subject: "SARA-OMEGA BUILD implementation evidence",
+      status: overrides.status ?? "UNVERIFIED",
+      evidenceState: overrides.evidenceState ?? "UNVERIFIED",
+      source: "x",
+      checkedAt: "2026-01-01T00:00:00.000Z",
+      detail: "x",
+      hash: "x",
+    },
+    {
+      id: SECURITY_AUDIT_EVIDENCE_ID,
+      subject: "SARA-OMEGA SECURITY audit evidence",
+      status: overrides.status ?? "UNVERIFIED",
+      evidenceState: overrides.evidenceState ?? "UNVERIFIED",
+      source: "x",
+      checkedAt: "2026-01-01T00:00:00.000Z",
+      detail: "x",
+      hash: "x",
+    },
   ];
 }
 
@@ -606,6 +631,22 @@ test("TEST gate is PASS only when test-ci-validation evidence is PASS, with evid
   const testCheck = checks.find((c) => c.gate === "TEST");
   assert.equal(testCheck.status, "PASS");
   assert.deepEqual(testCheck.evidenceIds, [TEST_CI_EVIDENCE_ID]);
+});
+
+test("BUILD gate is PASS only from dedicated build implementation evidence", () => {
+  const records = baseRecords({ status: "PASS", evidenceState: "VERIFIED" });
+  const checks = certificationChecks(records);
+  const buildCheck = checks.find((c) => c.gate === "BUILD");
+  assert.equal(buildCheck.status, "PASS");
+  assert.deepEqual(buildCheck.evidenceIds, [BUILD_IMPLEMENTATION_EVIDENCE_ID]);
+});
+
+test("SECURITY gate is PASS only from dedicated security audit evidence plus Context.dev evidence", () => {
+  const records = baseRecords({ status: "PASS", evidenceState: "VERIFIED" });
+  const checks = certificationChecks(records);
+  const securityCheck = checks.find((c) => c.gate === "SECURITY");
+  assert.equal(securityCheck.status, "PASS");
+  assert.deepEqual(securityCheck.evidenceIds, [SECURITY_AUDIT_EVIDENCE_ID, "contextdev-authorization"]);
 });
 
 test("TEST gate is UNVERIFIED when test-ci-validation evidence is UNVERIFIED, with evidenceIds=[test-ci-validation]", () => {

@@ -12,7 +12,7 @@
  *      `bootstrap_ready`, `chain_valid`);
  *   3. a single, unambiguous, completed-successful GitHub Actions run of the
  *      canonical `SARA-OMEGA V3.2.1 validation` workflow for that exact SHA,
- *      whose `validate` job completed successfully with all six required
+ *      whose `validate` job completed successfully with all required
  *      steps completed successfully.
  *
  * Any missing, malformed, mismatched, stale, ambiguous, or inaccessible
@@ -28,12 +28,14 @@ export const CANONICAL_WORKFLOW_NAME = "SARA-OMEGA V3.2.1 validation";
 export const CANONICAL_JOB_NAME = "validate";
 
 export const REQUIRED_STEP_NAMES = [
+  "Dependency vulnerability audit",
   "Compile",
   "Deployment shell sanitation",
   "Native Windows activator syntax",
   "Production bootstrap tests",
   "Focused adversarial gate",
   "Railway container build",
+  "ROAD MCP validation",
 ] as const;
 
 export const SOURCE_COMMIT_RE = /^[0-9a-fA-F]{40}$/;

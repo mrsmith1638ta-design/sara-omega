@@ -47,6 +47,8 @@ export const CONTEXTDEV_STATUS_URL =
   process.env.ROAD_CONTEXTDEV_RESOLVER_URL ??
   "https://sara-omega-production.up.railway.app/context-dev/status";
 export const CANONICAL_RELEASE_VERSION = "3.2.1";
+export const BUILD_IMPLEMENTATION_EVIDENCE_ID = "build-implementation-evidence";
+export const SECURITY_AUDIT_EVIDENCE_ID = "security-audit-evidence";
 export const RELEASE_SIGNING_EVIDENCE_ID = "release-signing-evidence";
 export const PROMOTION_AUTHORITY_EVIDENCE_ID = "promotion-authority-evidence";
 export const SARA_CHATGPT_RELEASE_MERGE_SHA = "1b9cc29996e1e2206042701c1e5ca2298bda1cbc";
@@ -303,6 +305,41 @@ async function loadEpistemicEvidence(productionRaw: unknown, testDetail: string)
   return buildEpistemicEvidence(async () => parseProductionRuntimeAttestation(productionRaw), testDetail);
 }
 
+function buildImplementationEvidence(testCiValidation: TestCiEvidenceRecord): EvidenceRecord {
+  const passed = testCiValidation.status === "PASS";
+  return {
+    id: BUILD_IMPLEMENTATION_EVIDENCE_ID,
+    subject: "SARA-OMEGA BUILD implementation evidence",
+    status: passed ? "PASS" : "UNVERIFIED",
+    evidenceState: passed ? "VERIFIED" : "UNVERIFIED",
+    source: testCiValidation.source,
+    checkedAt: new Date().toISOString(),
+    detail: passed
+      ? "BUILD is backed by exact-SHA canonical CI evidence including dependency installation, compile, production bootstrap tests, adversarial gate, Railway container build, and ROAD MCP validation."
+      : `BUILD is UNVERIFIED because canonical exact-SHA CI evidence is not PASS: ${testCiValidation.detail}`,
+    hash: sha256Hex(`build:${testCiValidation.hash}:${testCiValidation.status}`),
+  };
+}
+
+function buildSecurityAuditEvidence(
+  contextdevAuthorization: EvidenceRecord,
+  testCiValidation: TestCiEvidenceRecord
+): EvidenceRecord {
+  const passed = contextdevAuthorization.status === "PASS" && testCiValidation.status === "PASS";
+  return {
+    id: SECURITY_AUDIT_EVIDENCE_ID,
+    subject: "SARA-OMEGA SECURITY audit evidence",
+    status: passed ? "PASS" : "UNVERIFIED",
+    evidenceState: passed ? "VERIFIED" : "UNVERIFIED",
+    source: testCiValidation.source,
+    checkedAt: new Date().toISOString(),
+    detail: passed
+      ? "SECURITY is backed by exact-SHA canonical CI evidence that includes Python dependency vulnerability audits, ROAD MCP npm audit, adversarial gate execution, and verified Context.dev authorization."
+      : "SECURITY requires verified Context.dev authorization plus exact-SHA canonical CI evidence with dependency vulnerability audits.",
+    hash: sha256Hex(`security:${contextdevAuthorization.hash}:${testCiValidation.hash}:${contextdevAuthorization.status}:${testCiValidation.status}`),
+  };
+}
+
 function loadReleaseClearingEvidence(): EvidenceRecord[] {
   const checkedAt = new Date().toISOString();
   return [
@@ -342,9 +379,20 @@ export async function buildEvidenceRegistry(): Promise<EvidenceRegistry> {
   const { evidence: productionAttestation, raw: productionRaw } = await loadProductionAttestationEvidence();
   const contextdevAuthorization = await loadContextdevAuthorizationEvidence();
   const testCiValidation = await loadTestCiValidationEvidence(productionRaw);
+  const buildImplementation = buildImplementationEvidence(testCiValidation);
+  const securityAudit = buildSecurityAuditEvidence(contextdevAuthorization, testCiValidation);
   const madhouseAdversarial = await loadMadhouseAdversarialEvidence(productionRaw);
   const epistemic = await loadEpistemicEvidence(productionRaw, testCiValidation.detail);
-  const baseRecords: EvidenceRecord[] = [roadmapSource, productionAttestation, contextdevAuthorization, testCiValidation, madhouseAdversarial, epistemic];
+  const baseRecords: EvidenceRecord[] = [
+    roadmapSource,
+    productionAttestation,
+    contextdevAuthorization,
+    testCiValidation,
+    buildImplementation,
+    securityAudit,
+    madhouseAdversarial,
+    epistemic,
+  ];
   const roadGateEvidence = await buildRoadGateEvidence(parseProductionRuntimeAttestation(productionRaw), baseRecords);
   const releaseClearingEvidence = loadReleaseClearingEvidence();
 
@@ -381,6 +429,8 @@ export function certificationChecks(records: EvidenceRecord[]): GateCheck[] {
   const productionAttestation = findEvidence(records, "production-attestation");
   const contextdevAuthorization = findEvidence(records, "contextdev-authorization");
   const testCiValidation = findEvidence(records, TEST_CI_EVIDENCE_ID);
+  const buildImplementation = findEvidence(records, BUILD_IMPLEMENTATION_EVIDENCE_ID);
+  const securityAudit = findEvidence(records, SECURITY_AUDIT_EVIDENCE_ID);
   const madhouseAdversarial = findEvidence(records, MADHOUSE_ADVERSARIAL_EVIDENCE_ID);
   const epistemic = findEvidence(records, EPISTEMIC_EVIDENCE_ID);
   const governance = findEvidence(records, ROAD_GATE_EVIDENCE_IDS.GOVERNANCE);
@@ -414,8 +464,18 @@ export function certificationChecks(records: EvidenceRecord[]): GateCheck[] {
     }
   };
 
-  // BUILD — no dedicated implementation evidence yet.
-  pushGate("BUILD", "PARTIAL", [roadmapSource?.id ?? "roadmap-source"], DEFAULT_UNIMPLEMENTED_DETAIL);
+  // BUILD — PASS only from exact-SHA CI evidence that includes compile, tests,
+  // adversarial gate, container build, and ROAD MCP validation.
+  if (buildImplementation?.status === "PASS") {
+    pushGate("BUILD", "PASS", [BUILD_IMPLEMENTATION_EVIDENCE_ID], buildImplementation.detail);
+  } else {
+    pushGate(
+      "BUILD",
+      "UNVERIFIED",
+      [buildImplementation?.id ?? BUILD_IMPLEMENTATION_EVIDENCE_ID, roadmapSource?.id ?? "roadmap-source"],
+      buildImplementation ? buildImplementation.detail : DEFAULT_UNIMPLEMENTED_DETAIL
+    );
+  }
 
   // TEST — PASS only from the exact-SHA test-ci-validation evidence record (plan Task 5).
   if (testCiValidation && testCiValidation.status === "PASS") {
@@ -439,14 +499,18 @@ export function certificationChecks(records: EvidenceRecord[]): GateCheck[] {
     );
   }
 
-  // SECURITY — driven by Context.dev evidence.
-  const securityDetail = "SECURITY includes Context.dev authorization when that integration is present.";
-  pushGate(
-    "SECURITY",
-    contextdevAuthorization?.status === "PASS" ? "PARTIAL" : "UNVERIFIED",
-    [contextdevAuthorization?.id ?? "contextdev-authorization"],
-    securityDetail
-  );
+  // SECURITY — PASS only from verified Context.dev authorization plus the
+  // canonical exact-SHA CI dependency/adversarial security checks.
+  if (securityAudit?.status === "PASS") {
+    pushGate("SECURITY", "PASS", [SECURITY_AUDIT_EVIDENCE_ID, contextdevAuthorization?.id ?? "contextdev-authorization"], securityAudit.detail);
+  } else {
+    pushGate(
+      "SECURITY",
+      "UNVERIFIED",
+      [securityAudit?.id ?? SECURITY_AUDIT_EVIDENCE_ID, contextdevAuthorization?.id ?? "contextdev-authorization"],
+      securityAudit ? securityAudit.detail : "SECURITY requires dedicated exact-SHA audit evidence."
+    );
+  }
 
   // ADVERSARIAL — PASS/BLOCKED/UNVERIFIED only from Madhouse's exact-SHA artifact.
   if (madhouseAdversarial?.status === "PASS") {
