@@ -10,7 +10,8 @@ dependencies = [
   "pydantic>=2.8",
   "python-dotenv>=1.0",
   "python-multipart>=0.0.20",
-  "cryptography>=48,<51"
+  "cryptography>=50,<51",
+  "sqlalchemy>=2.0,<3"
 ]
 
 [project.optional-dependencies]
@@ -20,7 +21,7 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["app*", "signer_service*"]
+include = ["app*", "signer_service*", "sara_unified*"]
 exclude = ["config*", "data*", "docs*", "tests*"]
 
 [tool.pytest.ini_options]
