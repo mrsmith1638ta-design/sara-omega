@@ -147,3 +147,22 @@ def test_voice_console_session_fails_closed_when_owner_token_rotates(monkeypatch
     response = client.post("/voice-console/api/synthesize", json={"text": "Old session must fail."})
 
     assert response.status_code == 401
+
+
+def test_voice_console_rejects_foreign_origin_with_valid_owner_session(monkeypatch):
+    token = _configure_owner(monkeypatch)
+    fake = FakePiperVoiceClient()
+    monkeypatch.setenv("SARA_VOICE_ENABLED", "true")
+    monkeypatch.setenv("SARA_VOICE_MAX_CHARACTERS", "4000")
+    monkeypatch.setattr(main, "_piper_voice_client", fake, raising=False)
+    client = _client()
+    assert _login(client, token).status_code == 200
+
+    response = client.post(
+        "/voice-console/api/synthesize",
+        json={"text": "Foreign origins must not drive owner voice."},
+        headers={"Origin": "https://attacker.example"},
+    )
+
+    assert response.status_code == 403
+    assert fake.texts == []
