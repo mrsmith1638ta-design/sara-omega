@@ -46,7 +46,8 @@ def _env_bool(name: str, default: bool) -> bool:
 
 
 def _source_commit_sha() -> str | None:
-    raw = os.environ.get("SARA_SOURCE_COMMIT_SHA", "").strip()
+    railway_sha = os.environ.get("RAILWAY_GIT_COMMIT_SHA", "").strip()
+    raw = railway_sha or os.environ.get("SARA_SOURCE_COMMIT_SHA", "").strip()
     if not SOURCE_COMMIT_RE.fullmatch(raw):
         return None
     return raw.lower()
