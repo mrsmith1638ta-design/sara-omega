@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0",
+  "assessment_date": "2026-09-16",
+  "framework": "AICPA SOC 2 Trust Services Criteria",
+  "initial_category_scope": ["SECURITY"],
+  "candidate_additional_categories": [
+    "AVAILABILITY",
+    "PROCESSING_INTEGRITY",
+    "CONFIDENTIALITY",
+    "PRIVACY"
+  ],
+  "internal_readiness_status": "PARTIAL",
+  "independent_auditor_attestation": "REQUIRED",
+  "prohibited_internal_claims": [
+    "SOC 2 certified",
+    "SOC 2 compliant",
+    "SOC 2 passed",
+    "SOC 2 Type I complete",
+    "SOC 2 Type II complete",
+    "auditor approved"
+  ],
+  "road_integration": {
+    "permitted_role": "internal evidence registry and readiness verifier",
+    "prohibited_role": "independent SOC 2 auditor",
+    "status_vocabulary": ["PASS", "PARTIAL", "BLOCKED", "UNVERIFIED", "NOT_APPLICABLE"]
+  },
+  "current_technical_strengths": [
+    "exact-SHA CI/CD evidence",
+    "security gate evidence",
+    "adversarial review",
+    "epistemic claim audit",
+    "governance evidence",
+    "privacy gate evidence",
+    "production acceptance evidence",
+    "recovery evidence",
+    "evidence hashing and timestamps"
+  ],
+  "priority_gaps": [
+    "organization-level risk assessment and risk register",
+    "formal control ownership and management review",
+    "workforce and privileged access lifecycle controls",
+    "incident response plan and exercise evidence",
+    "vendor and subservice organization management",
+    "data classification, retention, and deletion program",
+    "security awareness training",
+    "formal policy approval and review cadence",
+    "AI provider/model/data-use inventory",
+    "sustained operating evidence for the selected examination period",
+    "independent CPA examination"
+  ],
+  "truth_boundary": {
+    "internal_result": "SOC2_READINESS_INTERNAL",
+    "external_result": "INDEPENDENT_CPA_SOC2_REPORT",
+    "internal_result_must_not_substitute_for_external_result": true
+  }
+}
