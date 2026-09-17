@@ -8,6 +8,7 @@ data/*.jsonl
 dist/
 sara_omega.egg-info/
 .cursor/
+.worktrees/
 *-live-smoke.json
 railway-activation-report.json
 railway-public-url.txt
