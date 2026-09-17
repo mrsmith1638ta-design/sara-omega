@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import time
 import uuid
 from collections import defaultdict
@@ -126,6 +127,11 @@ class GPTActionGatewayRequest(BaseModel):
     evidence: list[dict[str, Any]] = Field(default_factory=list)
     fail_closed: bool = True
     council: bool | None = None
+    session_id: str | None = Field(default=None, max_length=256)
+
+
+class GPTActionVoiceSpeakRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
     session_id: str | None = Field(default=None, max_length=256)
 
 
@@ -438,6 +444,81 @@ def gateway_status() -> Dict[str, Any]:
     }
 
 
+def _public_base_url(request: Request) -> str:
+    configured = os.getenv("SARA_PUBLIC_BASE_URL", "").strip().rstrip("/")
+    if configured.startswith("https://"):
+        return configured
+    return str(request.base_url).rstrip("/")
+
+
+def _gpt_voice_artifact_dir() -> Path:
+    configured = os.getenv("SARA_GPT_VOICE_ARTIFACT_DIR", "").strip()
+    if configured:
+        root = Path(configured).expanduser()
+    else:
+        data_dir = Path(os.getenv("SARA_DATA_DIR", "/data")).expanduser()
+        root = data_dir / "sara-gpt-voice-artifacts"
+    root.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(root, 0o700)
+    except OSError:
+        pass
+    return root
+
+
+def _gpt_voice_artifact_ttl_seconds() -> int:
+    try:
+        raw = int(os.getenv("SARA_GPT_VOICE_ARTIFACT_TTL_SECONDS", "600"))
+    except ValueError:
+        raw = 600
+    return max(60, min(raw, 3600))
+
+
+def _gpt_voice_source_commit_sha() -> str:
+    production = production_acceptance_snapshot()
+    value = str(production.get("source_commit_sha") or "").strip()
+    if re.fullmatch(r"[0-9a-fA-F]{40}", value):
+        return value.lower()
+    railway = os.getenv("RAILWAY_GIT_COMMIT_SHA", "").strip()
+    if re.fullmatch(r"[0-9a-fA-F]{40}", railway):
+        return railway.lower()
+    fallback = os.getenv("SARA_SOURCE_COMMIT_SHA", "").strip()
+    if re.fullmatch(r"[0-9a-fA-F]{40}", fallback):
+        return fallback.lower()
+    return "unknown"
+
+
+def _atomic_bytes(path: Path, payload: bytes) -> None:
+    tmp = path.with_name(f".{path.name}.{secrets.token_urlsafe(8)}.tmp")
+    tmp.write_bytes(payload)
+    os.replace(tmp, path)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
+def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
+    _atomic_bytes(path, encoded)
+
+
+def _prune_gpt_voice_artifacts(root: Path, now: int) -> None:
+    for metadata_path in root.glob("*.json"):
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if int(metadata.get("expires_at_epoch", 0)) >= now:
+            continue
+        artifact_id = metadata_path.stem
+        for path in (metadata_path, root / f"{artifact_id}.wav"):
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+
+
 @app.post("/gpt/action/gateway")
 async def chatgpt_action_gateway(req: Request, body: GPTActionGatewayRequest):
     role = require_action_role(req)
@@ -580,6 +661,136 @@ async def chatgpt_action_gateway(req: Request, body: GPTActionGatewayRequest):
         "concentration_governor": concentration,
         "hawkins_chaos": chaos,
     }
+
+
+@app.post("/gpt/action/voice/speak")
+def chatgpt_action_voice_speak(req: Request, body: GPTActionVoiceSpeakRequest):
+    role = require_action_role(req)
+    if role != "action":
+        raise HTTPException(403, "GPT action token required")
+    try:
+        FAILSAFE.ensure_ready()
+    except BackupError as exc:
+        raise HTTPException(503, f"SARA voice action is fail-closed: {type(exc).__name__}") from exc
+
+    identifier = f"gpt-action-voice:{body.session_id or (req.client.host if req.client else 'unknown')}"
+    if not check_rate_limit(identifier, role, "requests"):
+        raise HTTPException(429, f"Daily action limit reached ({RATE_LIMITS[role]['requests_per_day']} per day)")
+
+    settings = Settings.from_env()
+    if not settings.voice_enabled:
+        raise HTTPException(503, "Voice synthesis disabled")
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(422, "Voice text must not be empty")
+    if len(text) > settings.voice_max_characters:
+        raise HTTPException(422, "Voice text exceeds configured character limit")
+
+    voice_client = get_piper_voice_client(settings)
+    if voice_client is None:
+        raise HTTPException(503, "Voice synthesis unavailable")
+    try:
+        audio = voice_client.synthesize(text)
+    except VoiceSynthesisError as exc:
+        raise HTTPException(502, "Voice synthesis failed") from exc
+    if len(audio) <= 44 or not audio.startswith(b"RIFF") or audio[8:12] != b"WAVE":
+        raise HTTPException(502, "Voice synthesis returned invalid WAV audio")
+
+    now = int(time.time())
+    ttl = _gpt_voice_artifact_ttl_seconds()
+    root = _gpt_voice_artifact_dir()
+    _prune_gpt_voice_artifacts(root, now)
+    artifact_id = secrets.token_urlsafe(32)
+    wav_path = root / f"{artifact_id}.wav"
+    metadata_path = root / f"{artifact_id}.json"
+    audio_sha256 = hashlib.sha256(audio).hexdigest()
+    text_sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    source_commit_sha = _gpt_voice_source_commit_sha()
+    expires_at = now + ttl
+    metadata = {
+        "artifact_id": artifact_id,
+        "created_at_epoch": now,
+        "expires_at_epoch": expires_at,
+        "content_type": "audio/wav",
+        "sha256": audio_sha256,
+        "bytes": len(audio),
+        "text_sha256": text_sha256,
+        "text_length": len(text),
+        "profile_id": SARA_VOICE_PROFILE.profile_id,
+        "model_id": SARA_VOICE_PROFILE.model_id,
+        "source_commit_sha": source_commit_sha,
+    }
+    _atomic_bytes(wav_path, audio)
+    _atomic_json(metadata_path, metadata)
+
+    audio_url = f"{_public_base_url(req)}/gpt/action/voice/artifacts/{artifact_id}.wav"
+    audit(
+        "gpt_action_voice_synthesized",
+        {
+            "artifact_id_hash": hashlib.sha256(artifact_id.encode("utf-8")).hexdigest(),
+            "profile_id": SARA_VOICE_PROFILE.profile_id,
+            "character_count": len(text),
+            "text_sha256": text_sha256,
+            "audio_sha256": audio_sha256,
+            "role": role,
+        },
+    )
+    return {
+        "service": "sara-chatgpt-action-voice",
+        "audio_url": audio_url,
+        "artifact": {
+            "id": artifact_id,
+            "url": audio_url,
+            "content_type": "audio/wav",
+            "sha256": audio_sha256,
+            "bytes": len(audio),
+            "expires_at_epoch": expires_at,
+        },
+        "receipt": {
+            "profile_id": SARA_VOICE_PROFILE.profile_id,
+            "model_id": SARA_VOICE_PROFILE.model_id,
+            "text_sha256": text_sha256,
+            "text_length": len(text),
+            "audio_sha256": audio_sha256,
+            "source_commit_sha": source_commit_sha,
+        },
+        "instructions": "Play audio_url for SARA's governed Piper voice response.",
+        "secrets_included": False,
+    }
+
+
+@app.get("/gpt/action/voice/artifacts/{artifact_id}.wav", include_in_schema=False)
+def chatgpt_action_voice_artifact(artifact_id: str):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{32,64}", artifact_id):
+        raise HTTPException(404, "voice artifact not found")
+    root = _gpt_voice_artifact_dir()
+    metadata_path = root / f"{artifact_id}.json"
+    wav_path = root / f"{artifact_id}.wav"
+    if not metadata_path.exists() or not wav_path.exists():
+        raise HTTPException(404, "voice artifact not found")
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise HTTPException(404, "voice artifact not found") from exc
+    if int(metadata.get("expires_at_epoch", 0)) < int(time.time()):
+        for path in (metadata_path, wav_path):
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+        raise HTTPException(404, "voice artifact not found")
+    audio = wav_path.read_bytes()
+    if hashlib.sha256(audio).hexdigest() != metadata.get("sha256"):
+        raise HTTPException(409, "voice artifact integrity mismatch")
+    return Response(
+        audio,
+        media_type="audio/wav",
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": 'inline; filename="sara-omega-voice.wav"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @app.get("/gpt/action/openapi.yaml", include_in_schema=False)

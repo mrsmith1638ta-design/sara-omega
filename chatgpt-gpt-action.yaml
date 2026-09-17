@@ -155,6 +155,56 @@ paths:
           description: SARA action gateway daily request limit reached
         '503':
           description: Runtime is fail-closed or a required assurance component is unavailable
+  /gpt/action/voice/speak:
+    post:
+      operationId: saraOmegaSpeakInChat
+      summary: Generate a playable governed SARA voice response for this GPT chat
+      description: Uses the shared GPT Action bearer credential to synthesize text with SARA's governed Piper voice and returns a short-lived playable WAV audio artifact plus non-secret receipt metadata. This does not use OWNER_TOKEN and does not expose the private Piper service.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GPTActionVoiceSpeakRequest'
+      responses:
+        '200':
+          description: Playable SARA voice artifact and digest-bound receipt
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - audio_url
+                  - artifact
+                  - receipt
+                  - secrets_included
+                properties:
+                  audio_url:
+                    type: string
+                    format: uri
+                    description: Short-lived URL ChatGPT can present as SARA's playable WAV voice response.
+                  artifact:
+                    type: object
+                    additionalProperties: true
+                  receipt:
+                    type: object
+                    additionalProperties: true
+                  secrets_included:
+                    type: boolean
+        '401':
+          description: Missing or invalid GPT Action bearer token
+        '403':
+          description: OWNER_TOKEN or another non-action credential was supplied
+        '422':
+          description: Strict text validation failed
+        '429':
+          description: Daily GPT Action request limit reached
+        '502':
+          description: Piper synthesis failed safely
+        '503':
+          description: Voice synthesis or fail-safe dependency is unavailable
   /gpt/user/gateway:
     post:
       operationId: saraOmegaUserGateway
@@ -434,6 +484,21 @@ components:
           type: string
           maxLength: 256
           description: The session id is a conversation thread identifier only; the authenticated SARA OAuth user identity owns cross-chat continuity.
+    GPTActionVoiceSpeakRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          description: Text that SARA should speak back inside the GPT chat. The response returns a playable governed Piper WAV artifact.
+        session_id:
+          type: string
+          maxLength: 256
+          description: Optional conversation identifier for bounded rate-limit grouping.
     VoiceAccessibilityJobRequest:
       type: object
       additionalProperties: false
