@@ -56,6 +56,10 @@ from app.models import Problem
 from app.orchestrator import SaraOmega
 from app.runtime_assurance import RuntimeAssuranceConfigurationError, RuntimeAssuranceRequest
 from app.road_gates import RoadGateAgent, RoadGateReviewRequest
+from sara_unified.api.schemas import VoiceSynthesisRequest
+from sara_unified.config import Settings
+from sara_unified.voice.client import PiperVoiceClient, VoiceSynthesisError
+from sara_unified.voice.profile import SARA_VOICE_PROFILE
 
 BASE_VERSION = "2.5.2"
 RELEASE_VERSION = "3.2.1"
@@ -91,6 +95,7 @@ gcp_init_error = GCP_IMPORT_ERROR
 openai_init_error = OPENAI_IMPORT_ERROR
 gateway_sara = SaraOmega()
 road_gate_agent = RoadGateAgent()
+_piper_voice_client: Any | None = None
 
 GPTActionOperation = Literal[
     "status",
@@ -161,6 +166,20 @@ def get_voice_clients():
         gcp_init_error = type(exc).__name__
         logger.error("Google voice lazy init error: %s", gcp_init_error)
         return None, None
+
+
+def get_piper_voice_client(settings: Settings):
+    global _piper_voice_client
+    if _piper_voice_client is not None:
+        return _piper_voice_client
+    if not settings.piper_service_token.strip():
+        return None
+    _piper_voice_client = PiperVoiceClient(
+        settings.piper_service_url,
+        settings.piper_service_token,
+        timeout_seconds=settings.voice_timeout_seconds,
+    )
+    return _piper_voice_client
 
 
 def get_vision_clients():
@@ -704,6 +723,50 @@ def context_dev_evaluate(payload: ContextDevEvaluationRequest, req: Request):
         CONTEXT_DEV_LICENSE,
     )
     return decision.as_dict()
+
+
+@app.get("/v1/voice/profile")
+def piper_voice_profile():
+    return SARA_VOICE_PROFILE.public_metadata()
+
+
+@app.post("/v1/voice/synthesize")
+def piper_voice_synthesize(payload: VoiceSynthesisRequest, req: Request):
+    role = authorize(req)
+    if not role:
+        raise HTTPException(401, "Unauthorized")
+    if role != "owner":
+        raise HTTPException(403, "Owner only")
+
+    settings = Settings.from_env()
+    if not settings.voice_enabled:
+        raise HTTPException(503, "Voice synthesis disabled")
+
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(422, "Voice text must not be empty")
+    if len(text) > settings.voice_max_characters:
+        raise HTTPException(422, "Voice text exceeds configured character limit")
+
+    voice_client = get_piper_voice_client(settings)
+    if voice_client is None:
+        raise HTTPException(503, "Voice synthesis unavailable")
+
+    try:
+        audio = voice_client.synthesize(text)
+    except VoiceSynthesisError as exc:
+        raise HTTPException(502, "Voice synthesis failed") from exc
+
+    audit(
+        "piper_voice_synthesized",
+        {
+            "profile_id": SARA_VOICE_PROFILE.profile_id,
+            "character_count": len(text),
+            "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            "role": role,
+        },
+    )
+    return Response(audio, media_type="audio/wav")
 
 
 @app.get("/metrics")
