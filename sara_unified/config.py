@@ -2,6 +2,16 @@ from dataclasses import dataclass
 import os
 
 
+def _positive_int_env(name: str, default: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a positive integer") from exc
+    if value <= 0:
+        raise ValueError(f"{name} must be positive")
+    return value
+
+
 @dataclass(frozen=True)
 class Settings:
     database_url: str = "sqlite+pysqlite:///:memory:"
@@ -15,6 +25,16 @@ class Settings:
     voice_max_characters: int = 4000
     voice_1_1_enabled: bool = False
     voice_accessibility_public_enabled: bool = False
+    voice_1_1a_enabled: bool = False
+    voice_1_1a_user_jobs_per_minute: int = 6
+    voice_1_1a_user_jobs_per_day: int = 100
+    voice_1_1a_user_characters_per_day: int = 100_000
+    voice_1_1a_tenant_jobs_per_minute: int = 20
+    voice_1_1a_tenant_jobs_per_day: int = 500
+    voice_1_1a_tenant_characters_per_day: int = 500_000
+    voice_1_1a_user_concurrency: int = 1
+    voice_1_1a_tenant_concurrency: int = 4
+    voice_1_1a_lease_seconds: int = 60
 
     @classmethod
     def from_env(cls):
@@ -40,5 +60,33 @@ class Settings:
             voice_1_1_enabled=os.getenv("SARA_VOICE_1_1_ENABLED", "false").lower() == "true",
             voice_accessibility_public_enabled=(
                 os.getenv("SARA_VOICE_ACCESSIBILITY_PUBLIC_ENABLED", "false").lower() == "true"
+            ),
+            voice_1_1a_enabled=os.getenv("SARA_VOICE_1_1A_ENABLED", "false").lower() == "true",
+            voice_1_1a_user_jobs_per_minute=_positive_int_env(
+                "SARA_VOICE_1_1A_USER_JOBS_PER_MINUTE", 6
+            ),
+            voice_1_1a_user_jobs_per_day=_positive_int_env(
+                "SARA_VOICE_1_1A_USER_JOBS_PER_DAY", 100
+            ),
+            voice_1_1a_user_characters_per_day=_positive_int_env(
+                "SARA_VOICE_1_1A_USER_CHARACTERS_PER_DAY", 100_000
+            ),
+            voice_1_1a_tenant_jobs_per_minute=_positive_int_env(
+                "SARA_VOICE_1_1A_TENANT_JOBS_PER_MINUTE", 20
+            ),
+            voice_1_1a_tenant_jobs_per_day=_positive_int_env(
+                "SARA_VOICE_1_1A_TENANT_JOBS_PER_DAY", 500
+            ),
+            voice_1_1a_tenant_characters_per_day=_positive_int_env(
+                "SARA_VOICE_1_1A_TENANT_CHARACTERS_PER_DAY", 500_000
+            ),
+            voice_1_1a_user_concurrency=_positive_int_env(
+                "SARA_VOICE_1_1A_USER_CONCURRENCY", 1
+            ),
+            voice_1_1a_tenant_concurrency=_positive_int_env(
+                "SARA_VOICE_1_1A_TENANT_CONCURRENCY", 4
+            ),
+            voice_1_1a_lease_seconds=_positive_int_env(
+                "SARA_VOICE_1_1A_LEASE_SECONDS", 60
             ),
         )

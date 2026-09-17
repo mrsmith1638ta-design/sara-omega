@@ -1,5 +1,7 @@
-from pydantic import BaseModel, Field
-from typing import Any
+from datetime import datetime
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class RecoveryRequest(BaseModel):
@@ -45,3 +47,32 @@ class VoiceJobRequest(BaseModel):
     speech_rate: str = Field(default="normal")
     preserve_transcript: bool = False
     return_audio: str = Field(default="none")
+
+
+class VoiceAccessibilityJobRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, max_length=4000)
+    speech_rate: Literal["slower", "normal", "faster"] | None = None
+    preserve_transcript: bool | None = None
+
+
+class VoiceAccessibilityPreferencesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    speech_rate: Literal["slower", "normal", "faster"]
+    preserve_transcript: bool
+    transcript_retention_seconds: Literal[0, 900, 3600, 86400]
+
+    @model_validator(mode="after")
+    def validate_retention(self):
+        if self.preserve_transcript != (self.transcript_retention_seconds > 0):
+            raise ValueError("transcript retention does not match preservation choice")
+        return self
+
+
+class VoiceAccessibilityEntitlementRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    public_user_id: str = Field(pattern=r"^SARA-U-[A-F0-9]{12}$")
+    expires_at: datetime | None = None
