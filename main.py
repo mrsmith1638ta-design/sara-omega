@@ -448,6 +448,11 @@ def _public_base_url(request: Request) -> str:
     configured = os.getenv("SARA_PUBLIC_BASE_URL", "").strip().rstrip("/")
     if configured.startswith("https://"):
         return configured
+    forwarded_host = request.headers.get("x-forwarded-host", "").strip()
+    host = forwarded_host or request.headers.get("host", "").strip()
+    forwarded_proto = request.headers.get("x-forwarded-proto", "").split(",", 1)[0].strip()
+    if host and (forwarded_proto == "https" or host.endswith(".up.railway.app")):
+        return f"https://{host}"
     return str(request.base_url).rstrip("/")
 
 

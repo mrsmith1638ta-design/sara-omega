@@ -78,9 +78,31 @@ def test_gpt_action_voice_requires_action_token_not_owner(monkeypatch, tmp_path)
     assert fake.texts == []
 
 
+def test_gpt_action_voice_uses_https_url_behind_railway_proxy(monkeypatch, tmp_path):
+    fake = FakePiperVoiceClient()
+    _configure_voice_action(monkeypatch, tmp_path, fake)
+    monkeypatch.delenv("SARA_PUBLIC_BASE_URL", raising=False)
+    client = TestClient(main.app, base_url="http://internal")
+
+    response = client.post(
+        "/gpt/action/voice/speak",
+        headers={
+            "Authorization": "Bearer gpt-action-token",
+            "Host": "sara-omega-production-9bcf.up.railway.app",
+        },
+        json={"text": "SARA should return an HTTPS artifact URL."},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["audio_url"].startswith(
+        "https://sara-omega-production-9bcf.up.railway.app/gpt/action/voice/artifacts/"
+    )
+
+
 def test_gpt_action_voice_schema_exposes_chat_speak_operation():
     schema = Path("chatgpt-gpt-action.yaml").read_text(encoding="utf-8")
 
+    assert "https://sara-omega-production-9bcf.up.railway.app" in schema
     assert "/gpt/action/voice/speak:" in schema
     assert "operationId: saraOmegaSpeakInChat" in schema
     assert "audio_url" in schema

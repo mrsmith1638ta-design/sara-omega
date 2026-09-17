@@ -4,7 +4,7 @@ info:
   version: 3.2.1
   description: Governed ChatGPT Action access to the live Railway SARA-OMEGA runtime, including OAuth-bound personal continuity, assurance, module truth, concentration control, Hawkins Chaos, TITAN health, fail-closed solving, and sanitized Context.dev authorization state.
 servers:
-  - url: https://sara-omega-production.up.railway.app
+  - url: https://sara-omega-production-9bcf.up.railway.app
 paths:
   /:
     get:
