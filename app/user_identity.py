@@ -500,6 +500,19 @@ class UserIdentityStore:
             raise EnrollmentRejected("authentication_rejected")
         return self._row_to_account(row)
 
+    def get_account_by_public_id(self, public_user_id: str) -> AccountRecord | None:
+        if not isinstance(public_user_id, str) or len(public_user_id) > 128:
+            return None
+        try:
+            with closing(self._connect()) as conn:
+                row = conn.execute(
+                    "SELECT * FROM users WHERE public_user_id=?",
+                    (public_user_id,),
+                ).fetchone()
+        except sqlite3.Error as exc:
+            raise IdentityStoreError("identity_read_failed") from exc
+        return self._row_to_account(row) if row is not None else None
+
     def oauth_status(self) -> dict[str, object]:
         client_id = bool(os.getenv("SARA_OAUTH_CLIENT_ID", "").strip())
         client_secret = bool(os.getenv("SARA_OAUTH_CLIENT_SECRET", "").strip())
