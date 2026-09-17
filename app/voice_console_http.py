@@ -63,6 +63,23 @@ def _json(content: dict[str, Any], *, status_code: int = 200) -> JSONResponse:
     return JSONResponse(content=content, status_code=status_code, headers=_security_headers())
 
 
+def _origin_allowed(request: Request) -> bool:
+    """Allow non-browser/no-Origin calls or the exact HTTPS host serving SARA."""
+    origin = request.headers.get("origin", "").strip()
+    if not origin:
+        return True
+    host = request.headers.get("host", "").strip()
+    if not host:
+        return False
+    return secrets.compare_digest(origin, f"https://{host}")
+
+
+def _reject_foreign_origin(request: Request) -> JSONResponse | None:
+    if _origin_allowed(request):
+        return None
+    return _json({"detail": "Forbidden"}, status_code=403)
+
+
 def _prune_expired(now: float) -> None:
     with _VOICE_CONSOLE_SESSION_LOCK:
         expired = [key for key, (expires_at, _) in _VOICE_CONSOLE_SESSIONS.items() if expires_at <= now]
@@ -213,6 +230,9 @@ def register_voice_console_routes(app) -> None:
 
     @app.get("/voice-console/session", include_in_schema=False)
     def voice_console_session_status(request: Request) -> JSONResponse:
+        foreign_origin = _reject_foreign_origin(request)
+        if foreign_origin is not None:
+            return foreign_origin
         main_module = _main_module()
         authenticated = _session_valid(
             request,
@@ -223,6 +243,9 @@ def register_voice_console_routes(app) -> None:
 
     @app.post("/voice-console/session", include_in_schema=False)
     def voice_console_login(payload: VoiceConsoleLogin, request: Request) -> JSONResponse:
+        foreign_origin = _reject_foreign_origin(request)
+        if foreign_origin is not None:
+            return foreign_origin
         main_module = _main_module()
         configured_owner_token = main_module.OWNER_TOKEN
         if (
@@ -241,6 +264,9 @@ def register_voice_console_routes(app) -> None:
 
     @app.delete("/voice-console/session", include_in_schema=False)
     def voice_console_logout(request: Request) -> JSONResponse:
+        foreign_origin = _reject_foreign_origin(request)
+        if foreign_origin is not None:
+            return foreign_origin
         _remove_session(request.cookies.get(VOICE_CONSOLE_COOKIE, ""))
         response = _json({"authenticated": False})
         _clear_session_cookie(response)
@@ -248,6 +274,9 @@ def register_voice_console_routes(app) -> None:
 
     @app.post("/voice-console/api/synthesize", include_in_schema=False)
     def voice_console_synthesize(payload: VoiceSynthesisRequest, request: Request):
+        foreign_origin = _reject_foreign_origin(request)
+        if foreign_origin is not None:
+            return foreign_origin
         main_module = _main_module()
         current_owner_token = main_module.OWNER_TOKEN
         if not _session_valid(
