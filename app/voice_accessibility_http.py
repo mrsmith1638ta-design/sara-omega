@@ -17,6 +17,7 @@ from sara_unified.api.schemas import (
 from sara_unified.config import Settings
 from sara_unified.voice.client import PiperVoiceClient
 from sara_unified.voice.jobs import VoiceJobManager
+from sara_unified.voice.segmenting import split_sentences
 from sara_v32_hardening import BackupError, FailSafeEvent, RuntimeFailSafe
 
 from .memory import MemoryKeyError
@@ -33,22 +34,28 @@ from .voice_accessibility import (
 
 
 router = APIRouter()
-FAILSAFE = RuntimeFailSafe.from_env()
 VOICE_SCOPE = "sara.voice.accessibility"
+VOICE_1_1_ACCEPTED_COMMIT_SHA = "3b8948894cf7a93472a7289079ae41ba99c2a096"
+VOICE_JOB_RETENTION_SECONDS = 900
+VOICE_JOB_MAX_ITEMS = 100
+VOICE_LEASE_GRACE_SECONDS = 30
 _voice_job_manager: VoiceJobManager | None = None
 
 
 def _require_release() -> Settings:
+    release_flags = (
+        os.getenv("SARA_VOICE_1_1_ENABLED", "false").lower() == "true",
+        os.getenv("SARA_VOICE_1_1A_ENABLED", "false").lower() == "true",
+        os.getenv("SARA_VOICE_ACCESSIBILITY_PUBLIC_ENABLED", "false").lower() == "true",
+    )
+    if not all(release_flags):
+        raise HTTPException(status_code=404, detail="Not found")
     try:
         settings = Settings.from_env()
     except ValueError as exc:
         raise HTTPException(status_code=503, detail="Voice accessibility configuration unavailable") from exc
-    if not (
-        settings.voice_1_1_enabled
-        and settings.voice_1_1a_enabled
-        and settings.voice_accessibility_public_enabled
-    ):
-        raise HTTPException(status_code=404, detail="Not found")
+    if os.getenv("SARA_VOICE_1_1_ACCEPTED_COMMIT_SHA", "").strip() != VOICE_1_1_ACCEPTED_COMMIT_SHA:
+        raise HTTPException(status_code=503, detail="Voice 1.1 acceptance unavailable")
     return settings
 
 
@@ -85,7 +92,11 @@ def _voice_store() -> VoiceAccessibilityStore:
 def _principal(request: Request) -> OAuthPrincipal:
     try:
         return _identity_store().resolve_access_token(_bearer(request))
+    except HTTPException:
+        _audit_rejection("AUTHENTICATION_REJECTED", actor="anonymous", reason_code="oauth_missing")
+        raise
     except OAuthRejected as exc:
+        _audit_rejection("AUTHENTICATION_REJECTED", actor="anonymous", reason_code="oauth_rejected")
         raise HTTPException(status_code=401, detail="SARA OAuth authentication rejected") from exc
     except IdentityStoreError as exc:
         raise HTTPException(status_code=503, detail="SARA identity persistence unavailable") from exc
@@ -93,6 +104,12 @@ def _principal(request: Request) -> OAuthPrincipal:
 
 def _require_voice_scope(principal: OAuthPrincipal) -> None:
     if VOICE_SCOPE not in frozenset(principal.scope.split()):
+        _audit_rejection(
+            "AUTHORIZATION_REJECTED",
+            actor=principal.public_user_id,
+            reason_code="scope_missing",
+            target_user=principal.user_uuid,
+        )
         raise HTTPException(status_code=403, detail="Voice accessibility scope rejected")
 
 
@@ -100,6 +117,12 @@ def _access(principal: OAuthPrincipal) -> VoiceAccessContext:
     try:
         return _voice_store().resolve_access(principal.user_uuid)
     except VoiceAccessRejected as exc:
+        _audit_rejection(
+            "ENTITLEMENT_REJECTED",
+            actor=principal.public_user_id,
+            reason_code="entitlement_rejected",
+            target_user=principal.user_uuid,
+        )
         raise HTTPException(status_code=403, detail="Voice accessibility entitlement rejected") from exc
     except VoiceAccessStoreError as exc:
         raise HTTPException(status_code=503, detail="Voice accessibility persistence unavailable") from exc
@@ -124,8 +147,11 @@ def _owner(request: Request) -> None:
 
 def _checkpoint(operation: str, event: FailSafeEvent, *, actor_hash: str) -> None:
     try:
-        FAILSAFE.ensure_ready()
-        FAILSAFE.checkpoint(
+        failsafe = RuntimeFailSafe.from_env()
+        if not failsafe.configured:
+            raise BackupError("failsafe_not_configured")
+        failsafe.ensure_ready()
+        failsafe.checkpoint(
             {"voice_accessibility": {"operation": operation, "actor_hash": actor_hash}},
             event,
             correlation_id=f"voice-1-1a-{uuid.uuid4()}",
@@ -133,6 +159,26 @@ def _checkpoint(operation: str, event: FailSafeEvent, *, actor_hash: str) -> Non
         )
     except BackupError as exc:
         raise HTTPException(status_code=503, detail="SARA fail-safe unavailable") from exc
+
+
+def _audit_rejection(
+    event_type: str,
+    *,
+    actor: str,
+    reason_code: str,
+    access: VoiceAccessContext | None = None,
+    target_user: str | None = None,
+) -> None:
+    try:
+        _voice_store().record_rejection(
+            event_type,
+            actor=actor,
+            reason_code=reason_code,
+            tenant_id=access.tenant_id if access is not None else None,
+            target_user=target_user or (access.user_uuid if access is not None else None),
+        )
+    except VoiceAccessStoreError as exc:
+        raise HTTPException(status_code=503, detail="Voice accessibility audit unavailable") from exc
 
 
 def _account(public_user_id: str):
@@ -146,7 +192,9 @@ def _private_json(content: dict) -> JSONResponse:
     return JSONResponse(content=content, headers={"Cache-Control": "private, no-store"})
 
 
-def _usage_limits(settings: Settings) -> VoiceUsageLimits:
+def _usage_limits(settings: Settings, *, text: str = "") -> VoiceUsageLimits:
+    segment_count = len(split_sentences(text)) if text else 1
+    synthesis_window = int(settings.voice_timeout_seconds * segment_count) + VOICE_LEASE_GRACE_SECONDS
     return VoiceUsageLimits(
         user_jobs_per_minute=settings.voice_1_1a_user_jobs_per_minute,
         user_jobs_per_day=settings.voice_1_1a_user_jobs_per_day,
@@ -156,8 +204,24 @@ def _usage_limits(settings: Settings) -> VoiceUsageLimits:
         tenant_characters_per_day=settings.voice_1_1a_tenant_characters_per_day,
         user_concurrency=settings.voice_1_1a_user_concurrency,
         tenant_concurrency=settings.voice_1_1a_tenant_concurrency,
-        lease_seconds=settings.voice_1_1a_lease_seconds,
+        lease_seconds=max(settings.voice_1_1a_lease_seconds, synthesis_window),
     )
+
+
+def _prune_jobs(manager: VoiceJobManager) -> None:
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=VOICE_JOB_RETENTION_SECONDS)
+    expired = [
+        job_id
+        for job_id, job in manager.jobs.items()
+        if datetime.fromisoformat(job.created_at).astimezone(timezone.utc) <= cutoff
+    ]
+    for job_id in expired:
+        manager.jobs.pop(job_id, None)
+    overflow = len(manager.jobs) - VOICE_JOB_MAX_ITEMS
+    if overflow > 0:
+        oldest = sorted(manager.jobs.values(), key=lambda item: item.created_at)[:overflow]
+        for job in oldest:
+            manager.jobs.pop(job.job_id, None)
 
 
 def _job_manager(settings: Settings) -> VoiceJobManager | None:
@@ -186,12 +250,33 @@ def _owned_job(
 ) -> tuple[VoiceAccessContext, VoiceAccessibilityStore, VoiceJobManager, object]:
     _, access = _authorized_access(request)
     store = _voice_store()
-    if not store.owns_job(job_id, access):
+    try:
+        owns_job = store.owns_job(job_id, access)
+    except VoiceAccessStoreError as exc:
+        raise HTTPException(status_code=503, detail="Voice accessibility persistence unavailable") from exc
+    if not owns_job:
+        _audit_rejection(
+            "OWNERSHIP_REJECTED",
+            actor=access.user_uuid,
+            reason_code="job_not_owned",
+            access=access,
+        )
         raise HTTPException(status_code=404, detail="Voice job not found")
-    settings = Settings.from_env()
+    try:
+        settings = Settings.from_env()
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail="Voice accessibility configuration unavailable") from exc
     manager = _job_manager(settings)
+    if manager is not None:
+        _prune_jobs(manager)
     job = manager.get_job(job_id) if manager is not None else None
     if manager is None or job is None:
+        _audit_rejection(
+            "OWNERSHIP_REJECTED",
+            actor=access.user_uuid,
+            reason_code="job_unavailable",
+            access=access,
+        )
         raise HTTPException(status_code=404, detail="Voice job not found")
     return access, store, manager, job
 
@@ -287,6 +372,12 @@ async def put_voice_accessibility_preferences(request: Request):
     try:
         body = VoiceAccessibilityPreferencesRequest.model_validate(await request.json())
     except (TypeError, ValueError) as exc:
+        _audit_rejection(
+            "REQUEST_REJECTED",
+            actor=principal.public_user_id,
+            reason_code="preferences_invalid",
+            access=access,
+        )
         raise HTTPException(status_code=422, detail="Voice preferences request rejected") from exc
     actor_hash = hashlib.sha256(principal.public_user_id.encode("utf-8")).hexdigest()
     _checkpoint("set_preferences", FailSafeEvent.PRE_MUTATION, actor_hash=actor_hash)
@@ -317,15 +408,30 @@ async def create_voice_accessibility_job(request: Request):
     try:
         body = VoiceAccessibilityJobRequest.model_validate(await request.json())
     except (TypeError, ValueError) as exc:
+        _audit_rejection(
+            "REQUEST_REJECTED",
+            actor=principal.public_user_id,
+            reason_code="job_request_invalid",
+            access=access,
+        )
         raise HTTPException(status_code=422, detail="Voice accessibility request rejected") from exc
     text = body.text.strip()
     if not text or len(text) > settings.voice_max_characters:
+        _audit_rejection(
+            "REQUEST_REJECTED",
+            actor=principal.public_user_id,
+            reason_code="voice_text_rejected",
+            access=access,
+        )
         raise HTTPException(status_code=422, detail="Voice text rejected")
     manager = _job_manager(settings)
     if manager is None:
         raise HTTPException(status_code=503, detail="Voice synthesis unavailable")
     store = _voice_store()
-    preferences = store.get_preferences(access)
+    try:
+        preferences = store.get_preferences(access)
+    except VoiceAccessStoreError as exc:
+        raise HTTPException(status_code=503, detail="Voice accessibility persistence unavailable") from exc
     speech_rate = body.speech_rate or preferences.speech_rate
     preserve_transcript = (
         body.preserve_transcript
@@ -339,9 +445,15 @@ async def create_voice_accessibility_job(request: Request):
         reservation = store.reserve_usage(
             access,
             characters=len(text),
-            limits=_usage_limits(settings),
+            limits=_usage_limits(settings, text=text),
         )
     except VoiceRateLimitRejected as exc:
+        _audit_rejection(
+            "RATE_LIMIT_REJECTED",
+            actor=principal.public_user_id,
+            reason_code=exc.reason_code,
+            access=access,
+        )
         raise _rate_limit_http(exc) from exc
     actor_hash = hashlib.sha256(principal.public_user_id.encode("utf-8")).hexdigest()
     try:
@@ -353,6 +465,7 @@ async def create_voice_accessibility_job(request: Request):
                 preserve_transcript=False,
                 return_audio="segments",
             )
+            _prune_jobs(manager)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail="Voice accessibility request rejected") from exc
         store.record_job(
@@ -427,7 +540,10 @@ def get_voice_accessibility_audio(job_id: str, segment_id: str, request: Request
 @router.get("/v1/accessibility/voice/jobs/{job_id}/receipts")
 def get_voice_accessibility_receipts(job_id: str, request: Request):
     access, store, _, job = _owned_job(request, job_id)
-    envelope = store.receipt_envelope_digest(job_id, access)
+    try:
+        envelope = store.receipt_envelope_digest(job_id, access)
+    except VoiceAccessStoreError as exc:
+        raise HTTPException(status_code=503, detail="Voice receipts unavailable") from exc
     if envelope is None:
         raise HTTPException(status_code=404, detail="Voice receipts not found")
     return _private_json(
@@ -442,7 +558,10 @@ def get_voice_accessibility_receipts(job_id: str, request: Request):
 @router.get("/v1/accessibility/voice/jobs/{job_id}/transcript")
 def get_voice_accessibility_transcript(job_id: str, request: Request):
     access, store, _, _ = _owned_job(request, job_id)
-    transcript = store.load_transcript(job_id, access)
+    try:
+        transcript = store.load_transcript(job_id, access)
+    except VoiceAccessStoreError as exc:
+        raise HTTPException(status_code=503, detail="Voice transcript unavailable") from exc
     if transcript is None:
         raise HTTPException(status_code=404, detail="Voice transcript not found")
     return _private_json({"transcript": transcript})

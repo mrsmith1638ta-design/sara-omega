@@ -36,7 +36,10 @@ Deploy the exact tested commit to the existing SARA service with:
 SARA_SOURCE_COMMIT_SHA=<exact-candidate-commit>
 SARA_VOICE_1_1A_ENABLED=false
 SARA_VOICE_ACCESSIBILITY_PUBLIC_ENABLED=false
+SARA_VOICE_1_1_ACCEPTED_COMMIT_SHA=3b8948894cf7a93472a7289079ae41ba99c2a096
 ```
+
+The pinned Voice 1.1 acceptance SHA is a runtime dependency gate. A missing or different value keeps Voice 1.1A unavailable even when both release flags are enabled.
 
 Verify readiness, production acceptance, owner Voice 1.1 synthesis, and Piper model integrity. Do not redeploy Piper unless its accepted deployment is unhealthy or the implementation changed the renderer contract.
 

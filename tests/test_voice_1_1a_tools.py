@@ -99,6 +99,43 @@ def test_evidence_rejects_private_urls_internal_ids_and_supplied_sensitive_value
         )
 
 
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("access_token", "opaque-token-value"),
+        ("refresh_token", "opaque-refresh-value"),
+        ("api_key", "sk-private-value"),
+        ("actor", "00000000-0000-4000-8000-000000000001"),
+        ("note", "Bearer opaque-token-value"),
+        ("note", "00000000-0000-4000-8000-000000000001"),
+        ("service", "https://127.0.0.1:8080/synthesize"),
+        ("service", "https://localhost:8080/synthesize"),
+    ],
+)
+def test_evidence_rejects_credential_identity_and_private_network_variants(
+    tmp_path, key, value
+):
+    from tools.voice_1_1a_acceptance_probe import build_voice_1_1a_evidence
+
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text("accepted", encoding="utf-8")
+    with pytest.raises(ValueError):
+        build_voice_1_1a_evidence(
+            voice_1_0_paths=[str(baseline)],
+            voice_1_1_paths=[str(baseline)],
+            source_commit_sha="a" * 40,
+            sara_deployment_id="sara-deploy",
+            piper_deployment_id="piper-deploy",
+            transaction={key: value},
+            entitlement={},
+            isolation={},
+            limits={},
+            privacy={},
+            restart={},
+            road={"status": "PASS"},
+        )
+
+
 def test_evidence_is_json_serializable_and_does_not_use_secret_key_names(tmp_path):
     from tools.voice_1_1a_acceptance_probe import build_voice_1_1a_evidence
 
@@ -153,6 +190,7 @@ def test_runbook_keeps_older_capsules_immutable():
 
     assert "SARA_VOICE_1_1A_ENABLED" in runbook
     assert "SARA_VOICE_ACCESSIBILITY_PUBLIC_ENABLED" in runbook
+    assert "SARA_VOICE_1_1_ACCEPTED_COMMIT_SHA" in runbook
     assert "sara-omega-voice-1-1a-" in runbook
     assert "do not modify" in runbook.lower()
     assert "pytest -q" in runbook

@@ -40,6 +40,12 @@ def configure_runtime(monkeypatch, tmp_path: Path, *, enabled=True, public=True)
     monkeypatch.setenv("SARA_VOICE_1_1_ENABLED", "true")
     monkeypatch.setenv("SARA_VOICE_1_1A_ENABLED", str(enabled).lower())
     monkeypatch.setenv("SARA_VOICE_ACCESSIBILITY_PUBLIC_ENABLED", str(public).lower())
+    monkeypatch.setenv(
+        "SARA_VOICE_1_1_ACCEPTED_COMMIT_SHA",
+        voice_http.VOICE_1_1_ACCEPTED_COMMIT_SHA,
+    )
+    monkeypatch.setenv("SARA_FAILSAFE_MASTER_KEY_HEX", "71" * 32)
+    monkeypatch.setenv("SARA_FAILSAFE_ROOT", str(tmp_path / "failsafe"))
     monkeypatch.setenv("OWNER_TOKEN", OWNER_TOKEN)
     monkeypatch.setenv("GPT_ACTION_TOKEN", ACTION_TOKEN)
     monkeypatch.setenv("TEST_TOKEN", TEST_TOKEN)
@@ -135,6 +141,23 @@ def test_disabled_release_gate_precedes_request_body_validation(monkeypatch, tmp
     response = client.put(PREFERENCES, json={"tenant_id": "forged"})
 
     assert response.status_code == 404
+
+
+def test_disabled_release_gate_precedes_invalid_settings(monkeypatch, tmp_path):
+    configure_runtime(monkeypatch, tmp_path, enabled=False, public=True)
+    monkeypatch.setenv("SARA_VOICE_1_1A_USER_JOBS_PER_MINUTE", "invalid")
+
+    assert client.get(PREFERENCES).status_code == 404
+
+
+def test_enabled_release_requires_pinned_voice_1_1_acceptance(monkeypatch, tmp_path):
+    configure_runtime(monkeypatch, tmp_path)
+    monkeypatch.delenv("SARA_VOICE_1_1_ACCEPTED_COMMIT_SHA")
+
+    response = client.get(PREFERENCES)
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Voice 1.1 acceptance unavailable"
 
 
 def test_user_route_requires_oauth_scope_and_entitlement(monkeypatch, tmp_path):
@@ -245,6 +268,27 @@ def test_preferences_are_strict_private_and_no_store(monkeypatch, tmp_path):
     assert updated.headers["cache-control"] == "private, no-store"
 
 
+def test_mutation_requires_configured_fail_safe_even_when_global_setting_is_optional(
+    monkeypatch, tmp_path
+):
+    configure_runtime(monkeypatch, tmp_path)
+    _, token = provision_entitled_voice_user()
+    monkeypatch.delenv("SARA_FAILSAFE_MASTER_KEY_HEX")
+
+    response = client.put(
+        PREFERENCES,
+        headers=bearer(token),
+        json={
+            "speech_rate": "normal",
+            "preserve_transcript": False,
+            "transcript_retention_seconds": 0,
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "SARA fail-safe unavailable"
+
+
 def test_revocation_blocks_preferences_immediately(monkeypatch, tmp_path):
     configure_runtime(monkeypatch, tmp_path)
     identity, account = provision_account()
@@ -284,6 +328,34 @@ def test_entitled_user_can_speak_and_fetch_private_audio(monkeypatch, tmp_path):
     assert audio.headers["content-type"].startswith("audio/wav")
     assert audio.headers["cache-control"] == "private, no-store"
     assert audio.content == wav_bytes()
+
+
+def test_expired_in_process_audio_is_evicted(monkeypatch, tmp_path):
+    configure_runtime(monkeypatch, tmp_path)
+    install_fake_manager(monkeypatch)
+    _, token = provision_entitled_voice_user()
+    created = client.post(JOBS, headers=bearer(token), json={"text": "Expire me."})
+    job_id = created.json()["job_id"]
+    segment_id = created.json()["segments"][0]["segment_id"]
+    voice_http._voice_job_manager.jobs[job_id].created_at = "2000-01-01T00:00:00+00:00"
+
+    response = client.get(
+        f"{JOBS}/{job_id}/segments/{segment_id}/audio",
+        headers=bearer(token),
+    )
+
+    assert response.status_code == 404
+    assert job_id not in voice_http._voice_job_manager.jobs
+
+
+def test_lease_window_covers_all_segment_timeouts(monkeypatch, tmp_path):
+    configure_runtime(monkeypatch, tmp_path)
+    monkeypatch.setenv("SARA_VOICE_TIMEOUT_SECONDS", "20")
+    settings = voice_http.Settings.from_env()
+
+    limits = voice_http._usage_limits(settings, text="One. Two. Three.")
+
+    assert limits.lease_seconds >= 3 * 20 + voice_http.VOICE_LEASE_GRACE_SECONDS
 
 
 def test_cross_tenant_job_surfaces_are_hidden(monkeypatch, tmp_path):

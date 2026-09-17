@@ -27,7 +27,8 @@ def test_user_routes_apply_release_and_access_guards_before_objects():
     source = Path("app/voice_accessibility_http.py").read_text(encoding="utf-8")
 
     assert "def _authorized_access" in source
-    assert "if not store.owns_job(job_id, access)" in source
+    assert "owns_job = store.owns_job(job_id, access)" in source
+    assert "if not owns_job" in source
     assert "Voice accessibility scope rejected" in source
     assert "Voice accessibility entitlement rejected" in source
 

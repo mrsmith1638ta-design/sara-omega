@@ -1,23 +1,35 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 
 _COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _CREDENTIAL_KEY_PARTS = (
+    "access_token",
+    "api_key",
     "authorization",
     "bearer",
     "client_secret",
+    "credential",
     "oauth_token",
     "owner_token",
+    "password",
     "piper_service_token",
+    "refresh_token",
+    "secret",
 )
-_INTERNAL_IDENTITY_KEYS = {"tenant_id", "user_uuid"}
+_INTERNAL_IDENTITY_KEYS = {"actor", "internal_id", "subject", "tenant_id", "user_uuid"}
 _RAW_TRANSCRIPT_KEYS = {"raw_transcript", "transcript", "transcript_text"}
+_UUID_PATTERN = re.compile(
+    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}\b"
+)
+_BEARER_PATTERN = re.compile(r"\bBearer\s+\S+", re.IGNORECASE)
 
 
 def _file_record(path_value: str) -> dict[str, str]:
@@ -29,8 +41,21 @@ def _file_record(path_value: str) -> dict[str, str]:
 
 
 def _contains_private_url(value: str) -> bool:
-    lowered = value.lower()
-    return lowered.startswith("http://") or ".internal" in lowered
+    try:
+        parsed = urlparse(value)
+        hostname = parsed.hostname
+        if parsed.scheme not in {"http", "https"} or hostname is None:
+            return False
+        lowered = hostname.lower()
+        if parsed.scheme == "http" or lowered == "localhost" or lowered.endswith(".internal"):
+            return True
+        try:
+            address = ipaddress.ip_address(lowered)
+        except ValueError:
+            return False
+        return not address.is_global
+    except ValueError:
+        return True
 
 
 def _validate_evidence_value(
@@ -56,6 +81,10 @@ def _validate_evidence_value(
     if isinstance(value, str):
         if _contains_private_url(value):
             raise ValueError("private URL is not permitted in Voice 1.1A evidence")
+        if _BEARER_PATTERN.search(value):
+            raise ValueError("credential value is not permitted in Voice 1.1A evidence")
+        if _UUID_PATTERN.search(value):
+            raise ValueError("raw identity value is not permitted in Voice 1.1A evidence")
         if any(secret and secret in value for secret in sensitive_values):
             raise ValueError("sensitive evidence value is not permitted")
 

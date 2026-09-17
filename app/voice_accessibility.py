@@ -272,6 +272,39 @@ class VoiceAccessibilityStore:
             ),
         )
 
+    def record_rejection(
+        self,
+        event_type: str,
+        *,
+        actor: str,
+        reason_code: str,
+        tenant_id: str | None = None,
+        target_user: str | None = None,
+    ) -> None:
+        allowed_events = {
+            "AUTHENTICATION_REJECTED",
+            "AUTHORIZATION_REJECTED",
+            "ENTITLEMENT_REJECTED",
+            "OWNERSHIP_REJECTED",
+            "REQUEST_REJECTED",
+            "RATE_LIMIT_REJECTED",
+        }
+        if event_type not in allowed_events or not actor:
+            raise VoiceAccessRejected("audit_event_rejected")
+        try:
+            with closing(self._connect()) as conn:
+                with conn:
+                    self._audit(
+                        conn,
+                        event_type=event_type,
+                        actor=actor,
+                        reason_code=reason_code,
+                        tenant_id=tenant_id,
+                        target_user=target_user,
+                    )
+        except sqlite3.Error as exc:
+            raise VoiceAccessStoreError("voice_rejection_audit_failed") from exc
+
     def grant_entitlement(
         self,
         user_uuid: str,
@@ -655,20 +688,28 @@ class VoiceAccessibilityStore:
         now: datetime | None = None,
     ) -> str | None:
         user_hash, tenant_hash = self._ownership(access)
+        current = (now or _utc_now()).astimezone(timezone.utc)
         try:
             with closing(self._connect()) as conn:
+                conn.execute("BEGIN IMMEDIATE")
                 row = conn.execute(
                     """SELECT t.nonce,t.ciphertext,t.expires_at
                     FROM voice_transcripts t JOIN voice_jobs j ON j.job_id=t.job_id
                     WHERE t.job_id=? AND j.user_uuid_hash=? AND j.tenant_id_hash=?""",
                     (job_id, user_hash, tenant_hash),
                 ).fetchone()
+                if row is not None and current >= datetime.fromisoformat(str(row["expires_at"])):
+                    conn.execute("DELETE FROM voice_transcripts WHERE job_id=?", (job_id,))
+                    conn.execute(
+                        "UPDATE voice_jobs SET transcript_expires_at=NULL WHERE job_id=?",
+                        (job_id,),
+                    )
+                    conn.commit()
+                    return None
+                conn.commit()
         except sqlite3.Error as exc:
             raise VoiceAccessStoreError("voice_transcript_read_failed") from exc
         if row is None:
-            return None
-        current = (now or _utc_now()).astimezone(timezone.utc)
-        if current >= datetime.fromisoformat(str(row["expires_at"])):
             return None
         aad = f"{job_id}\0{user_hash}\0{tenant_hash}".encode("utf-8")
         try:

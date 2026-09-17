@@ -105,6 +105,10 @@ def test_transcript_is_encrypted_and_expiry_enforced(tmp_path, monkeypatch):
     assert store.load_transcript("job-a", access) == "Private sentence"
     assert b"Private sentence" not in (tmp_path / "sara_voice_accessibility.db").read_bytes()
     assert store.load_transcript("job-a", access, now=expiry + timedelta(seconds=1)) is None
+    with sqlite3.connect(store.db) as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM voice_transcripts WHERE job_id='job-a'"
+        ).fetchone()[0] == 0
 
 
 def test_transcript_requires_job_ownership_and_preservation(tmp_path, monkeypatch):
@@ -267,3 +271,25 @@ def test_release_lease_is_idempotent(tmp_path, monkeypatch):
 
     store.release_lease(reservation.lease_id)
     store.release_lease(reservation.lease_id)
+
+
+def test_rejection_audit_is_bounded_and_hashes_identity(tmp_path, monkeypatch):
+    configure_voice_store(monkeypatch, tmp_path)
+    store = VoiceAccessibilityStore.from_env(required=True)
+
+    store.record_rejection(
+        "AUTHORIZATION_REJECTED",
+        actor=USER_A,
+        reason_code="scope_missing",
+        target_user=USER_A,
+    )
+
+    with sqlite3.connect(store.db) as conn:
+        row = conn.execute(
+            "SELECT event_type,actor_hash,target_user_hash,reason_code "
+            "FROM voice_access_audit ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+    assert row[0] == "AUTHORIZATION_REJECTED"
+    assert row[1] != USER_A
+    assert row[2] != USER_A
+    assert row[3] == "scope_missing"
