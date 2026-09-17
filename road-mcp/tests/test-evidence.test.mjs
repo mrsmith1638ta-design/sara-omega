@@ -44,7 +44,8 @@ import { buildRoadGateEvidence, ROAD_GATE_EVIDENCE_IDS } from "../dist/roadGateE
 const VALID_SHA = "a".repeat(40);
 const OTHER_SHA = "b".repeat(40);
 const BLOCKING_SHA = "c".repeat(40);
-const SARA_OMEGA_340_SHA = "4524e2dcb1aa063865a253a902ae7adc3bd067c7";
+const SARA_OMEGA_340_SHA = "dec94b279d133641179680b02db0176c07490d9d";
+const SARA_OMEGA_340_DEPLOYMENT_ID = "3cb5afac-5b4d-46ed-8145-e302d1740220";
 
 function attestation(overrides = {}) {
   return {
@@ -576,7 +577,7 @@ function releaseEvidenceRecords(overrides = {}) {
       evidenceState: "VERIFIED",
       source: "https://sara-omega-production-9bcf.up.railway.app/road/production-acceptance",
       checkedAt: "2026-09-15T05:04:53.000Z",
-      detail: `SARA-OMEGA 3.4.0 release signing binds GitHub candidate SHA ${SARA_OMEGA_340_SHA}, Railway deployment fec69c61-d9af-4655-861e-002feadb106b, production acceptance source SHA ${SARA_OMEGA_340_SHA}, and ROAD release SHA ${SARA_OMEGA_340_SHA}.`,
+      detail: `SARA-OMEGA 3.4.0 release signing binds GitHub candidate SHA ${SARA_OMEGA_340_SHA}, Railway deployment ${SARA_OMEGA_340_DEPLOYMENT_ID}, production acceptance source SHA ${SARA_OMEGA_340_SHA}, and ROAD release SHA ${SARA_OMEGA_340_SHA}.`,
       hash: "sara-omega-3.4.0-signing",
       ...overrides.signing,
     },

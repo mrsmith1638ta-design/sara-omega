@@ -175,7 +175,12 @@ build/start contract.
 On 2026-09-17, ROAD MCP was deployed to the production Railway service from
 this repository after binding `SARA-OMEGA-3.4.0` release-signing and promotion
 authority evidence to the accepted production SHA
-`4524e2dcb1aa063865a253a902ae7adc3bd067c7`. That deployment replaced the stale
-3.2.1/PR #27 release-clearing scope while preserving the production SARA
-runtime capsule; the ROAD MCP deployment is a separate service deployment and
-does not redeploy `sara-omega` or `sara-piper-voice`.
+`4524e2dcb1aa063865a253a902ae7adc3bd067c7`, replacing the stale 3.2.1/PR #27
+release-clearing scope while preserving the production SARA runtime capsule.
+
+Later on 2026-09-17, after the governed unified fusion layer was deployed to
+`sara-omega` as Railway deployment `3cb5afac-5b4d-46ed-8145-e302d1740220`,
+ROAD release-signing and promotion authority evidence was rebound to accepted
+production SHA `dec94b279d133641179680b02db0176c07490d9d`. The ROAD MCP
+deployment is a separate service deployment and does not redeploy
+`sara-omega` or `sara-piper-voice`.
