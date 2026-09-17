@@ -58,6 +58,9 @@ def test_chatgpt_action_gateway_reports_runtime_status(monkeypatch):
     assert body["model_sovereignty"]["module"] == "sara-model-sovereignty"
     assert body["model_sovereignty"]["agent_model_lifecycle_authority"] is False
     assert "INV-AI-SELF-01" in body["model_sovereignty"]["invariants"]
+    assert body["enterprise_governance"]["module"] == "sara-enterprise-governance"
+    assert body["enterprise_governance"]["missing_evidence_fails_closed"] is True
+    assert body["enterprise_governance"]["audit_passport_is_not_audit_opinion"] is True
 
 
 def test_chatgpt_action_gateway_solves_through_sara_omega(monkeypatch):

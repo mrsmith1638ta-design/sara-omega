@@ -41,6 +41,7 @@ from context_dev_resolver import (
 from sara_v32_hardening import BackupError, FailSafeEvent, RuntimeFailSafe
 from app.enterprise_runtime import (
     concentration_governor,
+    enterprise_governance,
     epistemic,
     hawkins_chaos,
     madhouse,
@@ -438,6 +439,7 @@ def gateway_status() -> Dict[str, Any]:
         },
         "module_awareness": module_awareness.count(),
         "concentration_governor": concentration_governor.health(),
+        "enterprise_governance": enterprise_governance.health(),
         "hawkins_chaos": hawkins_chaos.health(),
         "madhouse": madhouse.health(),
         "model_sovereignty": model_sovereignty.health(),
@@ -906,6 +908,7 @@ def health():
             "vision": ENABLE_GCP and FEATURE_VISION,
             "context_dev_policy_gate": True,
             "ats_intelligence": True,
+            "enterprise_governance": True,
             "model_sovereignty": True,
         },
         "context_dev": CONTEXT_DEV_LICENSE.public_status(),
