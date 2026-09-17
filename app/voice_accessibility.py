@@ -7,7 +7,7 @@ import sqlite3
 import uuid
 from contextlib import closing
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -21,6 +21,15 @@ class VoiceAccessStoreError(RuntimeError):
 
 class VoiceAccessRejected(RuntimeError):
     """Raised when durable Voice 1.1A policy denies access."""
+
+
+class VoiceRateLimitRejected(RuntimeError):
+    """Raised with a bounded reason when Voice 1.1A admission is denied."""
+
+    def __init__(self, reason_code: str, retry_after: int | None = None):
+        self.reason_code = reason_code
+        self.retry_after = retry_after
+        super().__init__(reason_code)
 
 
 @dataclass(frozen=True)
@@ -46,12 +55,42 @@ class VoicePreferences:
             raise ValueError("transcript_retention_mismatch")
 
 
+@dataclass(frozen=True)
+class VoiceUsageLimits:
+    user_jobs_per_minute: int
+    user_jobs_per_day: int
+    user_characters_per_day: int
+    tenant_jobs_per_minute: int
+    tenant_jobs_per_day: int
+    tenant_characters_per_day: int
+    user_concurrency: int
+    tenant_concurrency: int
+    lease_seconds: int
+
+    def __post_init__(self) -> None:
+        if any(value <= 0 for value in self.__dict__.values()):
+            raise ValueError("voice_usage_limits_must_be_positive")
+
+
+@dataclass(frozen=True)
+class VoiceUsageReservation:
+    lease_id: str
+    accepted_at: str
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
 def _utc_iso(value: datetime | None = None) -> str:
     return (value or _utc_now()).astimezone(timezone.utc).isoformat()
+
+
+def _window_start(value: datetime, kind: str) -> datetime:
+    current = value.astimezone(timezone.utc)
+    if kind == "MINUTE":
+        return current.replace(second=0, microsecond=0)
+    return current.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 def _validated_uuid(value: str, reason: str) -> str:
@@ -582,3 +621,154 @@ class VoiceAccessibilityStore:
             "preferences_deleted": preferences_deleted,
             "transcripts_deleted": transcripts_deleted,
         }
+
+    @staticmethod
+    def _usage_row(
+        conn: sqlite3.Connection,
+        subject_hash: str,
+        subject_kind: str,
+        window_kind: str,
+        window_started_at: str,
+    ) -> tuple[int, int]:
+        row = conn.execute(
+            """SELECT job_count,character_count FROM voice_usage_windows
+            WHERE subject_hash=? AND subject_kind=? AND window_kind=? AND window_started_at=?""",
+            (subject_hash, subject_kind, window_kind, window_started_at),
+        ).fetchone()
+        if row is None:
+            return 0, 0
+        return int(row["job_count"]), int(row["character_count"])
+
+    @staticmethod
+    def _increment_usage(
+        conn: sqlite3.Connection,
+        subject_hash: str,
+        subject_kind: str,
+        window_kind: str,
+        window_started_at: str,
+        characters: int,
+    ) -> None:
+        conn.execute(
+            """INSERT INTO voice_usage_windows(
+                subject_hash,subject_kind,window_kind,window_started_at,job_count,character_count
+            ) VALUES(?,?,?,?,1,?)
+            ON CONFLICT(subject_hash,subject_kind,window_kind,window_started_at)
+            DO UPDATE SET job_count=job_count+1,character_count=character_count+excluded.character_count""",
+            (subject_hash, subject_kind, window_kind, window_started_at, characters),
+        )
+
+    def reserve_usage(
+        self,
+        access: VoiceAccessContext,
+        *,
+        characters: int,
+        limits: VoiceUsageLimits,
+        now: datetime | None = None,
+    ) -> VoiceUsageReservation:
+        if characters <= 0:
+            raise VoiceRateLimitRejected("character_count_rejected")
+        current = (now or _utc_now()).astimezone(timezone.utc)
+        current_iso = _utc_iso(current)
+        minute_start = _window_start(current, "MINUTE")
+        day_start = _window_start(current, "DAY")
+        minute_iso = _utc_iso(minute_start)
+        day_iso = _utc_iso(day_start)
+        minute_retry = max(1, int((minute_start + timedelta(minutes=1) - current).total_seconds()))
+        day_retry = max(1, int((day_start + timedelta(days=1) - current).total_seconds()))
+        user_hash, tenant_hash = self._ownership(access)
+        lease_id = str(uuid.uuid4())
+        try:
+            with closing(self._connect()) as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                conn.execute("DELETE FROM voice_leases WHERE expires_at<=?", (current_iso,))
+                active_user = int(
+                    conn.execute(
+                        "SELECT COUNT(*) FROM voice_leases WHERE user_uuid_hash=?",
+                        (user_hash,),
+                    ).fetchone()[0]
+                )
+                active_tenant = int(
+                    conn.execute(
+                        "SELECT COUNT(*) FROM voice_leases WHERE tenant_id_hash=?",
+                        (tenant_hash,),
+                    ).fetchone()[0]
+                )
+                if active_user >= limits.user_concurrency:
+                    raise VoiceRateLimitRejected("user_concurrency", limits.lease_seconds)
+                if active_tenant >= limits.tenant_concurrency:
+                    raise VoiceRateLimitRejected("tenant_concurrency", limits.lease_seconds)
+
+                user_minute = self._usage_row(conn, user_hash, "USER", "MINUTE", minute_iso)
+                user_day = self._usage_row(conn, user_hash, "USER", "DAY", day_iso)
+                tenant_minute = self._usage_row(conn, tenant_hash, "TENANT", "MINUTE", minute_iso)
+                tenant_day = self._usage_row(conn, tenant_hash, "TENANT", "DAY", day_iso)
+                checks = (
+                    (user_minute[0] + 1 > limits.user_jobs_per_minute, "user_jobs_per_minute", minute_retry),
+                    (user_day[0] + 1 > limits.user_jobs_per_day, "user_jobs_per_day", day_retry),
+                    (
+                        user_day[1] + characters > limits.user_characters_per_day,
+                        "user_characters_per_day",
+                        day_retry,
+                    ),
+                    (
+                        tenant_minute[0] + 1 > limits.tenant_jobs_per_minute,
+                        "tenant_jobs_per_minute",
+                        minute_retry,
+                    ),
+                    (tenant_day[0] + 1 > limits.tenant_jobs_per_day, "tenant_jobs_per_day", day_retry),
+                    (
+                        tenant_day[1] + characters > limits.tenant_characters_per_day,
+                        "tenant_characters_per_day",
+                        day_retry,
+                    ),
+                )
+                for exceeded, reason_code, retry_after in checks:
+                    if exceeded:
+                        raise VoiceRateLimitRejected(reason_code, retry_after)
+
+                for subject_hash, subject_kind in (
+                    (user_hash, "USER"),
+                    (tenant_hash, "TENANT"),
+                ):
+                    self._increment_usage(
+                        conn,
+                        subject_hash,
+                        subject_kind,
+                        "MINUTE",
+                        minute_iso,
+                        characters,
+                    )
+                    self._increment_usage(
+                        conn,
+                        subject_hash,
+                        subject_kind,
+                        "DAY",
+                        day_iso,
+                        characters,
+                    )
+                conn.execute(
+                    "INSERT INTO voice_leases VALUES(?,?,?,?,?)",
+                    (
+                        lease_id,
+                        user_hash,
+                        tenant_hash,
+                        _utc_iso(current + timedelta(seconds=limits.lease_seconds)),
+                        current_iso,
+                    ),
+                )
+                conn.commit()
+        except VoiceRateLimitRejected:
+            raise
+        except sqlite3.Error as exc:
+            raise VoiceAccessStoreError("voice_usage_reservation_failed") from exc
+        return VoiceUsageReservation(lease_id=lease_id, accepted_at=current_iso)
+
+    def release_lease(self, lease_id: str) -> None:
+        if not lease_id:
+            return
+        try:
+            with closing(self._connect()) as conn:
+                with conn:
+                    conn.execute("DELETE FROM voice_leases WHERE lease_id=?", (lease_id,))
+        except sqlite3.Error as exc:
+            raise VoiceAccessStoreError("voice_lease_release_failed") from exc

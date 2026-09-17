@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor
 import sqlite3
 
 import pytest
@@ -7,12 +8,31 @@ from app.voice_accessibility import (
     VoiceAccessRejected,
     VoiceAccessibilityStore,
     VoicePreferences,
+    VoiceRateLimitRejected,
+    VoiceUsageLimits,
 )
 from app.user_identity import UserIdentityStore
 
 
 USER_A = "00000000-0000-4000-8000-000000000001"
 USER_B = "00000000-0000-4000-8000-000000000002"
+NOW = datetime(2026, 9, 17, 12, 0, 0, tzinfo=timezone.utc)
+
+
+def usage_limits(**overrides):
+    values = {
+        "user_jobs_per_minute": 10,
+        "user_jobs_per_day": 100,
+        "user_characters_per_day": 1000,
+        "tenant_jobs_per_minute": 20,
+        "tenant_jobs_per_day": 200,
+        "tenant_characters_per_day": 2000,
+        "user_concurrency": 1,
+        "tenant_concurrency": 4,
+        "lease_seconds": 60,
+    }
+    values.update(overrides)
+    return VoiceUsageLimits(**values)
 
 
 def configure_voice_store(monkeypatch, tmp_path):
@@ -154,3 +174,96 @@ def test_identity_store_can_resolve_account_without_authenticating(tmp_path, mon
 
     assert store.get_account_by_public_id(account.public_user_id) == account
     assert store.get_account_by_public_id("SARA-U-000000000000") is None
+
+
+def test_concurrency_lease_blocks_then_release_allows_next_job(tmp_path, monkeypatch):
+    configure_voice_store(monkeypatch, tmp_path)
+    store = VoiceAccessibilityStore.from_env(required=True)
+    access = store.grant_entitlement(USER_A, "owner")
+    limits = usage_limits()
+    reservation = store.reserve_usage(access, characters=5, limits=limits, now=NOW)
+
+    with pytest.raises(VoiceRateLimitRejected, match="user_concurrency"):
+        store.reserve_usage(access, characters=5, limits=limits, now=NOW)
+
+    store.release_lease(reservation.lease_id)
+    second = store.reserve_usage(access, characters=5, limits=limits, now=NOW)
+    assert second.lease_id != reservation.lease_id
+
+
+def test_user_minute_quota_is_consumed_after_lease_release(tmp_path, monkeypatch):
+    configure_voice_store(monkeypatch, tmp_path)
+    store = VoiceAccessibilityStore.from_env(required=True)
+    access = store.grant_entitlement(USER_A, "owner")
+    limits = usage_limits(user_jobs_per_minute=1)
+    reservation = store.reserve_usage(access, characters=5, limits=limits, now=NOW)
+    store.release_lease(reservation.lease_id)
+
+    with pytest.raises(VoiceRateLimitRejected, match="user_jobs_per_minute"):
+        store.reserve_usage(access, characters=5, limits=limits, now=NOW)
+
+
+def test_tenant_and_character_quotas_fail_with_bounded_reason(tmp_path, monkeypatch):
+    configure_voice_store(monkeypatch, tmp_path)
+    store = VoiceAccessibilityStore.from_env(required=True)
+    access = store.grant_entitlement(USER_A, "owner")
+    tenant_limits = usage_limits(tenant_jobs_per_minute=1)
+    reservation = store.reserve_usage(access, characters=5, limits=tenant_limits, now=NOW)
+    store.release_lease(reservation.lease_id)
+    with pytest.raises(VoiceRateLimitRejected, match="tenant_jobs_per_minute"):
+        store.reserve_usage(access, characters=5, limits=tenant_limits, now=NOW)
+
+    other_minute = NOW + timedelta(minutes=2)
+    character_limits = usage_limits(user_characters_per_day=5)
+    with pytest.raises(VoiceRateLimitRejected, match="user_characters_per_day"):
+        store.reserve_usage(access, characters=6, limits=character_limits, now=other_minute)
+
+
+def test_quota_survives_restart_and_expired_lease_does_not(tmp_path, monkeypatch):
+    configure_voice_store(monkeypatch, tmp_path)
+    first = VoiceAccessibilityStore.from_env(required=True)
+    access = first.grant_entitlement(USER_A, "owner")
+    limits = usage_limits(user_jobs_per_minute=1)
+    first.reserve_usage(access, characters=5, limits=limits, now=NOW)
+
+    second = VoiceAccessibilityStore.from_env(required=True)
+    with pytest.raises(VoiceRateLimitRejected, match="user_concurrency"):
+        second.reserve_usage(access, characters=5, limits=limits, now=NOW)
+
+    later = second.reserve_usage(
+        access,
+        characters=5,
+        limits=limits,
+        now=NOW + timedelta(seconds=61),
+    )
+    assert later.lease_id
+
+
+def test_atomic_reservation_allows_only_one_thread_past_one_job_limit(tmp_path, monkeypatch):
+    configure_voice_store(monkeypatch, tmp_path)
+    store = VoiceAccessibilityStore.from_env(required=True)
+    access = store.grant_entitlement(USER_A, "owner")
+    limits = usage_limits(user_jobs_per_minute=1, user_concurrency=2)
+
+    def reserve():
+        try:
+            store.reserve_usage(access, characters=5, limits=limits, now=NOW)
+            return "accepted"
+        except VoiceRateLimitRejected as exc:
+            return exc.reason_code
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(lambda _: reserve(), range(2)))
+
+    assert outcomes.count("accepted") == 1
+    assert outcomes.count("user_jobs_per_minute") == 1
+
+
+def test_release_lease_is_idempotent(tmp_path, monkeypatch):
+    configure_voice_store(monkeypatch, tmp_path)
+    store = VoiceAccessibilityStore.from_env(required=True)
+    access = store.grant_entitlement(USER_A, "owner")
+    reservation = store.reserve_usage(access, characters=5, limits=usage_limits(), now=NOW)
+
+    store.release_lease(reservation.lease_id)
+    store.release_lease(reservation.lease_id)
