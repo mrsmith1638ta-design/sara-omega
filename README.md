@@ -197,3 +197,24 @@ Voice 1.1 is an owner/internal-only certification surface. Enable it only with
 `SARA_VOICE_1_1_ENABLED=true` after the Voice 1.1 implementation has passed repository tests and
 production acceptance. Public accessibility voice routes remain disabled until a separate Voice 1.1A
 release gate.
+
+### Voice 1.1A accessibility API
+
+Voice 1.1A is a separately certified, limited user-facing accessibility surface. It reuses the
+accepted Voice 1.1 engine but adds OAuth scope `sara.voice.accessibility`, durable owner-granted
+entitlements, server-resolved individual tenants, persistent user and tenant quotas, encrypted
+bounded transcript retention, and authenticated no-store WAV delivery.
+
+It is disabled unless both release gates are true:
+
+```text
+SARA_VOICE_1_1A_ENABLED=true
+SARA_VOICE_ACCESSIBILITY_PUBLIC_ENABLED=true
+```
+
+The OAuth client must allow `sara.voice.accessibility`, and the owner must grant the enrolled user a
+Voice 1.1A entitlement before any user route succeeds. Caller-supplied tenant, model, voice,
+pronunciation, service, and raw Piper control fields are rejected. Disabling either release gate
+returns the entire user-facing surface to `404` without disabling owner-only Voice 1.1.
+
+See `docs/voice-1-1a-production-acceptance.md` for the staged certification and rollback procedure.

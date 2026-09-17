@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -145,3 +146,14 @@ def test_evidence_allows_bounded_transcript_control_metadata(tmp_path):
     )
 
     assert evidence["voice_1_1a"]["privacy"]["transcript_encrypted"] is True
+
+
+def test_runbook_keeps_older_capsules_immutable():
+    runbook = Path("docs/voice-1-1a-production-acceptance.md").read_text(encoding="utf-8")
+
+    assert "SARA_VOICE_1_1A_ENABLED" in runbook
+    assert "SARA_VOICE_ACCESSIBILITY_PUBLIC_ENABLED" in runbook
+    assert "sara-omega-voice-1-1a-" in runbook
+    assert "do not modify" in runbook.lower()
+    assert "pytest -q" in runbook
+    assert "python -m compileall -q main.py app sara_unified voice_service tools" in runbook
