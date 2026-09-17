@@ -190,3 +190,10 @@ The main SARA audit ledger records only the voice profile ID, character count, a
 of synthesized text for this endpoint; it does not store the raw spoken text in the synthesis event.
 See `voice_service/README.md` for model provisioning, container deployment, and licensing-boundary
 notes.
+
+### Voice 1.1 hardening
+
+Voice 1.1 is an owner/internal-only certification surface. Enable it only with
+`SARA_VOICE_1_1_ENABLED=true` after the Voice 1.1 implementation has passed repository tests and
+production acceptance. Public accessibility voice routes remain disabled until a separate Voice 1.1A
+release gate.
