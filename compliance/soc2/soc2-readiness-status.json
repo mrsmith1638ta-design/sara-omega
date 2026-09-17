@@ -1,7 +1,7 @@
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "assessment_type": "INTERNAL_SOC2_READINESS",
-  "assessment_date": "2026-09-16",
+  "assessment_date": "2026-09-17",
   "framework_basis": [
     "AICPA Trust Services Criteria",
     "AICPA TQA Section 9561 (2026-09-11) regarding service-organization use of AI in SOC examinations"
@@ -26,6 +26,12 @@
     "road_may_claim_soc2_certification": false,
     "road_may_claim_soc2_compliance_without_applicable_independent_report": false
   },
+  "verified_branch_baseline": {
+    "commit": "fd07fbe63391474c8ef487c9b878282dbeac8ec0",
+    "sara_unified_validation": "PASS",
+    "sara_omega_v321_validation": "PASS",
+    "sbom_artifact_present": true
+  },
   "technical_evidence_strengths": [
     "exact_commit_ci",
     "dependency_vulnerability_audit",
@@ -47,18 +53,31 @@
     "SOC2_CONTROL_OWNERSHIP_AND_EVIDENCE.md",
     "INCIDENT_RESPONSE_PLAN.md",
     "VENDOR_AND_SUBPROCESSOR_MANAGEMENT.md",
-    "DATA_CLASSIFICATION_RETENTION.md"
+    "DATA_CLASSIFICATION_RETENTION.md",
+    "PRIVILEGED_ACCESS_REVIEW.md",
+    "PRODUCTION_DATA_FLOW_INVENTORY.md",
+    "VENDOR_SUBPROCESSOR_REGISTER.md",
+    "BCP_RTO_RPO_BASELINE.md",
+    "INCIDENT_TABLETOP_001.md"
   ],
+  "control_states": {
+    "main_branch_protection": "BLOCKED_ADMIN_CONFIGURATION",
+    "privileged_access_review": "PARTIAL",
+    "production_data_map": "PARTIAL",
+    "vendor_management": "PARTIAL",
+    "bcp_dr": "PARTIAL",
+    "incident_tabletop": "DESIGNED_NOT_YET_EXECUTED"
+  },
   "blocking_or_incomplete_operational_areas": [
-    "privileged_access_inventory_and_periodic_review",
     "main_branch_protection_and_required_review_enforcement",
+    "mfa_and_complete_privileged_identity_evidence",
+    "quarterly_privileged_access_review_operation",
     "management_policy_approvals_and_review_history",
-    "real_vendor_and_subprocessor_inventory",
     "vendor_due_diligence_records",
-    "complete_production_data_inventory",
+    "complete_production_data_inventory_and_provider_retention_mapping",
     "approved_retention_schedule_and_deletion_test",
-    "incident_tabletop_and_operating_evidence",
-    "business_continuity_and_rto_rpo_approval",
+    "live_incident_tabletop_execution_and_corrective_actions",
+    "approved_rto_rpo_and_timed_restore_test",
     "personnel_joiner_mover_leaver_controls",
     "security_awareness_training_evidence",
     "sustained_control_operation_for_intended_examination_period",
