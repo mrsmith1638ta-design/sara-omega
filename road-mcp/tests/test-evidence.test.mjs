@@ -33,15 +33,18 @@ import {
 } from "../dist/epistemicEvidence.js";
 import {
   BUILD_IMPLEMENTATION_EVIDENCE_ID,
+  CANONICAL_RELEASE_VERSION,
   SECURITY_AUDIT_EVIDENCE_ID,
   certificationChecks,
   createApp,
+  loadReleaseClearingEvidence,
 } from "../dist/server.js";
 import { buildRoadGateEvidence, ROAD_GATE_EVIDENCE_IDS } from "../dist/roadGateEvidence.js";
 
 const VALID_SHA = "a".repeat(40);
 const OTHER_SHA = "b".repeat(40);
 const BLOCKING_SHA = "c".repeat(40);
+const SARA_OMEGA_340_SHA = "4524e2dcb1aa063865a253a902ae7adc3bd067c7";
 
 function attestation(overrides = {}) {
   return {
@@ -216,6 +219,25 @@ test("PASS: ROAD MCP exposes GET /health for Railway healthchecks", async (t) =>
   const body = await response.json();
   assert.equal(body.status, "ok");
   assert.equal(body.service, "sara-omega-road-mcp");
+});
+
+test("SARA-OMEGA 3.4.0 release evidence binds SIGN and RELEASE to the accepted production SHA", () => {
+  assert.equal(CANONICAL_RELEASE_VERSION, "SARA-OMEGA-3.4.0");
+
+  const records = loadReleaseClearingEvidence();
+  const signing = records.find((record) => record.id === "release-signing-evidence");
+  const promotion = records.find((record) => record.id === "promotion-authority-evidence");
+
+  assert.ok(signing);
+  assert.ok(promotion);
+  assert.equal(signing.status, "PASS");
+  assert.equal(promotion.status, "PASS");
+  assert.match(signing.subject, /SARA-OMEGA 3\.4\.0/);
+  assert.match(promotion.subject, /SARA-OMEGA 3\.4\.0/);
+  assert.ok(signing.detail.includes(SARA_OMEGA_340_SHA));
+  assert.ok(promotion.detail.includes(SARA_OMEGA_340_SHA));
+  assert.ok(!signing.detail.includes("SARA ChatGPT Custom 3.2.1"));
+  assert.ok(!promotion.detail.includes("PR #27"));
 });
 
 test("BLOCKED: Madhouse BLOCKED review blocks the adversarial evidence record", async () => {
@@ -549,24 +571,24 @@ function releaseEvidenceRecords(overrides = {}) {
   return [
     {
       id: "release-signing-evidence",
-      subject: "SARA ChatGPT Custom 3.2.1 release signing evidence",
+      subject: "SARA-OMEGA 3.4.0 release signing evidence",
       status: "PASS",
       evidenceState: "VERIFIED",
-      source: "https://github.com/mrsmith1638ta-design/sara-omega/pull/27",
+      source: "https://sara-omega-production-9bcf.up.railway.app/road/production-acceptance",
       checkedAt: "2026-09-15T05:04:53.000Z",
-      detail: "Merge commit 1b9cc29996e1e2206042701c1e5ca2298bda1cbc signed artifact sha256:5712ecc0137eac2424d945d400cd8308c135fac465e175d94ce524b35d58f550.",
-      hash: "5712ecc0137eac2424d945d400cd8308c135fac465e175d94ce524b35d58f550",
+      detail: `SARA-OMEGA 3.4.0 release signing binds GitHub candidate SHA ${SARA_OMEGA_340_SHA}, Railway deployment fec69c61-d9af-4655-861e-002feadb106b, production acceptance source SHA ${SARA_OMEGA_340_SHA}, and ROAD release SHA ${SARA_OMEGA_340_SHA}.`,
+      hash: "sara-omega-3.4.0-signing",
       ...overrides.signing,
     },
     {
       id: "promotion-authority-evidence",
-      subject: "SARA ChatGPT Custom 3.2.1 promotion authority",
+      subject: "SARA-OMEGA 3.4.0 promotion authority",
       status: "PASS",
       evidenceState: "VERIFIED",
-      source: "https://github.com/mrsmith1638ta-design/sara-omega/pull/27",
+      source: "https://sara-omega-production-9bcf.up.railway.app/road/production-acceptance",
       checkedAt: "2026-09-15T05:04:53.000Z",
-      detail: "Authorized promotion scope: SARA ChatGPT quantum-defense SISO ROAD install.",
-      hash: "1b9cc29996e1e2206042701c1e5ca2298bda1cbc",
+      detail: `Promotion authority is explicitly scoped to SARA-OMEGA 3.4.0 at ${SARA_OMEGA_340_SHA}.`,
+      hash: "sara-omega-3.4.0-promotion",
       ...overrides.promotion,
     },
   ];

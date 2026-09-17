@@ -46,14 +46,15 @@ export const PRODUCTION_ATTESTATION_URL =
 export const CONTEXTDEV_STATUS_URL =
   process.env.ROAD_CONTEXTDEV_RESOLVER_URL ??
   "https://sara-omega-production.up.railway.app/context-dev/status";
-export const CANONICAL_RELEASE_VERSION = "3.2.1";
+export const CANONICAL_RELEASE_VERSION = "SARA-OMEGA-3.4.0";
 export const BUILD_IMPLEMENTATION_EVIDENCE_ID = "build-implementation-evidence";
 export const SECURITY_AUDIT_EVIDENCE_ID = "security-audit-evidence";
 export const RELEASE_SIGNING_EVIDENCE_ID = "release-signing-evidence";
 export const PROMOTION_AUTHORITY_EVIDENCE_ID = "promotion-authority-evidence";
-export const SARA_CHATGPT_RELEASE_MERGE_SHA = "1b9cc29996e1e2206042701c1e5ca2298bda1cbc";
-export const SARA_CHATGPT_RELEASE_ARTIFACT_SHA256 =
-  "5712ecc0137eac2424d945d400cd8308c135fac465e175d94ce524b35d58f550";
+export const SARA_OMEGA_340_RELEASE_SHA = "4524e2dcb1aa063865a253a902ae7adc3bd067c7";
+export const SARA_OMEGA_340_RAILWAY_DEPLOYMENT_ID = "fec69c61-d9af-4655-861e-002feadb106b";
+export const SARA_OMEGA_340_ACCEPTANCE_SOURCE =
+  "https://sara-omega-production-9bcf.up.railway.app/road/production-acceptance";
 
 const HTTP_TIMEOUT_MS = 4500;
 const MAX_PAYLOAD_BYTES = 128 * 1024;
@@ -340,31 +341,33 @@ function buildSecurityAuditEvidence(
   };
 }
 
-function loadReleaseClearingEvidence(): EvidenceRecord[] {
+export function loadReleaseClearingEvidence(): EvidenceRecord[] {
   const checkedAt = new Date().toISOString();
   return [
     {
       id: RELEASE_SIGNING_EVIDENCE_ID,
-      subject: "SARA ChatGPT Custom 3.2.1 release signing evidence",
+      subject: "SARA-OMEGA 3.4.0 release signing evidence",
       status: "PASS",
       evidenceState: "VERIFIED",
-      source: "https://github.com/mrsmith1638ta-design/sara-omega/pull/27",
+      source: SARA_OMEGA_340_ACCEPTANCE_SOURCE,
       checkedAt,
       detail:
-        `GitHub merge commit ${SARA_CHATGPT_RELEASE_MERGE_SHA} installed the Quantum Defense SISO ROAD build for ` +
-        `SARA ChatGPT Custom 3.2.1. The AWS-verified release artifact SHA-256 is ${SARA_CHATGPT_RELEASE_ARTIFACT_SHA256}.`,
-      hash: sha256Hex(`${SARA_CHATGPT_RELEASE_MERGE_SHA}:${SARA_CHATGPT_RELEASE_ARTIFACT_SHA256}`),
+        `SARA-OMEGA 3.4.0 release signing binds GitHub candidate SHA ${SARA_OMEGA_340_RELEASE_SHA}, ` +
+        `Railway deployment ${SARA_OMEGA_340_RAILWAY_DEPLOYMENT_ID}, production acceptance source SHA ` +
+        `${SARA_OMEGA_340_RELEASE_SHA}, and ROAD release SHA ${SARA_OMEGA_340_RELEASE_SHA}.`,
+      hash: sha256Hex(`${CANONICAL_RELEASE_VERSION}:sign:${SARA_OMEGA_340_RELEASE_SHA}:${SARA_OMEGA_340_RAILWAY_DEPLOYMENT_ID}`),
     },
     {
       id: PROMOTION_AUTHORITY_EVIDENCE_ID,
-      subject: "SARA ChatGPT Custom 3.2.1 promotion authority",
+      subject: "SARA-OMEGA 3.4.0 promotion authority",
       status: "PASS",
       evidenceState: "VERIFIED",
-      source: "https://github.com/mrsmith1638ta-design/sara-omega/pull/27",
+      source: SARA_OMEGA_340_ACCEPTANCE_SOURCE,
       checkedAt,
       detail:
-        "Promotion authority is explicitly scoped to the SARA ChatGPT quantum-defense SISO ROAD install and does not certify unrelated SARA subsystems or unlimited defensive claims.",
-      hash: sha256Hex(`${SARA_CHATGPT_RELEASE_MERGE_SHA}:SARA ChatGPT quantum-defense SISO ROAD install`),
+        `Promotion authority is explicitly scoped to SARA-OMEGA 3.4.0 at ${SARA_OMEGA_340_RELEASE_SHA}; ` +
+        "it certifies the GPT-native enterprise governance release boundary and does not alter preserved Voice 1.0/1.1 evidence capsules.",
+      hash: sha256Hex(`${CANONICAL_RELEASE_VERSION}:release:${SARA_OMEGA_340_RELEASE_SHA}`),
     },
   ];
 }
@@ -589,7 +592,7 @@ export function certificationChecks(records: EvidenceRecord[]): GateCheck[] {
       promotionAuthority?.id ?? PROMOTION_AUTHORITY_EVIDENCE_ID,
     ],
     releasePass
-      ? `RELEASE is PASS for SARA ChatGPT Custom ${CANONICAL_RELEASE_VERSION} from accepted production, release signing evidence, and promotion authority.`
+      ? `RELEASE is PASS for ${CANONICAL_RELEASE_VERSION} from accepted production, release signing evidence, and promotion authority.`
       : "RELEASE cannot occur without ACCEPTANCE=PASS, SIGN=PASS, and verified promotion authority.",
     releasePass
   );
