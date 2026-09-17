@@ -1,10 +1,15 @@
 from pathlib import Path
+from io import BytesIO
+import sqlite3
+import wave
 
 from fastapi.testclient import TestClient
 
 import main
 from app.user_identity import UserIdentityStore
-from app.voice_accessibility import VoiceAccessibilityStore
+from app.voice_accessibility import VoiceAccessibilityStore, VoiceUsageLimits
+import app.voice_accessibility_http as voice_http
+from sara_unified.voice.jobs import VoiceJobManager
 
 
 CLIENT_ID = "sara-voice-1-1a-test"
@@ -16,6 +21,7 @@ ACTION_TOKEN = "a" * 48
 TEST_TOKEN = "t" * 48
 PREFERENCES = "/v1/accessibility/voice/preferences"
 ENTITLEMENTS = "/admin/voice-accessibility/entitlements"
+JOBS = "/v1/accessibility/voice/jobs"
 
 client = TestClient(main.app)
 
@@ -72,6 +78,47 @@ def bearer(token):
 
 def owner_headers():
     return bearer(OWNER_TOKEN)
+
+
+def wav_bytes():
+    output = BytesIO()
+    with wave.open(output, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(22050)
+        wav_file.writeframes(b"\x00\x00" * 220)
+    return output.getvalue()
+
+
+class FakeVoiceClient:
+    def __init__(self):
+        self.calls = []
+        self.error = None
+
+    def synthesize_with_controls(self, text, controls):
+        self.calls.append((text, controls.length_scale))
+        if self.error is not None:
+            raise self.error
+        return wav_bytes()
+
+
+def install_fake_manager(monkeypatch):
+    fake = FakeVoiceClient()
+    manager = VoiceJobManager(
+        voice_client=fake,
+        source_commit_sha="1" * 40,
+        deployment_id="voice-1-1a-test-deployment",
+        voice_service_url="http://voice.internal:8080",
+    )
+    monkeypatch.setattr(voice_http, "_voice_job_manager", manager, raising=False)
+    return fake
+
+
+def provision_entitled_voice_user(scope="sara.voice.accessibility"):
+    identity, account = provision_account()
+    token = issue_token(identity, account, scope)
+    VoiceAccessibilityStore.from_env(required=True).grant_entitlement(account.user_uuid, "owner")
+    return account, token
 
 
 def test_each_release_flag_fails_closed(monkeypatch, tmp_path):
@@ -209,3 +256,165 @@ def test_revocation_blocks_preferences_immediately(monkeypatch, tmp_path):
     store.revoke_entitlement(account.user_uuid, "owner")
 
     assert client.get(PREFERENCES, headers=bearer(token)).status_code == 403
+
+
+def test_entitled_user_can_speak_and_fetch_private_audio(monkeypatch, tmp_path):
+    configure_runtime(monkeypatch, tmp_path)
+    fake = install_fake_manager(monkeypatch)
+    _, token = provision_entitled_voice_user()
+
+    created = client.post(
+        JOBS,
+        headers=bearer(token),
+        json={"text": "First. Second.", "speech_rate": "faster"},
+    )
+
+    assert created.status_code == 200
+    body = created.json()
+    assert body["status"] == "completed"
+    assert len(body["segments"]) == 2
+    assert len(fake.calls) == 2
+    job_id = body["job_id"]
+    segment_id = body["segments"][0]["segment_id"]
+    audio = client.get(
+        f"{JOBS}/{job_id}/segments/{segment_id}/audio",
+        headers=bearer(token),
+    )
+    assert audio.status_code == 200
+    assert audio.headers["content-type"].startswith("audio/wav")
+    assert audio.headers["cache-control"] == "private, no-store"
+    assert audio.content == wav_bytes()
+
+
+def test_cross_tenant_job_surfaces_are_hidden(monkeypatch, tmp_path):
+    configure_runtime(monkeypatch, tmp_path)
+    install_fake_manager(monkeypatch)
+    _, token_a = provision_entitled_voice_user()
+    _, token_b = provision_entitled_voice_user()
+    created = client.post(
+        JOBS,
+        headers=bearer(token_a),
+        json={"text": "Private sentence.", "preserve_transcript": True},
+    )
+    assert created.status_code == 200
+    job_id = created.json()["job_id"]
+    segment_id = created.json()["segments"][0]["segment_id"]
+
+    get_paths = (
+        f"{JOBS}/{job_id}",
+        f"{JOBS}/{job_id}/receipts",
+        f"{JOBS}/{job_id}/transcript",
+        f"{JOBS}/{job_id}/segments/{segment_id}/audio",
+    )
+    assert all(client.get(path, headers=bearer(token_b)).status_code == 404 for path in get_paths)
+    assert client.post(f"{JOBS}/{job_id}/stop", headers=bearer(token_b)).status_code == 404
+
+
+def test_transcript_and_receipts_are_private_and_ownership_bound(monkeypatch, tmp_path):
+    configure_runtime(monkeypatch, tmp_path)
+    install_fake_manager(monkeypatch)
+    _, token = provision_entitled_voice_user()
+    created = client.post(
+        JOBS,
+        headers=bearer(token),
+        json={"text": "Preserve this transcript.", "preserve_transcript": True},
+    )
+    job_id = created.json()["job_id"]
+
+    transcript = client.get(f"{JOBS}/{job_id}/transcript", headers=bearer(token))
+    receipts = client.get(f"{JOBS}/{job_id}/receipts", headers=bearer(token))
+
+    assert transcript.status_code == 200
+    assert transcript.json() == {"transcript": "Preserve this transcript."}
+    assert transcript.headers["cache-control"] == "private, no-store"
+    assert receipts.status_code == 200
+    assert receipts.headers["cache-control"] == "private, no-store"
+    assert receipts.json()["access_envelope_sha256"]
+    assert "user_uuid" not in receipts.text
+    assert "tenant_id" not in receipts.text
+
+
+def test_stop_is_idempotent_for_owned_job(monkeypatch, tmp_path):
+    configure_runtime(monkeypatch, tmp_path)
+    install_fake_manager(monkeypatch)
+    _, token = provision_entitled_voice_user()
+    created = client.post(JOBS, headers=bearer(token), json={"text": "One. Two."})
+    job_id = created.json()["job_id"]
+
+    first = client.post(f"{JOBS}/{job_id}/stop", headers=bearer(token))
+    second = client.post(f"{JOBS}/{job_id}/stop", headers=bearer(token))
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["stop_requested_at"] == second.json()["stop_requested_at"]
+
+
+def test_piper_failure_releases_lease_but_keeps_usage(monkeypatch, tmp_path):
+    configure_runtime(monkeypatch, tmp_path)
+    fake = install_fake_manager(monkeypatch)
+    fake.error = RuntimeError("private renderer detail")
+    _, token = provision_entitled_voice_user()
+
+    failed = client.post(JOBS, headers=bearer(token), json={"text": "Fail safely."})
+
+    assert failed.status_code == 502
+    assert "private renderer detail" not in failed.text
+    db = tmp_path / "sara_voice_accessibility.db"
+    with sqlite3.connect(db) as conn:
+        leases = conn.execute("SELECT COUNT(*) FROM voice_leases").fetchone()[0]
+        minute_usage = conn.execute(
+            "SELECT SUM(job_count) FROM voice_usage_windows WHERE subject_kind='USER' AND window_kind='MINUTE'"
+        ).fetchone()[0]
+    assert leases == 0
+    assert minute_usage == 1
+
+
+def test_user_quota_returns_bounded_429_and_retry_after(monkeypatch, tmp_path):
+    configure_runtime(monkeypatch, tmp_path)
+    monkeypatch.setenv("SARA_VOICE_1_1A_USER_JOBS_PER_MINUTE", "1")
+    install_fake_manager(monkeypatch)
+    _, token = provision_entitled_voice_user()
+    assert client.post(JOBS, headers=bearer(token), json={"text": "First."}).status_code == 200
+
+    limited = client.post(JOBS, headers=bearer(token), json={"text": "Second."})
+
+    assert limited.status_code == 429
+    assert limited.json()["detail"] == "user_jobs_per_minute"
+    assert int(limited.headers["retry-after"]) > 0
+
+
+def test_concurrency_limit_returns_bounded_409(monkeypatch, tmp_path):
+    configure_runtime(monkeypatch, tmp_path)
+    install_fake_manager(monkeypatch)
+    account, token = provision_entitled_voice_user()
+    store = VoiceAccessibilityStore.from_env(required=True)
+    access = store.resolve_access(account.user_uuid)
+    settings = voice_http.Settings.from_env()
+    store.reserve_usage(
+        access,
+        characters=1,
+        limits=VoiceUsageLimits(
+            user_jobs_per_minute=settings.voice_1_1a_user_jobs_per_minute,
+            user_jobs_per_day=settings.voice_1_1a_user_jobs_per_day,
+            user_characters_per_day=settings.voice_1_1a_user_characters_per_day,
+            tenant_jobs_per_minute=settings.voice_1_1a_tenant_jobs_per_minute,
+            tenant_jobs_per_day=settings.voice_1_1a_tenant_jobs_per_day,
+            tenant_characters_per_day=settings.voice_1_1a_tenant_characters_per_day,
+            user_concurrency=settings.voice_1_1a_user_concurrency,
+            tenant_concurrency=settings.voice_1_1a_tenant_concurrency,
+            lease_seconds=settings.voice_1_1a_lease_seconds,
+        ),
+    )
+
+    response = client.post(JOBS, headers=bearer(token), json={"text": "Blocked."})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "user_concurrency"
+
+
+def test_disabled_job_gate_precedes_strict_body_validation(monkeypatch, tmp_path):
+    configure_runtime(monkeypatch, tmp_path, enabled=False, public=True)
+
+    response = client.post(JOBS, json={"tenant_id": "forged"})
+
+    assert response.status_code == 404

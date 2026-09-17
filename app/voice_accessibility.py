@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import os
 import sqlite3
 import uuid
@@ -518,6 +519,92 @@ class VoiceAccessibilityStore:
         except sqlite3.Error as exc:
             raise VoiceAccessStoreError("voice_job_read_failed") from exc
         return row is not None
+
+    def record_receipt_envelope(
+        self,
+        job_id: str,
+        access: VoiceAccessContext,
+        receipt_ids: list[str],
+    ) -> str:
+        user_hash, tenant_hash = self._ownership(access)
+        try:
+            with closing(self._connect()) as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                row = conn.execute(
+                    """SELECT source_response_sha256 FROM voice_jobs
+                    WHERE job_id=? AND user_uuid_hash=? AND tenant_id_hash=?""",
+                    (job_id, user_hash, tenant_hash),
+                ).fetchone()
+                if row is None:
+                    raise VoiceAccessRejected("job_not_owned")
+                payload = {
+                    "job_id": job_id,
+                    "receipt_ids": list(receipt_ids),
+                    "source_response_sha256": str(row["source_response_sha256"]),
+                    "tenant_id_hash": tenant_hash,
+                    "user_uuid_hash": user_hash,
+                }
+                digest = hashlib.sha256(
+                    json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+                ).hexdigest()
+                conn.execute(
+                    "UPDATE voice_jobs SET receipt_envelope_digest=? WHERE job_id=?",
+                    (digest, job_id),
+                )
+                conn.commit()
+        except VoiceAccessRejected:
+            raise
+        except sqlite3.Error as exc:
+            raise VoiceAccessStoreError("voice_receipt_envelope_write_failed") from exc
+        return digest
+
+    def receipt_envelope_digest(
+        self,
+        job_id: str,
+        access: VoiceAccessContext,
+    ) -> str | None:
+        user_hash, tenant_hash = self._ownership(access)
+        try:
+            with closing(self._connect()) as conn:
+                row = conn.execute(
+                    """SELECT receipt_envelope_digest FROM voice_jobs
+                    WHERE job_id=? AND user_uuid_hash=? AND tenant_id_hash=?""",
+                    (job_id, user_hash, tenant_hash),
+                ).fetchone()
+        except sqlite3.Error as exc:
+            raise VoiceAccessStoreError("voice_receipt_envelope_read_failed") from exc
+        if row is None:
+            return None
+        value = row["receipt_envelope_digest"]
+        return str(value) if value is not None else None
+
+    def mark_job_status(
+        self,
+        job_id: str,
+        access: VoiceAccessContext,
+        status: str,
+        *,
+        stopped: bool = False,
+    ) -> None:
+        if status not in {"pending", "running", "completed", "stopped", "failed"}:
+            raise VoiceAccessRejected("voice_job_status_rejected")
+        user_hash, tenant_hash = self._ownership(access)
+        now_iso = _utc_iso()
+        try:
+            with closing(self._connect()) as conn:
+                with conn:
+                    cursor = conn.execute(
+                        """UPDATE voice_jobs SET status=?,completed_at=?,
+                            stopped_at=CASE WHEN ? THEN COALESCE(stopped_at,?) ELSE stopped_at END
+                        WHERE job_id=? AND user_uuid_hash=? AND tenant_id_hash=?""",
+                        (status, now_iso, int(stopped), now_iso, job_id, user_hash, tenant_hash),
+                    )
+                    if cursor.rowcount != 1:
+                        raise VoiceAccessRejected("job_not_owned")
+        except VoiceAccessRejected:
+            raise
+        except sqlite3.Error as exc:
+            raise VoiceAccessStoreError("voice_job_status_write_failed") from exc
 
     def save_transcript(
         self,
