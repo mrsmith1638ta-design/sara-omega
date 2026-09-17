@@ -61,6 +61,10 @@ def test_chatgpt_action_gateway_reports_runtime_status(monkeypatch):
     assert body["enterprise_governance"]["module"] == "sara-enterprise-governance"
     assert body["enterprise_governance"]["missing_evidence_fails_closed"] is True
     assert body["enterprise_governance"]["audit_passport_is_not_audit_opinion"] is True
+    assert body["unified_fusion"]["module"] == "sara-unified-fusion"
+    assert body["unified_fusion"]["production_authority"] is False
+    assert body["unified_fusion"]["release_authority"] is False
+    assert body["unified_fusion"]["road_pass_fabrication"] is False
 
 
 def test_chatgpt_action_gateway_solves_through_sara_omega(monkeypatch):

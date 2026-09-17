@@ -37,6 +37,7 @@ from .titan import (
     TitanEngine,
     VoiceEventRequest,
 )
+from .unified_fusion import UNIFIED_FUSION_VERSION, health as unified_fusion_health
 from .iot.router import router as iot_router
 from .user_gateway import router as user_gateway_router
 from .user_identity_http import router as user_identity_router
@@ -94,6 +95,19 @@ module_awareness.register(
             "provider_certification_is_not_sara_certification": True,
             "missing_evidence_fails_closed": True,
             "audit_passport_is_not_audit_opinion": True,
+        },
+    )
+)
+module_awareness.register(
+    ModuleRecord(
+        service="sara-unified-fusion",
+        status="integrated",
+        version=UNIFIED_FUSION_VERSION,
+        metadata={
+            "execution_authority": False,
+            "release_authority": False,
+            "road_pass_fabrication": False,
+            "missing_road_evidence_fails_closed": True,
         },
     )
 )
@@ -191,6 +205,8 @@ async def concentration_health(): return concentration_governor.health()
 async def model_sovereignty_summary(): return model_sovereignty.health()
 @router.get("/enterprise-governance/summary")
 async def enterprise_governance_summary(): return enterprise_governance.health()
+@router.get("/unified-fusion/summary")
+async def unified_fusion_summary(): return unified_fusion_health()
 @router.post("/concentration/analyze")
 async def concentration_analyze(request: ConcentrationRequest): return concentration_governor.analyze(request)
 @router.post("/titan/voice/emit")

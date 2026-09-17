@@ -59,6 +59,7 @@ from app.models import Problem
 from app.orchestrator import SaraOmega
 from app.runtime_assurance import RuntimeAssuranceConfigurationError, RuntimeAssuranceRequest
 from app.road_gates import RoadGateAgent, RoadGateReviewRequest
+from app.unified_fusion import health as unified_fusion_health
 from sara_unified.api.schemas import VoiceJobRequest, VoiceSynthesisRequest
 from sara_unified.config import Settings
 from sara_unified.voice.client import PiperVoiceClient, VoiceSynthesisError
@@ -444,6 +445,7 @@ def gateway_status() -> Dict[str, Any]:
         "madhouse": madhouse.health(),
         "model_sovereignty": model_sovereignty.health(),
         "titan": titan.health(),
+        "unified_fusion": unified_fusion_health(),
         "allowed_operations": list(GPTActionOperation.__args__),
     }
 
