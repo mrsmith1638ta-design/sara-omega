@@ -13,6 +13,8 @@ class Settings:
     piper_service_token: str = ""
     voice_timeout_seconds: float = 15.0
     voice_max_characters: int = 4000
+    voice_1_1_enabled: bool = False
+    voice_accessibility_public_enabled: bool = False
 
     @classmethod
     def from_env(cls):
@@ -35,4 +37,8 @@ class Settings:
             piper_service_token=os.getenv("SARA_PIPER_SERVICE_TOKEN", ""),
             voice_timeout_seconds=timeout,
             voice_max_characters=max_characters,
+            voice_1_1_enabled=os.getenv("SARA_VOICE_1_1_ENABLED", "false").lower() == "true",
+            voice_accessibility_public_enabled=(
+                os.getenv("SARA_VOICE_ACCESSIBILITY_PUBLIC_ENABLED", "false").lower() == "true"
+            ),
         )

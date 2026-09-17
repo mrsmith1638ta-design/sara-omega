@@ -56,9 +56,10 @@ from app.models import Problem
 from app.orchestrator import SaraOmega
 from app.runtime_assurance import RuntimeAssuranceConfigurationError, RuntimeAssuranceRequest
 from app.road_gates import RoadGateAgent, RoadGateReviewRequest
-from sara_unified.api.schemas import VoiceSynthesisRequest
+from sara_unified.api.schemas import VoiceJobRequest, VoiceSynthesisRequest
 from sara_unified.config import Settings
 from sara_unified.voice.client import PiperVoiceClient, VoiceSynthesisError
+from sara_unified.voice.jobs import VoiceJobManager
 from sara_unified.voice.profile import SARA_VOICE_PROFILE
 
 BASE_VERSION = "2.5.2"
@@ -96,6 +97,7 @@ openai_init_error = OPENAI_IMPORT_ERROR
 gateway_sara = SaraOmega()
 road_gate_agent = RoadGateAgent()
 _piper_voice_client: Any | None = None
+_voice_1_1_job_manager: VoiceJobManager | None = None
 
 GPTActionOperation = Literal[
     "status",
@@ -180,6 +182,30 @@ def get_piper_voice_client(settings: Settings):
         timeout_seconds=settings.voice_timeout_seconds,
     )
     return _piper_voice_client
+
+
+def require_owner(req: Request) -> None:
+    role = authorize(req)
+    if not role:
+        raise HTTPException(401, "Unauthorized")
+    if role != "owner":
+        raise HTTPException(403, "Owner only")
+
+
+def get_voice_1_1_job_manager(settings: Settings) -> VoiceJobManager | None:
+    global _voice_1_1_job_manager
+    if _voice_1_1_job_manager is not None:
+        return _voice_1_1_job_manager
+    voice_client = get_piper_voice_client(settings)
+    if voice_client is None:
+        return None
+    _voice_1_1_job_manager = VoiceJobManager(
+        voice_client=voice_client,
+        source_commit_sha=os.getenv("SARA_SOURCE_COMMIT_SHA", ""),
+        deployment_id=os.getenv("RAILWAY_DEPLOYMENT_ID", ""),
+        voice_service_url=settings.piper_service_url,
+    )
+    return _voice_1_1_job_manager
 
 
 def get_vision_clients():
@@ -767,6 +793,68 @@ def piper_voice_synthesize(payload: VoiceSynthesisRequest, req: Request):
         },
     )
     return Response(audio, media_type="audio/wav")
+
+
+@app.post("/v1/voice/jobs")
+def create_voice_job(payload: VoiceJobRequest, req: Request):
+    require_owner(req)
+    settings = Settings.from_env()
+    if not settings.voice_1_1_enabled:
+        raise HTTPException(503, "Voice 1.1 disabled")
+    manager = get_voice_1_1_job_manager(settings)
+    if manager is None:
+        raise HTTPException(503, "Voice synthesis unavailable")
+    try:
+        job = manager.create_job(
+            text=payload.text,
+            speech_rate=payload.speech_rate,
+            preserve_transcript=payload.preserve_transcript,
+            return_audio=payload.return_audio,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return job.public_dict(include_transcript=payload.preserve_transcript)
+
+
+@app.get("/v1/voice/jobs/{job_id}")
+def get_voice_job(job_id: str, req: Request):
+    require_owner(req)
+    settings = Settings.from_env()
+    manager = get_voice_1_1_job_manager(settings)
+    if manager is None:
+        raise HTTPException(404, "voice job not found")
+    job = manager.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "voice job not found")
+    return job.public_dict(include_transcript=False)
+
+
+@app.post("/v1/voice/jobs/{job_id}/stop")
+def stop_voice_job(job_id: str, req: Request):
+    require_owner(req)
+    settings = Settings.from_env()
+    manager = get_voice_1_1_job_manager(settings)
+    if manager is None or manager.get_job(job_id) is None:
+        raise HTTPException(404, "voice job not found")
+    return manager.stop_job(job_id).public_dict(include_transcript=False)
+
+
+@app.get("/v1/voice/jobs/{job_id}/receipts")
+def get_voice_job_receipts(job_id: str, req: Request):
+    require_owner(req)
+    settings = Settings.from_env()
+    manager = get_voice_1_1_job_manager(settings)
+    if manager is None:
+        raise HTTPException(404, "voice job not found")
+    job = manager.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "voice job not found")
+    return {"job_id": job_id, "receipts": [receipt.public_dict() for receipt in job.receipts]}
+
+
+@app.post("/v1/accessibility/voice/jobs")
+def accessibility_voice_jobs_gated():
+    raise HTTPException(404, "Voice accessibility public API is not enabled for Voice 1.1")
 
 
 @app.get("/metrics")

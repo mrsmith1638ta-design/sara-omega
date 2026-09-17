@@ -38,3 +38,10 @@ class TwinObservationRequest(BaseModel):
 
 class VoiceSynthesisRequest(BaseModel):
     text: str = Field(min_length=1)
+
+
+class VoiceJobRequest(BaseModel):
+    text: str = Field(min_length=1)
+    speech_rate: str = Field(default="normal")
+    preserve_transcript: bool = False
+    return_audio: str = Field(default="none")
