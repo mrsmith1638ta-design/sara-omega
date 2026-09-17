@@ -1,0 +1,61 @@
+# SARA-OMEGA SOC 2 Initial Control Matrix
+
+Assessment date: 2026-09-16
+Assessment type: Internal readiness baseline
+Initial target category: Security
+Secondary categories: Availability, Processing Integrity, Confidentiality, Privacy — scope pending management/customer commitments
+
+> This matrix is an internal readiness artifact. It is not a SOC 2 report, certification, CPA opinion, or representation of compliance.
+
+## Status legend
+
+- PASS: implemented and current evidence reviewed for the stated internal scope
+- PARTIAL: meaningful implementation/evidence exists but audit-ready design or operating evidence is incomplete
+- BLOCKED: required dependency/process/owner/artifact is missing
+- UNVERIFIED: implementation may exist but sufficient evidence was not reviewed
+- NOT_APPLICABLE: requires documented rationale
+
+## Baseline matrix
+
+| ID | Readiness domain | Internal status | Current evidence / strength | Gap to audit readiness | Required next evidence |
+|---|---|---|---|---|---|
+| SOC2-GOV-01 | Governance and release authority | PASS (technical scope) | ROAD currently verifies exact-SHA governance/release evidence and separates internal opposition/review agents from promotion authority. | Formal organizational control owners and management review cadence are not yet evidenced here. | Named owners, quarterly control review record, management approvals. |
+| SOC2-RISK-01 | Enterprise risk assessment | BLOCKED | Security and adversarial risks are exercised technically. | No complete organization-level SOC 2 risk register/risk assessment was verified in this baseline. | Approved risk methodology, risk register, annual/triggered assessment evidence. |
+| SOC2-IAM-01 | Authentication and authorization | PARTIAL | Application security architecture includes authentication/authorization and fail-closed controls; protected routes and authorization boundaries have been tested in prior SARA verification. | Workforce/admin identity lifecycle, MFA policy, joiner-mover-leaver process, privileged access inventory, periodic access review not verified. | IAM policy, user/admin inventory, MFA evidence, access review, offboarding test. |
+| SOC2-IAM-02 | Least privilege / privileged access | PARTIAL | SARA architecture enforces scoped authority and no automatic promotion authority for review agents. | Human/cloud privileged roles and service accounts are not mapped into a recurring review process. | Privileged role matrix, service account register, quarterly review evidence. |
+| SOC2-CHG-01 | Source/change control | PASS (technical scope) | GitHub source control, exact-commit CI, validation runs, deployment identity, and release evidence are present. | Formal emergency-change procedure and segregation-of-duties expectations require documented organizational control. | Change-management policy, sample approvals, emergency change log. |
+| SOC2-CICD-01 | Automated build/test/security gate | PASS (technical scope) | ROAD currently recognizes exact-SHA CI, dependency vulnerability audit, adversarial gate, container build and release-gate evidence. | Evidence retention period and auditor sampling/export process not formally defined. | Retention policy, evidence index, periodic completeness check. |
+| SOC2-VULN-01 | Vulnerability management | PARTIAL | Dependency vulnerability auditing is represented in current ROAD SECURITY evidence. | Full vulnerability management lifecycle, severity SLAs, infrastructure/container scan cadence and remediation register are not fully evidenced here. | Vulnerability policy, scan schedule, SLA table, findings/remediation history. |
+| SOC2-SEC-01 | Application-native security | PASS (internal technical design) | ROAD SECURITY currently reports PASS for exact deployed source; SARA uses fail-closed/security/adversarial controls. | Auditor still needs scoped control description and operating samples over the audit period. | Control narrative, test population, period evidence, exceptions. |
+| SOC2-LOG-01 | Security logging and audit trail | PARTIAL | SARA has audit receipts/ledgers and ROAD evidence hashes; roadmap requires immutable auditability. | Central security-event coverage, retention, alerting, review cadence and access to logs are not fully verified for SOC 2. | Logging standard, event catalog, retention config, alert samples, review record. |
+| SOC2-MON-01 | Security monitoring and escalation | PARTIAL | Runtime health, ROAD gates and adversarial evidence provide technical monitoring signals. | SOC/operator escalation procedure, alert ownership and incident linkage are not yet evidenced. | Monitoring runbook, alert routing, escalation test, sample tickets/incidents. |
+| SOC2-IR-01 | Incident response | BLOCKED | Fail-safe and recovery controls exist technically. | A complete approved incident-response plan, roles, severity scheme, notification decision process, and exercise evidence were not verified. | IR policy/playbook, contact tree, tabletop report, corrective actions. |
+| SOC2-BCP-01 | Business continuity | PARTIAL | ROAD RECOVERY currently reports PASS for configured fail-safe, persistence, and retained chain for the deployed candidate. | Organization-level continuity plan, business impact analysis, dependency scenarios and customer communications are not verified. | BIA, BCP, outage exercise, lessons/remediation. |
+| SOC2-DR-01 | Backup/restore and recovery testing | PARTIAL | ROAD recovery evidence demonstrates technical recovery attributes for the exact deployment. | Defined RTO/RPO, backup scope, restoration frequency and retained restore test records require formalization. | Backup standard, RTO/RPO approvals, restore-test evidence. |
+| SOC2-VEND-01 | Vendor/subservice organization management | BLOCKED | Known platforms/providers exist (for example hosting, source control, model/API providers). | No complete vendor inventory, risk tiers, due diligence package, contract/security review, or annual monitoring evidence verified. | Vendor register, subprocessor list, due diligence, SOC/security reports, review cadence. |
+| SOC2-DATA-01 | Data classification | BLOCKED | Current privacy notice cautions against placing secrets into read-only action prompts. | No complete formal data classification scheme mapped to storage, processing, retention and protection controls verified. | Classification policy, data inventory, handling matrix. |
+| SOC2-ENC-01 | Encryption / protected transport | PARTIAL | Production interactions are HTTPS and secret-bearing fields are excluded from ROAD artifacts. | At-rest encryption and key-management responsibilities across all stores/providers are not comprehensively mapped. | Encryption standard, provider configs, key ownership/rotation evidence. |
+| SOC2-RET-01 | Retention and deletion | BLOCKED | Some Context.dev zero-retention concepts exist in repository policy materials. | Organization-wide retention schedule, customer deletion process, evidence retention, backups and provider retention are not verified. | Retention schedule, deletion SOP, sample deletion evidence, backup retention mapping. |
+| SOC2-PRIV-01 | Privacy commitments | PARTIAL | A SARA privacy notice exists and ROAD currently reports internal PRIVACY gate PASS for the exact deployed candidate. | Existing notice is narrow and operational; full privacy inventory, roles, rights handling and contractual commitments are not established by this baseline. | Privacy policy, data map, subprocessor list, request/incident procedures. |
+| SOC2-CONF-01 | Confidentiality | PARTIAL | Secret isolation and evidence redaction/scoping are part of SARA's technical design. | Confidential-information inventory, contractual classifications, access reviews and disposal requirements are not fully mapped. | Confidentiality policy, inventory, handling/access evidence. |
+| SOC2-PI-01 | Processing integrity | PARTIAL | Exact-source verification, evidence-bound gates, deterministic governance components and claim integrity controls provide strong technical foundations. | Customer-facing processing commitments, completeness/accuracy criteria, error handling and period evidence need formal scope. | Processing commitments, validation rules, exception logs, sample reconciliations. |
+| SOC2-AI-01 | AI provider/model inventory | BLOCKED | SARA uses AI/model tooling and has governance boundaries. | No single auditor-ready AI inventory mapping providers, models, purposes, data sent, retention terms, fallback and change ownership was verified. | AI system inventory and provider dependency register. |
+| SOC2-AI-02 | AI change/configuration governance | PARTIAL | Source-controlled governance, tool routing, release gates and exact-SHA evidence exist. | Model/provider version changes and non-code AI configuration changes need formal change records and review rules. | AI change policy, provider/model change log, approval samples. |
+| SOC2-AI-03 | AI adversarial/misuse testing | PASS (technical scope) | ROAD recognizes Madhouse adversarial review for the exact deployed source while preserving no execution/promotion authority. | A recurring SOC 2 control cadence, population definition and retained exceptions/remediation evidence are needed. | Quarterly/per-release test plan, evidence index, exception records. |
+| SOC2-AI-04 | AI output/claim governance | PASS (technical scope) | ROAD recognizes an exact-commit epistemic claim audit; SARA architecture includes fail-closed unsupported-claim controls. | Audit scope must define which outputs are relied upon and how exceptions/human review operate over time. | Output-risk classification, sample review records, exception handling. |
+| SOC2-AI-05 | AI data-use/privacy boundary | PARTIAL | SARA privacy/evidence controls avoid secret-bearing fields and maintain scoped provider authorization evidence. | Full provider-by-provider data use, training, retention, residency and subprocessors must be documented. | Provider data-use matrix, DPAs/terms evidence, annual review. |
+| SOC2-HR-01 | Personnel security / onboarding / offboarding | BLOCKED | Not a software-only control. | No approved personnel security lifecycle evidence was reviewed. | Background/role policy as applicable, onboarding checklist, training, termination access revocation evidence. |
+| SOC2-TRAIN-01 | Security awareness training | BLOCKED | Not evidenced in repository/ROAD baseline. | Recurring security/AI acceptable-use training and acknowledgment needed for personnel in scope. | Training policy, completion roster, annual evidence. |
+| SOC2-POL-01 | Policy governance | PARTIAL | Multiple technical governance/privacy/build documents exist. | SOC 2 policy set needs ownership, approval dates, review frequency, version history and exception handling. | Policy register, approvals, annual review evidence. |
+| SOC2-EVID-01 | Evidence integrity and traceability | PASS (technical scope) | ROAD keeps evidence IDs, hashes, timestamps, exact deployed source and gate-specific details. | SOC 2 evidence-retention, completeness checks and auditor export/index procedure need formalization. | Evidence SOP, retention schedule, control-to-evidence index. |
+| SOC2-EXT-01 | Independent CPA examination | BLOCKED | Internal readiness work can prepare the environment. | Independent examination has not been performed by virtue of internal ROAD/GitHub evidence. | Auditor selection, scope letter, readiness review, examination period, final report. |
+
+## Baseline conclusion
+
+SARA-OMEGA has a stronger-than-zero technical foundation for SOC 2 readiness, particularly in exact-source CI/CD evidence, technical security gating, adversarial review, epistemic governance, production attestation, recovery evidence, and evidence integrity. The dominant gaps are organizational and operational: enterprise risk management, human IAM lifecycle, incident response, vendor management, data classification/retention, formal policies/training, control ownership, and sustained period evidence.
+
+The internal target is therefore not "SOC 2 compliant." The next target is:
+
+`SOC2_READINESS_INTERNAL = PARTIAL`
+
+with a controlled path to internal PASS after all in-scope controls have owners, approved design, evidence cadence, exception handling, and sufficient operating evidence for the intended examination type/period.
