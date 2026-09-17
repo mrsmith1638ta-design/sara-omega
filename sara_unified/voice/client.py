@@ -1,5 +1,6 @@
 import httpx
 
+from .controls import SynthesisControls
 from .profile import SARA_VOICE_PROFILE
 
 
@@ -21,14 +22,7 @@ class PiperVoiceClient:
         self.service_token = token
         self.timeout_seconds = float(timeout_seconds)
 
-    def synthesize(self, text: str) -> bytes:
-        payload = {
-            "text": text,
-            "length_scale": SARA_VOICE_PROFILE.length_scale,
-            "noise_scale": SARA_VOICE_PROFILE.noise_scale,
-            "noise_w_scale": SARA_VOICE_PROFILE.noise_w_scale,
-            "volume": SARA_VOICE_PROFILE.volume,
-        }
+    def _post_synthesis(self, payload: dict[str, object]) -> bytes:
         try:
             with httpx.Client(timeout=self.timeout_seconds) as client:
                 response = client.post(
@@ -46,3 +40,24 @@ class PiperVoiceClient:
         if not response.content:
             raise VoiceSynthesisError("Piper service returned empty audio")
         return bytes(response.content)
+
+    def synthesize(self, text: str) -> bytes:
+        payload = {
+            "text": text,
+            "length_scale": SARA_VOICE_PROFILE.length_scale,
+            "noise_scale": SARA_VOICE_PROFILE.noise_scale,
+            "noise_w_scale": SARA_VOICE_PROFILE.noise_w_scale,
+            "volume": SARA_VOICE_PROFILE.volume,
+        }
+        return self._post_synthesis(payload)
+
+    def synthesize_with_controls(self, text: str, controls: SynthesisControls) -> bytes:
+        return self._post_synthesis(
+            {
+                "text": text,
+                "length_scale": controls.length_scale,
+                "noise_scale": controls.noise_scale,
+                "noise_w_scale": controls.noise_w_scale,
+                "volume": controls.volume,
+            }
+        )

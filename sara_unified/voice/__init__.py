@@ -1,5 +1,6 @@
 from .client import PiperVoiceClient, VoiceSynthesisError
 from .controls import SpeechRate, SynthesisControls, speech_controls_for
+from .jobs import VoiceJob, VoiceJobManager
 from .profile import SARA_VOICE_PROFILE, VoiceProfile
 from .pronunciation import PronunciationDictionary, PronunciationRule
 from .receipts import AudioReceipt, build_audio_receipt
@@ -16,6 +17,8 @@ __all__ = [
     "VoiceProfile",
     "VoiceSegment",
     "VoiceSynthesisError",
+    "VoiceJob",
+    "VoiceJobManager",
     "build_audio_receipt",
     "speech_controls_for",
     "split_sentences",
