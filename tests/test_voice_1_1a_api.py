@@ -418,3 +418,26 @@ def test_disabled_job_gate_precedes_strict_body_validation(monkeypatch, tmp_path
     response = client.post(JOBS, json={"tenant_id": "forged"})
 
     assert response.status_code == 404
+
+
+def test_revoked_entitlement_blocks_every_existing_job_route(monkeypatch, tmp_path):
+    configure_runtime(monkeypatch, tmp_path)
+    install_fake_manager(monkeypatch)
+    account, token = provision_entitled_voice_user()
+    created = client.post(
+        JOBS,
+        headers=bearer(token),
+        json={"text": "Revoke this access.", "preserve_transcript": True},
+    )
+    job_id = created.json()["job_id"]
+    segment_id = created.json()["segments"][0]["segment_id"]
+    VoiceAccessibilityStore.from_env(required=True).revoke_entitlement(account.user_uuid, "owner")
+
+    get_paths = (
+        f"{JOBS}/{job_id}",
+        f"{JOBS}/{job_id}/receipts",
+        f"{JOBS}/{job_id}/transcript",
+        f"{JOBS}/{job_id}/segments/{segment_id}/audio",
+    )
+    assert all(client.get(path, headers=bearer(token)).status_code == 403 for path in get_paths)
+    assert client.post(f"{JOBS}/{job_id}/stop", headers=bearer(token)).status_code == 403
