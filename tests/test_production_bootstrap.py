@@ -13,6 +13,7 @@ def _configure(monkeypatch, tmp_path, *, dedicated=False):
     monkeypatch.setenv("SARA_FAILSAFE_REQUIRE_DEDICATED_MOUNT", "true" if dedicated else "false")
     monkeypatch.setenv("SARA_FAILSAFE_MIN_FREE_BYTES", "1024")
     monkeypatch.delenv("SARA_PRODUCTION_ALLOW_INSECURE_OVERRIDE", raising=False)
+    monkeypatch.delenv("RAILWAY_GIT_COMMIT_SHA", raising=False)
     monkeypatch.delenv("SARA_SOURCE_COMMIT_SHA", raising=False)
 
 
@@ -30,6 +31,18 @@ def test_preflight_checkpoint_and_cross_boot_persistence(monkeypatch, tmp_path):
     assert second["persistence_observed_across_boots"] is True
     assert second["persistence_status"] == "PROVEN"
     assert second["production_accepted"] is True
+
+
+def test_preflight_prefers_railway_deployment_commit_sha(monkeypatch, tmp_path):
+    _configure(monkeypatch, tmp_path, dedicated=False)
+    deployed_sha = "2" * 40
+    stale_operator_sha = "1" * 40
+    monkeypatch.setenv("RAILWAY_GIT_COMMIT_SHA", deployed_sha)
+    monkeypatch.setenv("SARA_SOURCE_COMMIT_SHA", stale_operator_sha)
+
+    evidence = bootstrap.run_preflight()
+
+    assert evidence["source_commit_sha"] == deployed_sha
 
 
 def test_preflight_exposes_valid_source_commit_sha(monkeypatch, tmp_path):
