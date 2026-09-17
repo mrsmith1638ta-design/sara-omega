@@ -11,6 +11,7 @@ import os
 import uvicorn
 from fastapi.responses import HTMLResponse
 
+from app.voice_console_http import register_voice_console_routes
 from SARA_AI_Product_Manager_Adaptive_Tutor_UNIFIED import (
     register_internal_provider_routes,
     register_tutor_routes,
@@ -112,6 +113,8 @@ load(); setInterval(load,15000);
 
 
 def register_ui_routes(app) -> None:
+    register_voice_console_routes(app)
+
     @app.get("/app", response_class=HTMLResponse, include_in_schema=False)
     @app.get("/ui", response_class=HTMLResponse, include_in_schema=False)
     def sara_ui() -> HTMLResponse:
