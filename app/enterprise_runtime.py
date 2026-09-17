@@ -30,6 +30,7 @@ from .titan import (
 from .iot.router import router as iot_router
 from .user_gateway import router as user_gateway_router
 from .user_identity_http import router as user_identity_router
+from .voice_accessibility_http import router as voice_accessibility_router
 
 router = APIRouter()
 runtime_assurance = RuntimeAssuranceEngine()
@@ -190,3 +191,4 @@ router.include_router(ats_intelligence_router)
 router.include_router(iot_router)
 router.include_router(user_identity_router)
 router.include_router(user_gateway_router)
+router.include_router(voice_accessibility_router)

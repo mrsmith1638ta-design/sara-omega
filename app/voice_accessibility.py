@@ -364,6 +364,26 @@ class VoiceAccessibilityStore:
         except sqlite3.Error as exc:
             raise VoiceAccessStoreError("entitlement_revoke_failed") from exc
 
+    def entitlement_summary(self, user_uuid: str) -> dict[str, str | None]:
+        user_uuid = _validated_uuid(user_uuid, "user_identity_rejected")
+        try:
+            with closing(self._connect()) as conn:
+                row = conn.execute(
+                    "SELECT status,not_before,expires_at,created_at,updated_at FROM voice_entitlements WHERE user_uuid=?",
+                    (user_uuid,),
+                ).fetchone()
+        except sqlite3.Error as exc:
+            raise VoiceAccessStoreError("entitlement_read_failed") from exc
+        if row is None:
+            raise VoiceAccessRejected("entitlement_not_found")
+        return {
+            "status": str(row["status"]),
+            "not_before": str(row["not_before"]),
+            "expires_at": str(row["expires_at"]) if row["expires_at"] is not None else None,
+            "created_at": str(row["created_at"]),
+            "updated_at": str(row["updated_at"]),
+        }
+
     def resolve_access(
         self,
         user_uuid: str,

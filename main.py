@@ -852,11 +852,6 @@ def get_voice_job_receipts(job_id: str, req: Request):
     return {"job_id": job_id, "receipts": [receipt.public_dict() for receipt in job.receipts]}
 
 
-@app.post("/v1/accessibility/voice/jobs")
-def accessibility_voice_jobs_gated():
-    raise HTTPException(404, "Voice accessibility public API is not enabled for Voice 1.1")
-
-
 @app.get("/metrics")
 def metrics():
     configured = 1 if FAILSAFE.configured else 0
