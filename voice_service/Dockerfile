@@ -15,4 +15,4 @@ COPY voice_service ./voice_service
 
 EXPOSE 5000
 
-CMD ["uvicorn", "voice_service.app:create_default_app", "--factory", "--host", "0.0.0.0", "--port", "5000"]
+CMD ["sh", "-lc", "python -m voice_service.bootstrap && exec uvicorn voice_service.app:create_default_app --factory --host 0.0.0.0 --port 5000"]
