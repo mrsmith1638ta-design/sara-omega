@@ -1,4 +1,5 @@
 import hashlib
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -115,6 +116,25 @@ def test_voice_service_health_includes_model_integrity_metadata():
     assert body["model_sha256"] == "a" * 64
     assert body["model_path"] == "/models/en_GB-cori-high.onnx"
     assert body["reused_existing_model"] is True
+
+
+def test_voice_service_health_reads_bootstrap_metadata_file(tmp_path, monkeypatch):
+    from voice_service.app import _model_integrity_from_env
+
+    model = tmp_path / "en_GB-cori-high.onnx"
+    model.write_bytes(b"test-cori-model")
+    metadata = {
+        "model_path": str(model),
+        "model_sha256": hashlib.sha256(model.read_bytes()).hexdigest(),
+        "reused_existing_model": True,
+    }
+    (tmp_path / ".sara-piper-bootstrap.json").write_text(json.dumps(metadata), encoding="utf-8")
+    monkeypatch.delenv("PIPER_MODEL_SHA256", raising=False)
+    monkeypatch.delenv("PIPER_MODEL_REUSED_EXISTING", raising=False)
+
+    integrity = _model_integrity_from_env(str(model))
+
+    assert integrity == metadata
 
 
 def test_cori_model_hash_is_pinned():

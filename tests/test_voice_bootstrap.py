@@ -1,4 +1,5 @@
 import hashlib
+import json
 
 import pytest
 
@@ -65,6 +66,24 @@ def test_bootstrap_reports_reused_existing_persistent_assets(tmp_path, monkeypat
     assert result.config_path == config
     assert result.model_sha256 == expected
     assert result.reused_existing is True
+
+
+def test_bootstrap_writes_persistent_metadata_for_service_health(tmp_path, monkeypatch):
+    import voice_service.bootstrap as bootstrap
+
+    model = tmp_path / "en_GB-cori-high.onnx"
+    config = tmp_path / "en_GB-cori-high.onnx.json"
+    model.write_bytes(b"existing-cori")
+    config.write_text("{}", encoding="utf-8")
+    expected = hashlib.sha256(model.read_bytes()).hexdigest()
+    monkeypatch.setattr(bootstrap, "EXPECTED_MODEL_SHA256", expected)
+
+    result = bootstrap.ensure_cori_model(tmp_path, downloader=lambda *_: (_ for _ in ()).throw(AssertionError()))
+    metadata = json.loads((tmp_path / bootstrap.METADATA_NAME).read_text(encoding="utf-8"))
+
+    assert metadata["model_path"] == str(result.model_path)
+    assert metadata["model_sha256"] == expected
+    assert metadata["reused_existing_model"] is True
 
 
 def test_bootstrap_fails_closed_on_bad_downloaded_digest(tmp_path, monkeypatch):

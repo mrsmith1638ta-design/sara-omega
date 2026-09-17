@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import sys
 import urllib.request
@@ -12,6 +13,7 @@ MODEL_NAME = "en_GB-cori-high.onnx"
 CONFIG_NAME = f"{MODEL_NAME}.json"
 MODEL_BASE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/cori/high/"
 EXPECTED_MODEL_SHA256 = "470b4dd634c98f8a4850d7626ffc3dfc90774628eeef6605a6dd8f88f30a5903"
+METADATA_NAME = ".sara-piper-bootstrap.json"
 
 Downloader = Callable[[str, Path], None]
 
@@ -38,6 +40,18 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _write_metadata(result: BootstrapResult) -> None:
+    metadata = {
+        "model_path": str(result.model_path),
+        "model_sha256": result.model_sha256,
+        "reused_existing_model": result.reused_existing,
+    }
+    destination = result.model_path.parent / METADATA_NAME
+    temp = destination.with_suffix(destination.suffix + ".tmp")
+    temp.write_text(json.dumps(metadata, sort_keys=True), encoding="utf-8")
+    temp.replace(destination)
+
+
 def ensure_cori_model(model_dir: Path | str, *, downloader: Downloader = _download) -> BootstrapResult:
     root = Path(model_dir)
     root.mkdir(parents=True, exist_ok=True)
@@ -48,9 +62,12 @@ def ensure_cori_model(model_dir: Path | str, *, downloader: Downloader = _downlo
         actual = _sha256(model)
         if actual == EXPECTED_MODEL_SHA256:
             print(f"Verified persistent Cori model SHA-256: {actual}", flush=True)
-            return BootstrapResult(model, config, actual, True)
+            result = BootstrapResult(model, config, actual, True)
+            _write_metadata(result)
+            return result
         model.unlink(missing_ok=True)
         config.unlink(missing_ok=True)
+        (root / METADATA_NAME).unlink(missing_ok=True)
 
     downloader(MODEL_BASE_URL + MODEL_NAME, model)
     downloader(MODEL_BASE_URL + CONFIG_NAME, config)
@@ -62,12 +79,15 @@ def ensure_cori_model(model_dir: Path | str, *, downloader: Downloader = _downlo
     if actual != EXPECTED_MODEL_SHA256:
         model.unlink(missing_ok=True)
         config.unlink(missing_ok=True)
+        (root / METADATA_NAME).unlink(missing_ok=True)
         raise RuntimeError(
             f"Piper Cori model SHA-256 mismatch: expected {EXPECTED_MODEL_SHA256}, got {actual}"
         )
 
     print(f"Downloaded and verified Cori model SHA-256: {actual}", flush=True)
-    return BootstrapResult(model, config, actual, False)
+    result = BootstrapResult(model, config, actual, False)
+    _write_metadata(result)
+    return result
 
 
 def main() -> int:

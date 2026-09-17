@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import os
 import secrets
 import wave
@@ -15,6 +16,7 @@ from pydantic import BaseModel, Field
 MODEL_ID = "en_GB-cori-high"
 EXPECTED_MODEL_FILENAME = f"{MODEL_ID}.onnx"
 EXPECTED_MODEL_SHA256 = "470b4dd634c98f8a4850d7626ffc3dfc90774628eeef6605a6dd8f88f30a5903"
+BOOTSTRAP_METADATA_NAME = ".sara-piper-bootstrap.json"
 
 
 class SynthesisRequest(BaseModel):
@@ -96,6 +98,18 @@ def _load_engine_from_env() -> VoiceEngine:
 
 
 def _model_integrity_from_env(model_path: str) -> dict[str, object]:
+    metadata_path = Path(model_path).parent / BOOTSTRAP_METADATA_NAME
+    if metadata_path.is_file():
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            metadata = {}
+        if metadata.get("model_path") == model_path:
+            return {
+                "model_sha256": str(metadata.get("model_sha256", EXPECTED_MODEL_SHA256)),
+                "model_path": model_path,
+                "reused_existing_model": bool(metadata.get("reused_existing_model", False)),
+            }
     return {
         "model_sha256": os.getenv("PIPER_MODEL_SHA256", EXPECTED_MODEL_SHA256),
         "model_path": model_path,
