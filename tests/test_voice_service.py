@@ -96,6 +96,27 @@ def test_voice_service_health_reports_ready_engine():
     assert response.json() == {"alive": True, "ready": True, "model_id": "en_GB-cori-high"}
 
 
+def test_voice_service_health_includes_model_integrity_metadata():
+    from voice_service.app import create_voice_service
+
+    app = create_voice_service(
+        engine=FakePiperEngine(),
+        service_token="secret",
+        model_integrity={
+            "model_sha256": "a" * 64,
+            "model_path": "/models/en_GB-cori-high.onnx",
+            "reused_existing_model": True,
+        },
+    )
+    client = TestClient(app)
+
+    body = client.get("/health").json()
+
+    assert body["model_sha256"] == "a" * 64
+    assert body["model_path"] == "/models/en_GB-cori-high.onnx"
+    assert body["reused_existing_model"] is True
+
+
 def test_cori_model_hash_is_pinned():
     from voice_service.app import EXPECTED_MODEL_SHA256
 

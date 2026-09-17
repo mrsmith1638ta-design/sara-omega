@@ -4,6 +4,7 @@ import hashlib
 import os
 import sys
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
@@ -13,6 +14,14 @@ MODEL_BASE_URL = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/
 EXPECTED_MODEL_SHA256 = "470b4dd634c98f8a4850d7626ffc3dfc90774628eeef6605a6dd8f88f30a5903"
 
 Downloader = Callable[[str, Path], None]
+
+
+@dataclass(frozen=True)
+class BootstrapResult:
+    model_path: Path
+    config_path: Path
+    model_sha256: str
+    reused_existing: bool
 
 
 def _download(url: str, destination: Path) -> None:
@@ -29,7 +38,7 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def ensure_cori_model(model_dir: Path | str, *, downloader: Downloader = _download) -> tuple[Path, Path]:
+def ensure_cori_model(model_dir: Path | str, *, downloader: Downloader = _download) -> BootstrapResult:
     root = Path(model_dir)
     root.mkdir(parents=True, exist_ok=True)
     model = root / MODEL_NAME
@@ -39,7 +48,7 @@ def ensure_cori_model(model_dir: Path | str, *, downloader: Downloader = _downlo
         actual = _sha256(model)
         if actual == EXPECTED_MODEL_SHA256:
             print(f"Verified persistent Cori model SHA-256: {actual}", flush=True)
-            return model, config
+            return BootstrapResult(model, config, actual, True)
         model.unlink(missing_ok=True)
         config.unlink(missing_ok=True)
 
@@ -58,15 +67,17 @@ def ensure_cori_model(model_dir: Path | str, *, downloader: Downloader = _downlo
         )
 
     print(f"Downloaded and verified Cori model SHA-256: {actual}", flush=True)
-    return model, config
+    return BootstrapResult(model, config, actual, False)
 
 
 def main() -> int:
     model_path = Path(os.getenv("PIPER_MODEL_PATH", "/models/en_GB-cori-high.onnx"))
     if model_path.name != MODEL_NAME:
         raise RuntimeError(f"PIPER_MODEL_PATH must end with {MODEL_NAME}")
-    model, _ = ensure_cori_model(model_path.parent)
-    os.environ["PIPER_MODEL_PATH"] = str(model)
+    result = ensure_cori_model(model_path.parent)
+    os.environ["PIPER_MODEL_PATH"] = str(result.model_path)
+    os.environ["PIPER_MODEL_SHA256"] = result.model_sha256
+    os.environ["PIPER_MODEL_REUSED_EXISTING"] = "true" if result.reused_existing else "false"
     return 0
 
 

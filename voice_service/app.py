@@ -95,17 +95,36 @@ def _load_engine_from_env() -> VoiceEngine:
     return PiperEngine(str(model))
 
 
-def create_voice_service(*, engine: VoiceEngine | None = None, service_token: str | None = None) -> FastAPI:
+def _model_integrity_from_env(model_path: str) -> dict[str, object]:
+    return {
+        "model_sha256": os.getenv("PIPER_MODEL_SHA256", EXPECTED_MODEL_SHA256),
+        "model_path": model_path,
+        "reused_existing_model": os.getenv("PIPER_MODEL_REUSED_EXISTING", "false").lower() == "true",
+    }
+
+
+def create_voice_service(
+    *,
+    engine: VoiceEngine | None = None,
+    service_token: str | None = None,
+    model_integrity: dict[str, object] | None = None,
+) -> FastAPI:
     token = (service_token if service_token is not None else os.getenv("SARA_VOICE_SERVICE_TOKEN", "")).strip()
     if not token:
         raise RuntimeError("SARA voice service token is required")
 
-    voice_engine = engine or _load_engine_from_env()
+    if engine is None:
+        model_path = os.getenv("PIPER_MODEL_PATH", "")
+        voice_engine = _load_engine_from_env()
+        integrity = model_integrity or _model_integrity_from_env(model_path)
+    else:
+        voice_engine = engine
+        integrity = model_integrity or {}
     app = FastAPI(title="SARA OMEGA Piper Voice Service", version="1.0.0")
 
     @app.get("/health")
     def health():
-        return {"alive": True, "ready": True, "model_id": MODEL_ID}
+        return {"alive": True, "ready": True, "model_id": MODEL_ID, **integrity}
 
     @app.post("/synthesize")
     def synthesize(

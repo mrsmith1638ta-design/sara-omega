@@ -17,11 +17,13 @@ def test_bootstrap_downloads_missing_cori_assets_and_verifies_digest(tmp_path, m
         else:
             destination.write_text('{"audio": {"sample_rate": 22050}}', encoding="utf-8")
 
-    model, config = bootstrap.ensure_cori_model(tmp_path, downloader=downloader)
+    result = bootstrap.ensure_cori_model(tmp_path, downloader=downloader)
 
-    assert model.name == "en_GB-cori-high.onnx"
-    assert config.name == "en_GB-cori-high.onnx.json"
-    assert model.read_bytes() == expected_bytes
+    assert result.model_path.name == "en_GB-cori-high.onnx"
+    assert result.config_path.name == "en_GB-cori-high.onnx.json"
+    assert result.model_path.read_bytes() == expected_bytes
+    assert result.model_sha256 == hashlib.sha256(expected_bytes).hexdigest()
+    assert result.reused_existing is False
     assert [name for _, name in calls] == ["en_GB-cori-high.onnx", "en_GB-cori-high.onnx.json"]
 
 
@@ -37,10 +39,32 @@ def test_bootstrap_reuses_verified_persistent_assets(tmp_path, monkeypatch):
     def forbidden_downloader(url, destination):
         raise AssertionError("verified persistent assets must not be downloaded again")
 
-    resolved_model, resolved_config = bootstrap.ensure_cori_model(tmp_path, downloader=forbidden_downloader)
+    result = bootstrap.ensure_cori_model(tmp_path, downloader=forbidden_downloader)
 
-    assert resolved_model == model
-    assert resolved_config == config
+    assert result.model_path == model
+    assert result.config_path == config
+    assert result.reused_existing is True
+
+
+def test_bootstrap_reports_reused_existing_persistent_assets(tmp_path, monkeypatch):
+    import voice_service.bootstrap as bootstrap
+
+    model = tmp_path / "en_GB-cori-high.onnx"
+    config = tmp_path / "en_GB-cori-high.onnx.json"
+    model.write_bytes(b"existing-cori")
+    config.write_text("{}", encoding="utf-8")
+    expected = hashlib.sha256(model.read_bytes()).hexdigest()
+    monkeypatch.setattr(bootstrap, "EXPECTED_MODEL_SHA256", expected)
+
+    def forbidden_downloader(url, destination):
+        raise AssertionError("verified persistent assets must not be downloaded again")
+
+    result = bootstrap.ensure_cori_model(tmp_path, downloader=forbidden_downloader)
+
+    assert result.model_path == model
+    assert result.config_path == config
+    assert result.model_sha256 == expected
+    assert result.reused_existing is True
 
 
 def test_bootstrap_fails_closed_on_bad_downloaded_digest(tmp_path, monkeypatch):
