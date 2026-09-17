@@ -55,6 +55,9 @@ def test_chatgpt_action_gateway_reports_runtime_status(monkeypatch):
     assert body["version"] == "3.2.1"
     assert "fail_closed_claim_suppression" == body["runtime_assurance"]["policy"]
     assert "solve" in body["allowed_operations"]
+    assert body["model_sovereignty"]["module"] == "sara-model-sovereignty"
+    assert body["model_sovereignty"]["agent_model_lifecycle_authority"] is False
+    assert "INV-AI-SELF-01" in body["model_sovereignty"]["invariants"]
 
 
 def test_chatgpt_action_gateway_solves_through_sara_omega(monkeypatch):

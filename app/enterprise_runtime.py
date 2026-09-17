@@ -4,6 +4,11 @@ from .ats_intelligence import ATS_PROFILE_VERSION, router as ats_intelligence_ro
 from .concentration import ConcentrationGovernor, ConcentrationRequest
 from .hawkins_chaos import HawkinsChaosEngine, HawkinsChaosRequest
 from .madhouse import MadhouseAgent, MadhouseReviewRequest
+from .model_sovereignty import (
+    MODEL_SOVEREIGNTY_VERSION,
+    get_service as get_model_sovereignty_service,
+    router as model_sovereignty_router,
+)
 from .epistemic import EpistemicAgent, EpistemicReviewRequest
 from .module_awareness import (
     HarmonizeRequest,
@@ -61,11 +66,25 @@ module_awareness.register(
         },
     )
 )
+module_awareness.register(
+    ModuleRecord(
+        service="sara-model-sovereignty",
+        status="integrated",
+        version=MODEL_SOVEREIGNTY_VERSION,
+        metadata={
+            "execution_authority": False,
+            "agent_model_lifecycle_authority": False,
+            "deployment_authority": False,
+            "cryptographic_model_allowlist": True,
+        },
+    )
+)
 titan = TitanEngine(module_awareness)
 hawkins_chaos = HawkinsChaosEngine()
 concentration_governor = ConcentrationGovernor()
 madhouse = MadhouseAgent()
 epistemic = EpistemicAgent()
+model_sovereignty = get_model_sovereignty_service()
 
 
 @router.get("/runtime-assurance/health")
@@ -149,6 +168,8 @@ async def epistemic_health(): return epistemic.health()
 async def epistemic_review(request: EpistemicReviewRequest): return epistemic.review(request)
 @router.get("/concentration/health")
 async def concentration_health(): return concentration_governor.health()
+@router.get("/model-sovereignty/summary")
+async def model_sovereignty_summary(): return model_sovereignty.health()
 @router.post("/concentration/analyze")
 async def concentration_analyze(request: ConcentrationRequest): return concentration_governor.analyze(request)
 @router.post("/titan/voice/emit")
@@ -188,6 +209,7 @@ async def titan_apex_execute_gate(request: ExecuteGateRequest):
 async def titan_sovereignty_sweep(request: SovereigntySweepRequest): return titan.sovereignty_sweep(request)
 
 router.include_router(ats_intelligence_router)
+router.include_router(model_sovereignty_router)
 router.include_router(iot_router)
 router.include_router(user_identity_router)
 router.include_router(user_gateway_router)

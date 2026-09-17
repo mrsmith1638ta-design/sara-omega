@@ -44,6 +44,7 @@ from app.enterprise_runtime import (
     epistemic,
     hawkins_chaos,
     madhouse,
+    model_sovereignty,
     module_awareness,
     router as enterprise_runtime_router,
     runtime_assurance,
@@ -439,6 +440,7 @@ def gateway_status() -> Dict[str, Any]:
         "concentration_governor": concentration_governor.health(),
         "hawkins_chaos": hawkins_chaos.health(),
         "madhouse": madhouse.health(),
+        "model_sovereignty": model_sovereignty.health(),
         "titan": titan.health(),
         "allowed_operations": list(GPTActionOperation.__args__),
     }
@@ -904,6 +906,7 @@ def health():
             "vision": ENABLE_GCP and FEATURE_VISION,
             "context_dev_policy_gate": True,
             "ats_intelligence": True,
+            "model_sovereignty": True,
         },
         "context_dev": CONTEXT_DEV_LICENSE.public_status(),
         "client_state": {
