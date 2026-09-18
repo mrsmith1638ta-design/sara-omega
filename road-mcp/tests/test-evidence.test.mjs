@@ -588,7 +588,12 @@ function releaseEvidenceRecords(overrides = {}) {
       evidenceState: "VERIFIED",
       source: "https://sara-omega-production-9bcf.up.railway.app/road/production-acceptance",
       checkedAt: "2026-09-15T05:04:53.000Z",
-      detail: `Promotion authority is explicitly scoped to SARA-OMEGA 3.4.0 at ${SARA_OMEGA_340_SHA}.`,
+      detail:
+        `Promotion authority is explicitly scoped to SARA-OMEGA 3.4.0 at ${SARA_OMEGA_340_SHA}; ` +
+        "the release includes the governed unified orchestration layer originally introduced at dec94b2, " +
+        "plus subsequent certified 3.4.0 lineage additions including causal authority and the expert reasoning fabric. " +
+        `ROAD SIGN/RELEASE evidence is bound to ${SARA_OMEGA_340_SHA}, not dec94b2. ` +
+        "This certifies the GPT-native enterprise governance release boundary and does not alter preserved Voice 1.0/1.1 evidence capsules.",
       hash: "sara-omega-3.4.0-promotion",
       ...overrides.promotion,
     },

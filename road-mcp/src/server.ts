@@ -366,7 +366,10 @@ export function loadReleaseClearingEvidence(): EvidenceRecord[] {
       checkedAt,
       detail:
         `Promotion authority is explicitly scoped to SARA-OMEGA 3.4.0 at ${SARA_OMEGA_340_RELEASE_SHA}; ` +
-        "it certifies the GPT-native enterprise governance release boundary and does not alter preserved Voice 1.0/1.1 evidence capsules.",
+        "the release includes the governed unified orchestration layer originally introduced at dec94b2, " +
+        "plus subsequent certified 3.4.0 lineage additions including causal authority and the expert reasoning fabric. " +
+        `ROAD SIGN/RELEASE evidence is bound to ${SARA_OMEGA_340_RELEASE_SHA}, not dec94b2. ` +
+        "This certifies the GPT-native enterprise governance release boundary and does not alter preserved Voice 1.0/1.1 evidence capsules.",
       hash: sha256Hex(`${CANONICAL_RELEASE_VERSION}:release:${SARA_OMEGA_340_RELEASE_SHA}`),
     },
   ];
