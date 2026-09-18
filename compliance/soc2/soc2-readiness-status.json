@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.2",
+  "assessment_type": "INTERNAL_SOC2_READINESS",
+  "assessment_date": "2026-09-17",
+  "framework_basis": [
+    "AICPA Trust Services Criteria",
+    "AICPA TQA Section 9561 (2026-09-11) regarding service-organization use of AI in SOC examinations"
+  ],
+  "initial_scope": {
+    "primary_category": "Security",
+    "secondary_categories": [
+      "Availability",
+      "Processing Integrity",
+      "Confidentiality",
+      "Privacy"
+    ],
+    "secondary_scope_state": "PENDING_MANAGEMENT_AND_CUSTOMER_COMMITMENTS"
+  },
+  "internal_readiness": "PARTIAL",
+  "external_soc2_status": "NOT_ATTESTED_BY_THIS_ARTIFACT",
+  "independent_auditor_required": true,
+  "truth_boundary": {
+    "road_may_collect_evidence": true,
+    "road_may_verify_internal_readiness": true,
+    "road_may_issue_soc2_opinion": false,
+    "road_may_claim_soc2_certification": false,
+    "road_may_claim_soc2_compliance_without_applicable_independent_report": false
+  },
+  "verified_branch_baseline": {
+    "commit": "fd07fbe63391474c8ef487c9b878282dbeac8ec0",
+    "sara_unified_validation": "PASS",
+    "sara_omega_v321_validation": "PASS",
+    "sbom_artifact_present": true
+  },
+  "technical_evidence_strengths": [
+    "exact_commit_ci",
+    "dependency_vulnerability_audit",
+    "tests_and_compile",
+    "container_build",
+    "sbom_generation",
+    "adversarial_review",
+    "epistemic_claim_review",
+    "governance_gate_evidence",
+    "privacy_gate_evidence",
+    "recovery_gate_evidence",
+    "production_attestation",
+    "evidence_hashing_and_traceability"
+  ],
+  "operational_control_artifacts": [
+    "SOC2_READINESS_CONSTITUTION.md",
+    "SOC2_CONTROL_MATRIX.md",
+    "SOC2_RISK_REGISTER.md",
+    "SOC2_CONTROL_OWNERSHIP_AND_EVIDENCE.md",
+    "INCIDENT_RESPONSE_PLAN.md",
+    "VENDOR_AND_SUBPROCESSOR_MANAGEMENT.md",
+    "DATA_CLASSIFICATION_RETENTION.md",
+    "PRIVILEGED_ACCESS_REVIEW.md",
+    "PRODUCTION_DATA_FLOW_INVENTORY.md",
+    "VENDOR_SUBPROCESSOR_REGISTER.md",
+    "BCP_RTO_RPO_BASELINE.md",
+    "INCIDENT_TABLETOP_001.md"
+  ],
+  "control_states": {
+    "main_branch_protection": "BLOCKED_ADMIN_CONFIGURATION",
+    "privileged_access_review": "PARTIAL",
+    "production_data_map": "PARTIAL",
+    "vendor_management": "PARTIAL",
+    "bcp_dr": "PARTIAL",
+    "incident_tabletop": "DESIGNED_NOT_YET_EXECUTED"
+  },
+  "blocking_or_incomplete_operational_areas": [
+    "main_branch_protection_and_required_review_enforcement",
+    "mfa_and_complete_privileged_identity_evidence",
+    "quarterly_privileged_access_review_operation",
+    "management_policy_approvals_and_review_history",
+    "vendor_due_diligence_records",
+    "complete_production_data_inventory_and_provider_retention_mapping",
+    "approved_retention_schedule_and_deletion_test",
+    "live_incident_tabletop_execution_and_corrective_actions",
+    "approved_rto_rpo_and_timed_restore_test",
+    "personnel_joiner_mover_leaver_controls",
+    "security_awareness_training_evidence",
+    "sustained_control_operation_for_intended_examination_period",
+    "independent_cpa_examination"
+  ],
+  "promotion_rule": "INTERNAL_PASS requires all mandatory in-scope controls to have current operating evidence for the intended period and no blocking exceptions. External SOC 2 status must remain separate and can only be supported by an applicable independent CPA report."
+}
