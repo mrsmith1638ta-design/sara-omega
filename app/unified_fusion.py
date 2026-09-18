@@ -48,6 +48,58 @@ class ModuleStatus(str, Enum):
     UNAVAILABLE = "UNAVAILABLE"
 
 
+class CausalFinalityDecision(str, Enum):
+    ACCEPT = "ACCEPT"
+    QUARANTINE = "QUARANTINE"
+    REVOKE = "REVOKE"
+    UNVERIFIED = "UNVERIFIED"
+
+
+@dataclass(frozen=True, order=True)
+class CausalEffect:
+    resource: str
+    effect: str
+    boundary: str
+
+    def key(self) -> str:
+        return f"{self.resource}:{self.effect}:{self.boundary}"
+
+
+@dataclass(frozen=True)
+class CausalScopeApproval:
+    approval_id: str
+    transaction_id: str
+    approved_effects: set[CausalEffect]
+    command_identity: str | None = None
+    approved_by: str | None = None
+
+
+@dataclass(frozen=True)
+class CausalFinalityResult:
+    decision: CausalFinalityDecision
+    approved_effects: set[CausalEffect]
+    actual_effects: set[CausalEffect]
+    unapproved_effects: set[CausalEffect]
+    missing_effects: set[CausalEffect]
+    blockers: list[str]
+    quarantined: bool
+
+
+@dataclass(frozen=True)
+class CausalNode:
+    node_id: str
+    depends_on: set[str] = field(default_factory=set)
+    execution_authority: bool = False
+    compromised: bool = False
+
+
+@dataclass(frozen=True)
+class TransitiveRevocationResult:
+    revoked_node_ids: set[str]
+    suspended_execution_authority: set[str]
+    updated_nodes: dict[str, CausalNode]
+
+
 @dataclass(frozen=True)
 class Evidence:
     evidence_id: str
@@ -301,6 +353,78 @@ class EpistemicResolver:
         return EpistemicState.INFERRED
 
 
+class CausalAuthorityEngine:
+    def reconcile_finality(
+        self,
+        approval: CausalScopeApproval,
+        actual_effects: set[CausalEffect],
+        actual_command_identity: str | None = None,
+    ) -> CausalFinalityResult:
+        approved = set(approval.approved_effects)
+        actual = set(actual_effects)
+        unapproved = actual - approved
+        missing = approved - actual
+        blockers: list[str] = []
+
+        if unapproved:
+            blockers.append("CAUSAL_SCOPE_VIOLATION")
+        if missing:
+            blockers.append("APPROVED_CAUSAL_EFFECT_MISSING")
+        if (
+            approval.command_identity
+            and actual_command_identity
+            and approval.command_identity == actual_command_identity
+            and (unapproved or missing)
+        ):
+            blockers.append("COMMAND_MATCH_DOES_NOT_OVERRIDE_CAUSAL_MISMATCH")
+
+        quarantined = bool(blockers)
+        return CausalFinalityResult(
+            decision=CausalFinalityDecision.QUARANTINE if quarantined else CausalFinalityDecision.ACCEPT,
+            approved_effects=approved,
+            actual_effects=actual,
+            unapproved_effects=unapproved,
+            missing_effects=missing,
+            blockers=blockers,
+            quarantined=quarantined,
+        )
+
+    def revoke_transitive_authority(
+        self,
+        graph: list[CausalNode],
+        compromised_node_ids: set[str],
+    ) -> TransitiveRevocationResult:
+        nodes = {node.node_id: node for node in graph}
+        revoked = set(compromised_node_ids) & set(nodes)
+        changed = True
+        while changed:
+            changed = False
+            for node in nodes.values():
+                if node.node_id not in revoked and node.depends_on & revoked:
+                    revoked.add(node.node_id)
+                    changed = True
+
+        updated: dict[str, CausalNode] = {}
+        suspended: set[str] = set()
+        for node_id, node in nodes.items():
+            if node_id in revoked:
+                suspended.add(node_id)
+                updated[node_id] = CausalNode(
+                    node_id=node.node_id,
+                    depends_on=set(node.depends_on),
+                    execution_authority=False,
+                    compromised=node.compromised or node_id in compromised_node_ids,
+                )
+            else:
+                updated[node_id] = node
+
+        return TransitiveRevocationResult(
+            revoked_node_ids=revoked,
+            suspended_execution_authority=suspended,
+            updated_nodes=updated,
+        )
+
+
 class ROADClient:
     def __init__(self, authoritative: bool = False) -> None:
         self.authoritative = authoritative
@@ -517,6 +641,10 @@ def health() -> dict[str, Any]:
         "self_healing_autonomous_production_mutation": False,
         "quantum_output_is_not_quantum_proof": True,
         "prediction_is_not_causation": True,
+        "causal_scope_authority": True,
+        "causal_finality_reconciliation": True,
+        "transitive_authority_revocation": True,
+        "causal_effects_exceeding_approval_quarantine": True,
     }
 
 

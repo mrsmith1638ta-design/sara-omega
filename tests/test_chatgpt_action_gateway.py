@@ -65,6 +65,9 @@ def test_chatgpt_action_gateway_reports_runtime_status(monkeypatch):
     assert body["unified_fusion"]["production_authority"] is False
     assert body["unified_fusion"]["release_authority"] is False
     assert body["unified_fusion"]["road_pass_fabrication"] is False
+    assert body["unified_fusion"]["causal_scope_authority"] is True
+    assert body["unified_fusion"]["causal_finality_reconciliation"] is True
+    assert body["unified_fusion"]["transitive_authority_revocation"] is True
 
 
 def test_chatgpt_action_gateway_solves_through_sara_omega(monkeypatch):
