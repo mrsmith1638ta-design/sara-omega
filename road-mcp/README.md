@@ -184,3 +184,9 @@ ROAD release-signing and promotion authority evidence was rebound to accepted
 production SHA `dec94b279d133641179680b02db0176c07490d9d`. The ROAD MCP
 deployment is a separate service deployment and does not redeploy
 `sara-omega` or `sara-piper-voice`.
+
+After remediating the CI audit toolchain vulnerability by requiring
+`pip>=26.2`, the causal-authority build was redeployed to `sara-omega` as
+Railway deployment `99f266cc-a0ea-482f-b598-993bb89a9842`. ROAD
+release-signing and promotion authority evidence was then rebound to accepted
+production SHA `2d8ef91a089608fb0f8ad0faa32672ed369496a1`.

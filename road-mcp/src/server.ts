@@ -51,8 +51,8 @@ export const BUILD_IMPLEMENTATION_EVIDENCE_ID = "build-implementation-evidence";
 export const SECURITY_AUDIT_EVIDENCE_ID = "security-audit-evidence";
 export const RELEASE_SIGNING_EVIDENCE_ID = "release-signing-evidence";
 export const PROMOTION_AUTHORITY_EVIDENCE_ID = "promotion-authority-evidence";
-export const SARA_OMEGA_340_RELEASE_SHA = "dec94b279d133641179680b02db0176c07490d9d";
-export const SARA_OMEGA_340_RAILWAY_DEPLOYMENT_ID = "3cb5afac-5b4d-46ed-8145-e302d1740220";
+export const SARA_OMEGA_340_RELEASE_SHA = "2d8ef91a089608fb0f8ad0faa32672ed369496a1";
+export const SARA_OMEGA_340_RAILWAY_DEPLOYMENT_ID = "99f266cc-a0ea-482f-b598-993bb89a9842";
 export const SARA_OMEGA_340_ACCEPTANCE_SOURCE =
   "https://sara-omega-production-9bcf.up.railway.app/road/production-acceptance";
 
