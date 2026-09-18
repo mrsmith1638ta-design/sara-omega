@@ -44,8 +44,8 @@ import { buildRoadGateEvidence, ROAD_GATE_EVIDENCE_IDS } from "../dist/roadGateE
 const VALID_SHA = "a".repeat(40);
 const OTHER_SHA = "b".repeat(40);
 const BLOCKING_SHA = "c".repeat(40);
-const SARA_OMEGA_340_SHA = "2d8ef91a089608fb0f8ad0faa32672ed369496a1";
-const SARA_OMEGA_340_DEPLOYMENT_ID = "99f266cc-a0ea-482f-b598-993bb89a9842";
+const SARA_OMEGA_340_SHA = "8f0829d93a0fe4186f70a6225f086b015c7f9c4a";
+const SARA_OMEGA_340_DEPLOYMENT_ID = "90c70a0b-a38c-48c8-9b1c-1522d03d079e";
 
 function attestation(overrides = {}) {
   return {

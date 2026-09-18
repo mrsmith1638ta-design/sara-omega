@@ -187,6 +187,6 @@ deployment is a separate service deployment and does not redeploy
 
 After remediating the CI audit toolchain vulnerability by requiring
 `pip>=26.2`, the causal-authority build was redeployed to `sara-omega` as
-Railway deployment `99f266cc-a0ea-482f-b598-993bb89a9842`. ROAD
+Railway deployment `90c70a0b-a38c-48c8-9b1c-1522d03d079e`. ROAD
 release-signing and promotion authority evidence was then rebound to accepted
-production SHA `2d8ef91a089608fb0f8ad0faa32672ed369496a1`.
+production SHA `8f0829d93a0fe4186f70a6225f086b015c7f9c4a`.
