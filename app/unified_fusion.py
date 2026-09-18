@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
+from .expert_reasoning import ExpertReasoningFabric
+
 
 UNIFIED_FUSION_VERSION = "1.0.0"
 
@@ -319,6 +321,35 @@ class SelfHealing(SaraModule):
         )
 
 
+class ExpertReasoning(SaraModule):
+    name = "expert_reasoning_fabric"
+
+    def __init__(self, fabric: ExpertReasoningFabric | None = None) -> None:
+        self.fabric = fabric or ExpertReasoningFabric()
+
+    async def evaluate(self, request: FusionRequest, context: dict[str, Any]) -> ModuleResult:
+        raw_evidence = request.payload.get("evidence", [])
+        if isinstance(raw_evidence, dict):
+            evidence = [raw_evidence]
+        elif isinstance(raw_evidence, list):
+            evidence = raw_evidence
+        else:
+            evidence = []
+
+        findings = self.fabric.synthesize(
+            request.objective,
+            evidence=evidence,
+            industries=request.payload.get("industries"),
+        )
+        return ModuleResult(
+            module=self.name,
+            status=ModuleStatus.OK,
+            findings=findings,
+            execution_authority=False,
+            release_authority=False,
+        )
+
+
 class Madhouse:
     async def attack(self, results: dict[str, ModuleResult]) -> tuple[bool, list[str]]:
         findings: list[str] = []
@@ -454,6 +485,7 @@ class SaraFusionEngine:
             SporqiC4(),
             SCMFSKAM(),
             Kinetics(),
+            ExpertReasoning(),
             SelfHealing(),
         ]
         self.madhouse = Madhouse()
@@ -482,6 +514,7 @@ class SaraFusionEngine:
                 "ROAD": {"eligible": True},
                 "ENTERPRISE_GOVERNANCE": {"eligible": True},
                 "UNIFIED_FUSION": {"eligible": True},
+                "EXPERT_REASONING_FABRIC": {"eligible": True},
             },
             "action_scopes": {
                 "ANALYZE": "sara.solve",
@@ -645,6 +678,15 @@ def health() -> dict[str, Any]:
         "causal_finality_reconciliation": True,
         "transitive_authority_revocation": True,
         "causal_effects_exceeding_approval_quarantine": True,
+        "expert_reasoning_fabric": True,
+        "phd_research_methodology": True,
+        "jd_legal_reasoning_methodology": True,
+        "edd_applied_education_methodology": True,
+        "ai_research_phd_methodology": True,
+        "dynamic_cross_industry_reasoning": True,
+        "claims_human_consciousness": False,
+        "claims_ai_consciousness": False,
+        "credential_impersonation": False,
     }
 
 
