@@ -83,3 +83,7 @@ def test_rh_router_activation():
         "Analyze the Riemann Hypothesis with Nyman Beurling, Baez-Duarte, Gram matrix and J_N."
     )
     assert "riemann_hypothesis" in routed
+    covariance_routed = ScienceRouter().route_text(
+        "Run Tail Attack II on the gcd covariance and Jordan totient layers."
+    )
+    assert "riemann_hypothesis" in covariance_routed
