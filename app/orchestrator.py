@@ -298,12 +298,7 @@ class SaraOmega:
                     "execution_authority": False,
                 },
                 "rh_global_reasoning_framework": rh_frame,
-                "rh_framework_instruction": (
-                    "Apply the RH mathematical proof discipline to this request: exact structure before inference, "
-                    "explicit dependencies and unknowns, preserve possible cancellation before lossy bounding, "
-                    "red-team circular or conclusion-strength premises, and do not exceed the evidence ceiling. "
-                    "Do not inject literal Riemann equations unless the request is actually RH-relevant."
-                ),
+                "rh_framework_instruction": self.rh_framework.instruction(rh_frame),
                 "claims": [c.model_dump() for c in claims],
                 "cross_examination": [item.model_dump() for item in cross_findings],
                 "stress_test": [item.model_dump() for item in stress_findings],
