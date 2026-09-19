@@ -2,9 +2,14 @@ import math
 
 from app.science.riemann.baez_duarte import (
     RiemannResearchEngine,
+    equation_registry,
+    finite_range_j_n,
     finite_range_psi_identity,
+    j_split_snapshot,
     mobius_sieve,
+    psi_n,
     residual_identity,
+    tail_residual_sawtooth,
     theta_n,
     theta_n_mobius_form,
     truncated_j_n,
@@ -39,6 +44,47 @@ def test_truncated_j_is_nonnegative_and_finite():
     value = truncated_j_n(8, 32)
     assert math.isfinite(value)
     assert value >= 0.0
+
+
+
+
+def test_tail_sawtooth_identity_matches_theta_minus_psi_n():
+    for n in (4, 8, 16):
+        theta = theta_n(n)
+        for y in (1.0, 2.5, float(n), float(n) + 7.25, 3.0 * n + 0.5):
+            direct = theta * y - psi_n(y, n)
+            saw = tail_residual_sawtooth(n, y)
+            assert math.isclose(direct, saw, rel_tol=1e-11, abs_tol=1e-11)
+
+
+def test_j_split_snapshot_is_exact_through_cutoff():
+    data = j_split_snapshot(8, 32)
+    assert data["finite_range_1_to_N"] == finite_range_j_n(8)
+    assert math.isclose(
+        data["finite_range_1_to_N"] + data["tail_window_N_to_cutoff"],
+        data["through_cutoff"],
+        rel_tol=1e-12,
+        abs_tol=1e-12,
+    )
+    assert data["tail_beyond_cutoff_uncomputed"] is True
+
+
+def test_conversation_equations_are_registered():
+    ids = {item.equation_id for item in equation_registry()}
+    required = {
+        "rh.constructive_residual",
+        "rh.mobius_divisor_identity",
+        "rh.log_mobius_divisor_identity",
+        "rh.finite_range_residual",
+        "rh.l2_exact",
+        "rh.j_n",
+        "rh.j_split",
+        "rh.tail_sawtooth",
+        "rh.stronger_finite_target",
+        "rh.sufficient_target",
+        "rh.sufficient_implication_chain",
+    }
+    assert required.issubset(ids)
 
 
 def test_engine_never_self_certifies_rh():
