@@ -20,6 +20,11 @@ class Settings:
     max_request_bytes: int = 1_000_000
     governance_enforcement_required: bool = False
     governance_signing_key: str = ""
+    governance_signer_url: str = ""
+    governance_signer_token: str = ""
+    governance_ed25519_key_id: str = ""
+    governance_ml_dsa_key_id: str = ""
+    governance_signer_timeout_seconds: float = 5.0
     governance_tenant_id: str = "default"
     voice_enabled: bool = False
     piper_service_url: str = "http://127.0.0.1:5000"
@@ -58,7 +63,18 @@ class Settings:
             governance_enforcement_required=(
                 os.getenv("SARA_GOVERNANCE_ENFORCEMENT_REQUIRED", "true").lower() == "true"
             ),
-            governance_signing_key=os.getenv("SARA_GOVERNANCE_SIGNING_KEY", ""),
+            governance_signing_key=(
+                os.getenv("SARA_GOVERNANCE_SIGNING_KEY", "")
+                if os.getenv("SARA_ALLOW_LEGACY_HMAC_SIGNER", "false").lower() == "true"
+                else ""
+            ),
+            governance_signer_url=os.getenv("SARA_GOVERNANCE_SIGNER_URL", "").strip(),
+            governance_signer_token=os.getenv("SARA_GOVERNANCE_SIGNER_TOKEN", "").strip(),
+            governance_ed25519_key_id=os.getenv("SARA_GOVERNANCE_ED25519_KEY_ID", "").strip(),
+            governance_ml_dsa_key_id=os.getenv("SARA_GOVERNANCE_ML_DSA_KEY_ID", "").strip(),
+            governance_signer_timeout_seconds=float(
+                os.getenv("SARA_GOVERNANCE_SIGNER_TIMEOUT_SECONDS", "5.0")
+            ),
             governance_tenant_id=os.getenv("SARA_GOVERNANCE_TENANT_ID", "default"),
             voice_enabled=os.getenv("SARA_VOICE_ENABLED", "false").lower() == "true",
             piper_service_url=os.getenv("SARA_PIPER_SERVICE_URL", cls.piper_service_url),
