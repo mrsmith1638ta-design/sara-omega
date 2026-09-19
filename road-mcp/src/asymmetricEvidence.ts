@@ -120,3 +120,35 @@ export function verifySaraDualKmsSignatures(
     results,
   };
 }
+
+function envRequired(env: NodeJS.ProcessEnv, name: string): string {
+  const value = env[name]?.trim();
+  if (!value) throw new Error(name + "_required");
+  return value;
+}
+
+function pemFromBase64(value: string): string {
+  const decoded = Buffer.from(value, "base64").toString("utf8");
+  if (!decoded.includes("BEGIN PUBLIC KEY")) throw new Error("public_key_pem_invalid");
+  return decoded;
+}
+
+export function loadPinnedSaraVerificationKeys(
+  env: NodeJS.ProcessEnv = process.env,
+): RoadVerificationKey[] {
+  return [
+    {
+      algorithm: "Ed25519",
+      keyId: envRequired(env, "ROAD_SARA_ED25519_KEY_ID"),
+      publicKeyPem: pemFromBase64(envRequired(env, "ROAD_SARA_ED25519_PUBLIC_KEY_B64")),
+      publicKeySha256: envRequired(env, "ROAD_SARA_ED25519_PUBLIC_KEY_SHA256").toLowerCase(),
+    },
+    {
+      algorithm: "ML-DSA",
+      keyId: envRequired(env, "ROAD_SARA_ML_DSA_KEY_ID"),
+      publicKeyPem: pemFromBase64(envRequired(env, "ROAD_SARA_ML_DSA_PUBLIC_KEY_B64")),
+      publicKeySha256: envRequired(env, "ROAD_SARA_ML_DSA_PUBLIC_KEY_SHA256").toLowerCase(),
+    },
+  ];
+}
+
