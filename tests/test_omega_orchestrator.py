@@ -21,7 +21,9 @@ class FakeAuthority:
     def authorize(self, problem, governance): return governance
 
 class FakeJudge:
+    def __init__(self): self.payloads=[]
     async def synthesize(self, payload):
+        self.payloads.append(payload)
         return {"decision":"ANSWER", "why":"synthesized", "confidence":0.8,
                 "council_findings":[], "critical_assumption":None,
                 "primary_risk":None, "evidence_gaps":[], "next_action":"none"}
@@ -111,3 +113,38 @@ async def test_durable_verdict_requires_successful_record_stage():
     assert verdict.integrity.durable is True
     assert verdict.decision_id is not None
     assert verdict.council_trace.completed[-1] == CouncilStage.RECORD
+
+@pytest.mark.asyncio
+async def test_every_request_carries_global_rh_reasoning_framework():
+    sara,_=build()
+    verdict=await sara.solve(Problem(query="Explain what a triangle is"))
+    frame=verdict.rh_framework
+    assert frame["framework"] == "RIEMANN_HYPOTHESIS_MATHEMATICAL_DISCIPLINE"
+    assert frame["framework_version"] == "rh-global-reasoning-v1"
+    assert frame["applied_to_every_request"] is True
+    assert frame["literal_rh_math"] is False
+    assert frame["promotion_gate"]["status"] == "ACTIVE"
+    assert sara.judge.payloads
+    payload=sara.judge.payloads[-1]
+    assert payload["rh_global_reasoning_framework"]["applied_to_every_request"] is True
+    assert "SARA GLOBAL RH REASONING FRAMEWORK" in payload["rh_framework_instruction"]
+    assert sara.signed_ledger.payloads[-1]["rh_framework"]["framework_version"] == "rh-global-reasoning-v1"
+
+
+@pytest.mark.asyncio
+async def test_rh_request_enables_literal_rh_math_inside_same_global_framework():
+    sara,_=build()
+    verdict=await sara.solve(Problem(query="Analyze the Riemann Hypothesis with the Nyman Beurling framework"))
+    assert verdict.rh_framework["applied_to_every_request"] is True
+    assert verdict.rh_framework["literal_rh_math"] is True
+    assert "full Riemann mathematical framework" in sara.judge.payloads[-1]["rh_framework_instruction"]
+
+
+@pytest.mark.asyncio
+async def test_governance_block_cannot_bypass_global_rh_framework():
+    sara,_=build(governance=FakeGovernance(Disposition.BLOCK))
+    verdict=await sara.solve(Problem(query="Blocked request"))
+    assert verdict.governance.disposition == Disposition.BLOCK
+    assert verdict.rh_framework["applied_to_every_request"] is True
+    assert verdict.rh_framework["final_ceiling"]["status"] == "GOVERNANCE_LIMITED"
+
