@@ -20,6 +20,7 @@ from sara_unified.evidence.passports import CapabilityPassport
 from sara_unified.evidence.signing import Ed25519Signer
 from sara_unified.api.schemas import RecoveryRequest, CounterfactualRequest, JuryRequest, IncidentRequest, TwinObservationRequest, VoiceSynthesisRequest
 from sara_unified.config import Settings
+from sara_unified.governance.asymmetric_signing import DualKmsSignerClient
 from sara_unified.governance.enforcement import (
     EnforcementProfile,
     GovernanceEnforcementError,
@@ -100,9 +101,25 @@ class SARAUnified:
             if self.settings.governance_signing_key
             else None
         )
+        evidence_signer=None
+        if (
+            self.settings.governance_signer_url
+            and self.settings.governance_signer_token
+            and self.settings.governance_ed25519_key_id
+            and self.settings.governance_ml_dsa_key_id
+        ):
+            evidence_signer=DualKmsSignerClient(
+                base_url=self.settings.governance_signer_url,
+                bearer_token=self.settings.governance_signer_token,
+                ed25519_key_id=self.settings.governance_ed25519_key_id,
+                ml_dsa_key_id=self.settings.governance_ml_dsa_key_id,
+                timeout_seconds=self.settings.governance_signer_timeout_seconds,
+                require_kms_backend=True,
+            )
         self.governance=governance_boundary or ProductionEnforcementBoundary(
             self.audit,
             signing_key=signing_key,
+            evidence_signer=evidence_signer,
             required=self.settings.governance_enforcement_required,
             tenant_id=self.settings.governance_tenant_id,
         )
