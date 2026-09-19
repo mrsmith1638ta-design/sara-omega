@@ -64,6 +64,16 @@ def main() -> int:
             weighted_transfer_proved=True,
             finite_period_only=True,
         ),
+        gate.evaluate_tail_attack_iv_claim(
+            "Use the finite subperiod dashboard to finish the weighted tail.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            mean_bound_sourced=False,
+            mean_target_proved=False,
+            covariance_target_proved=True,
+            discrepancy_target_proved=False,
+            combined_tail_claim=True,
+            finite_period_or_subperiod_only=True,
+        ),
     ]
     assert all(not item.allowed for item in false_claims)
 
@@ -94,6 +104,7 @@ def main() -> int:
         "finite_tail_asymptotic_promotion_blocked": True,
         "tail_attack_ii_covariance_only_promotion_blocked": True,
         "tail_attack_iii_period_to_tail_shortcut_blocked": True,
+        "tail_attack_iv_dependency_promotion_blocked": True,
         "formal_proof_certified": False,
     }, sort_keys=True))
     return 0
