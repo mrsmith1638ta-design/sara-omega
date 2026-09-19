@@ -204,6 +204,7 @@ class RHGlobalReasoningFramework:
             qualified > 0
             or bool(evidence_gaps)
             or bool(failed_results)
+            or bool(out.get("dependency_graph", {}).get("unknowns"))
             or governance.disposition.value != "ALLOW"
         )
 
