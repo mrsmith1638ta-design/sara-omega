@@ -7,14 +7,17 @@ verification are deterministic.
 
 from __future__ import annotations
 
+import base64
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timezone
 from enum import Enum
-from hashlib import sha256
+from hashlib import sha256, sha512
 import hmac
 import json
 import math
 from typing import Any, Iterable, Mapping, Optional, Sequence
+
+from .asymmetric_signing import EvidenceSignature, EvidenceSigner
 
 
 class Decision(str, Enum):
@@ -168,7 +171,9 @@ class ExecutionEvidence:
     request_digest: str
     previous_evidence_hash: Optional[str]
     evidence_hash: str
-    signature: str
+    signing_digest_b64: str = ""
+    signatures: tuple[EvidenceSignature, ...] = ()
+    signature: str = ""
 
 
 def _canonical_json(value: Any) -> str:
@@ -390,10 +395,21 @@ class CounterfactualRiskEngine:
 class SARAUnifiedGovernanceKernel:
     """Runtime enforcement point for governed SARA-OMEGA actions."""
 
-    def __init__(self, signing_key: bytes):
-        if not signing_key or len(signing_key) < 16:
-            raise ValueError("signing_key must be at least 16 bytes")
-        self._signing_key = signing_key
+    def __init__(
+        self,
+        signing_key: bytes | None = None,
+        *,
+        evidence_signer: EvidenceSigner | None = None,
+    ):
+        if signing_key is not None and evidence_signer is not None:
+            raise ValueError("configure either legacy signing_key or evidence_signer, not both")
+        if evidence_signer is None:
+            if not signing_key or len(signing_key) < 16:
+                raise ValueError("signing authority is required")
+            self._signing_key = signing_key
+        else:
+            self._signing_key = None
+        self._evidence_signer = evidence_signer
 
     def evaluate(
         self,
@@ -612,11 +628,27 @@ class SARAUnifiedGovernanceKernel:
         )
 
         evidence_hash = _digest(unsigned)
-        signature = hmac.new(
-            self._signing_key,
-            evidence_hash.encode("utf-8"),
-            sha256,
-        ).hexdigest()
+        signing_digest = sha512(_canonical_json(unsigned).encode("utf-8")).digest()
+        signing_digest_b64 = base64.b64encode(signing_digest).decode("ascii")
+        signatures: tuple[EvidenceSignature, ...] = ()
+        signature = ""
+
+        if self._evidence_signer is not None:
+            try:
+                signatures = tuple(self._evidence_signer.sign_digest(signing_digest))
+            except Exception as exc:
+                raise RuntimeError("asymmetric_evidence_signing_failed") from exc
+            algorithms = [item.algorithm for item in signatures]
+            if sorted(algorithms) != ["Ed25519", "ML-DSA"]:
+                raise RuntimeError("dual_asymmetric_signatures_required")
+        else:
+            # Development/backward-compatibility path only. Production
+            # enforcement is configured with evidence_signer.
+            signature = hmac.new(
+                self._signing_key,
+                evidence_hash.encode("utf-8"),
+                sha256,
+            ).hexdigest()
 
         return ExecutionEvidence(
             evidence_version="1.0",
@@ -631,6 +663,8 @@ class SARAUnifiedGovernanceKernel:
             request_digest=request_digest,
             previous_evidence_hash=previous_evidence_hash,
             evidence_hash=evidence_hash,
+            signing_digest_b64=signing_digest_b64,
+            signatures=signatures,
             signature=signature,
         )
 
@@ -724,6 +758,9 @@ class IndependentEvidenceVerifier:
         expected_hash = _digest(unsigned)
         if not hmac.compare_digest(expected_hash, evidence.evidence_hash):
             return False, "Evidence hash mismatch."
+
+        if evidence.signatures:
+            return False, "Evidence uses asymmetric signatures; verify with ROAD public keys."
 
         expected_signature = hmac.new(
             signing_key,
