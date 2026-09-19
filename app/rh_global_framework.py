@@ -66,6 +66,23 @@ class RHGlobalReasoningFramework:
     ceiling tied to evidence.
     """
 
+    def instruction(self, frame: dict[str, Any]) -> str:
+        literal = bool(frame.get("literal_rh_math"))
+        scope = (
+            "The request is RH-relevant: use the full Riemann mathematical framework where applicable."
+            if literal
+            else "The request is not RH-specific: reuse the RH proof discipline without injecting irrelevant zeta/RH equations."
+        )
+        return (
+            "SARA GLOBAL RH REASONING FRAMEWORK. "
+            "For every request: establish exact structure before inference; separate verified facts, empirical/numerical evidence, "
+            "hypotheses, and blocked claims; expose assumptions and unresolved dependencies; preserve signed/coupled terms long "
+            "enough to test whether cancellation is lost; record lossy transformations; red-team circular or conclusion-strength "
+            "premises; never promote finite evidence to a universal/asymptotic theorem without a valid transfer argument; and cap "
+            "the conclusion at the strongest independently supported dependency. Governance and authority controls always dominate. "
+            + scope
+        )
+
     def initialize(self, problem: Problem, mapped: ProblemMap) -> dict[str, Any]:
         query_lower = problem.query.lower()
         literal_rh_math = any(token in query_lower for token in _RH_TOKENS)
