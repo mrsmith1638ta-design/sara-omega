@@ -33,6 +33,21 @@ def test_formal_status_requires_certificate_and_infinite_limit():
     assert allowed.allowed is True
 
 
+
+
+def test_finite_tail_certificate_cannot_promote_to_asymptotic_little_o():
+    result = RHAdversarialGate().evaluate(
+        claim="The tail satisfies T_N=o(log^2 N).",
+        proof_status=RHProofStatus.NUMERICAL_EVIDENCE,
+        finite_n_only=True,
+        claims_asymptotic_limit=True,
+        uniform_asymptotic_proved=False,
+    )
+    assert result.allowed is False
+    assert any("finite-N tail certification" in reason for reason in result.reasons)
+    assert any("uniform N-to-infinity" in reason for reason in result.reasons)
+
+
 def test_rh_router_activation():
     routed = ScienceRouter().route_text(
         "Analyze the Riemann Hypothesis with Nyman Beurling, Baez-Duarte, Gram matrix and J_N."
