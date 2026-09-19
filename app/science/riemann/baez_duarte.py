@@ -68,7 +68,10 @@ def f_n(x: float, n: int) -> float:
 def e_n(x: float, n: int) -> float:
     if x <= 0.0:
         raise ValueError("x_must_be_positive")
-    chi = 1.0 if x < 1.0 else 0.0
+    # Use the endpoint-inclusive representative chi_(0,1]. It differs from
+    # chi_(0,1) only on a measure-zero set, so the L2 class is unchanged,
+    # while the pointwise y=1 residual identity holds literally.
+    chi = 1.0 if x <= 1.0 else 0.0
     return chi - f_n(x, n)
 
 
@@ -285,7 +288,7 @@ def equation_registry() -> list[RHEquation]:
         RHEquation(
             equation_id="rh.pointwise_residual",
             latex=r"e_N(1/y)=\frac{\theta_Ny-\psi_N(y)}{\log N}\qquad(y\ge1)",
-            description="Exact residual identity for the Selberg coefficient candidate.",
+            description="Exact residual identity for the Selberg coefficient candidate using the L2-equivalent endpoint-inclusive representative of chi.",
             proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
             source_ids=["internal-rh-algebra"],
         ),
