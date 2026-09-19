@@ -126,7 +126,7 @@ def test_recovery_without_human_approval_escalates_before_executor(tmp_path):
         headers=AUTH,
     )
 
-    assert response.status_code == 409
+    assert response.status_code == 403
     assert response.json()["detail"]["decision"] == "ESCALATE"
     assert called == []
 
