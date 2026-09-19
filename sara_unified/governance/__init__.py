@@ -1,3 +1,4 @@
+from .asymmetric_signing import DualKmsSignerClient, EvidenceSignature, EvidenceSigner
 from .enforcement import (
     DEFAULT_PRODUCTION_POLICY,
     EnforcementProfile,
@@ -50,4 +51,7 @@ __all__ = [
     "GovernanceEnforcementError",
     "GovernanceUnavailable",
     "ProductionEnforcementBoundary",
+    "DualKmsSignerClient",
+    "EvidenceSignature",
+    "EvidenceSigner",
 ]
