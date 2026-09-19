@@ -101,6 +101,9 @@ def test_conversation_equations_are_registered():
         "rh.tail_v_mean_obstruction_audit",
         "rh.tail_v_discrepancy_growth_search",
         "rh.tail_attack_v_target",
+        "rh.route_pivot_signed_transfer",
+        "rh.route_pivot_mean_zero_constraints",
+        "rh.route_pivot_penalty_target",
         "rh.stronger_finite_target",
         "rh.sufficient_target",
         "rh.sufficient_implication_chain",
@@ -129,6 +132,11 @@ def test_engine_never_self_certifies_rh():
     assert analysis.metadata["tail_attack_v"]["mean_rh_equivalence_risk"] == "HIGH"
     assert analysis.metadata["tail_attack_v"]["discrepancy_status"] == "conjectural"
     assert analysis.metadata["tail_attack_v"]["uniform_tail_status"] == "blocked"
+    assert analysis.metadata["rh_route_pivot"]["enabled"] is True
+    assert analysis.metadata["rh_route_pivot"]["not_tail_attack_vi"] is True
+    assert analysis.metadata["rh_route_pivot"]["pivot_a_status"] == "research_target"
+    assert analysis.metadata["rh_route_pivot"]["pivot_b_status"] == "conjectural"
+    assert analysis.metadata["rh_route_pivot"]["rh_proved"] is False
     statuses = {
         item.result.get("proof_status")
         for item in analysis.calculations

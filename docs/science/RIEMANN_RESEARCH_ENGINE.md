@@ -885,6 +885,92 @@ The Tail Attack V dependency graph is therefore:
 
 Tail Attack V's red-team gate blocks zeta-zero shortcuts, near-square-root Mobius assumptions, finite discrepancy promotion, and any combined tail theorem until the mean obstruction and discrepancy-growth theorem are both actually proved.
 
+## RH Route Pivot
+
+The Tail Attack I-V naming sequence stops here.
+
+The reason is mathematical, not cosmetic:
+
+- covariance was genuinely reduced;
+- the mean term appears RH-strength;
+- the discrepancy term remains genuinely open;
+- continuing to manufacture new Tail Attack phases would risk renaming the same barrier.
+
+SARA now splits the research into a new RH Route Pivot.
+
+### Pivot A: Signed Cancellation Recovery
+
+Pivot A keeps the exact signed transfer identity
+
+[
+T_N=
+\frac{M_N}{N}
++2\int_N^\infty E_N(y)y^{-3}\,dy
+]
+
+instead of immediately replacing the second term by the absolute bound
+
+[
+\frac{D_N}{N^2}.
+]
+
+The research target is to recover cancellation in the signed integral or cross terms that the absolute-value estimate destroys. Its status is RESEARCH_TARGET, not proved.
+
+### Pivot B: Mean-Zero Constrained Coefficients
+
+Pivot B changes the finite optimization problem. Instead of forcing the Selberg mean term to be small through an RH-sensitive Möbius estimate, SARA solves the constrained Gram problem
+
+[
+\min_c
+\left(1-2v_N^Tc+c^TG_Nc\right)
+]
+
+subject to
+
+[
+\sum_{n\le N}c_n=2
+]
+
+and optionally also
+
+[
+\sum_{n\le N}\frac{c_n}{n}=0.
+]
+
+The finite solver uses the KKT system
+
+[
+\begin{pmatrix}
+G_N&A\\
+A^T&0
+\end{pmatrix}
+\begin{pmatrix}
+c\\ \lambda
+\end{pmatrix}
+=
+\begin{pmatrix}
+v_N\\ b
+\end{pmatrix}.
+]
+
+SARA records the exact finite penalty
+
+[
+\Delta_N^{\rm constrained}
+=
+Q_N(c_N^{\rm constrained})-d_N^2.
+]
+
+The new central question is
+
+[
+\boxed{
+\Delta_N^{\rm constrained}\to0?
+}
+]
+
+If this penalty tends to zero, the route has genuinely changed: the mean obstruction is removed algebraically rather than proved small by an RH-strength estimate. At present this is CONJECTURAL and finite-N evidence cannot certify the limit.
+
 ## Numerical runner boundary
 
 The finite runner may compute:
@@ -919,6 +1005,8 @@ CI must fail if code permits any of these transitions without formal certificati
 13. combined Tail IV dashboard -> asymptotic tail theorem while any dependency is blocked/conjectural
 14. zero-structure or near-square-root mean shortcut -> Tail V mean theorem without proof-grade certification
 15. Tail V mean audit + finite discrepancy diagnostics -> combined weighted-tail theorem
+16. finite constrained-Gram penalty data -> RH Route Pivot theorem
+17. signed-transfer numerical cancellation -> uniform Pivot A theorem
 
 The runtime truth gate and `tools/riemann_adversarial_gate.py` enforce these boundaries.
 
@@ -962,6 +1050,9 @@ The runtime equation registry now includes the full set of RH objects used in th
 - `rh.tail_v_mean_obstruction_audit`
 - `rh.tail_v_discrepancy_growth_search`
 - `rh.tail_attack_v_target`
+- `rh.route_pivot_signed_transfer`
+- `rh.route_pivot_mean_zero_constraints`
+- `rh.route_pivot_penalty_target`
 - `rh.stronger_finite_target`
 - `rh.sufficient_target`
 - `rh.sufficient_implication_chain`

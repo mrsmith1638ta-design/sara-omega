@@ -82,6 +82,14 @@ def main() -> int:
             combined_tail_claim=True,
             uses_zero_structure_shortcut=True,
         ),
+        gate.evaluate_route_pivot_claim(
+            "The constrained penalty is small for tested N, therefore RH follows.",
+            proof_status=RHProofStatus.NUMERICAL_EVIDENCE,
+            constrained_penalty_uniform_proved=False,
+            signed_transfer_uniform_proved=False,
+            combined_route_claim=True,
+            finite_n_only=True,
+        ),
     ]
     assert all(not item.allowed for item in false_claims)
 
@@ -114,6 +122,7 @@ def main() -> int:
         "tail_attack_iii_period_to_tail_shortcut_blocked": True,
         "tail_attack_iv_dependency_promotion_blocked": True,
         "tail_attack_v_mean_obstruction_promotion_blocked": True,
+        "rh_route_pivot_finite_penalty_promotion_blocked": True,
         "formal_proof_certified": False,
     }, sort_keys=True))
     return 0

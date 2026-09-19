@@ -356,3 +356,58 @@ class RHAdversarialGate:
             return RHGateDecision(False, "BLOCK", list(dict.fromkeys(reasons)))
         return RHGateDecision(True, "PASS", [])
 
+    def evaluate_route_pivot_claim(
+        self,
+        claim: str,
+        *,
+        proof_status: RHProofStatus,
+        constrained_penalty_uniform_proved: bool = False,
+        signed_transfer_uniform_proved: bool = False,
+        covariance_bound_proved: bool = True,
+        combined_route_claim: bool = False,
+        finite_n_only: bool = False,
+        assumes_rh: bool = False,
+        assumes_mobius_randomness: bool = False,
+        formal_certificate: str | None = None,
+    ) -> RHGateDecision:
+        """Fail-closed gate for the RH Route Pivot."""
+        text = claim.strip().lower()
+        reasons: list[str] = []
+
+        if assumes_rh:
+            reasons.append("RH Route Pivot cannot assume RH or an RH-equivalent zero-location theorem")
+        if assumes_mobius_randomness:
+            reasons.append("RH Route Pivot cannot assume Mobius randomness or square-root cancellation")
+        if finite_n_only:
+            reasons.append("finite constrained-penalty data cannot certify the N-to-infinity route")
+        if not covariance_bound_proved:
+            reasons.append("RH Route Pivot still depends on the proved Tail Attack II covariance reduction")
+        if combined_route_claim and not constrained_penalty_uniform_proved and not signed_transfer_uniform_proved:
+            reasons.append("combined RH Route Pivot promotion requires a proved Pivot A or Pivot B uniform theorem")
+        if "therefore rh" in text or "rh follows" in text or "riemann hypothesis follows" in text:
+            if proof_status != RHProofStatus.FORMAL_PROOF_CERTIFIED:
+                reasons.append("route-pivot evidence cannot be promoted to RH without formal proof certification")
+        if "penalty is small" in text and not constrained_penalty_uniform_proved:
+            reasons.append("small finite constrained penalties do not prove the constrained approximation penalty tends to zero")
+        if "signed transfer" in text and not signed_transfer_uniform_proved:
+            reasons.append("signed-transfer cancellation must be proved uniformly, not observed numerically")
+        if proof_status == RHProofStatus.NUMERICAL_EVIDENCE and combined_route_claim:
+            reasons.append("numerical RH Route Pivot evidence cannot certify an asymptotic theorem")
+
+        prohibited_markers = (
+            "mobius is random",
+            "möbius is random",
+            "square-root cancellation",
+            "sqrt cancellation",
+            "assuming rh",
+        )
+        if any(marker in text for marker in prohibited_markers):
+            reasons.append("claim contains a prohibited route-pivot shortcut")
+
+        if proof_status == RHProofStatus.FORMAL_PROOF_CERTIFIED and not formal_certificate:
+            reasons.append("formal RH Route Pivot status requires a certificate reference")
+
+        if reasons:
+            return RHGateDecision(False, "BLOCK", list(dict.fromkeys(reasons)))
+        return RHGateDecision(True, "PASS", [])
+

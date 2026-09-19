@@ -183,3 +183,7 @@ def test_rh_router_activation():
         "Run Tail Attack V mean obstruction audit and discrepancy growth search."
     )
     assert "riemann_hypothesis" in tail_v_routed
+    route_pivot_routed = ScienceRouter().route_text(
+        "Run the RH Route Pivot with mean-zero constrained coefficients and signed cancellation recovery."
+    )
+    assert "riemann_hypothesis" in route_pivot_routed

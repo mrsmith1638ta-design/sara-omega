@@ -116,3 +116,13 @@ Tail Attack V verification:
 - Expanded Riemann suite via discovered `tests/science/test_riemann_*.py`: PASS.
 - `python tools/riemann_adversarial_gate.py`: PASS and includes `tail_attack_v_mean_obstruction_promotion_blocked=true`.
 - Full `pytest -q`: PASS at 100% with existing FastAPI/Starlette deprecation warnings only.
+
+RH Route Pivot verification:
+
+- Tail Attack naming stops at Tail Attack V; new route records Pivot A signed cancellation recovery and Pivot B mean-zero constrained coefficients.
+- Pivot B solves the constrained finite Gram/KKT problem and reports the exact finite constrained penalty without asymptotic promotion.
+- `pytest -q tests/science/test_riemann_route_pivot.py`: PASS, 5/5.
+- RH router recognizes `RH Route Pivot`, `mean-zero constrained coefficients`, and signed-cancellation route language.
+- Expanded Riemann suite via discovered `tests/science/test_riemann_*.py`: PASS.
+- `python tools/riemann_adversarial_gate.py`: PASS and includes `rh_route_pivot_finite_penalty_promotion_blocked=true`.
+- Full `pytest -q`: PASS at 100% with existing FastAPI/Starlette deprecation warnings only.

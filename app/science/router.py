@@ -28,7 +28,9 @@ class ScienceRouter:
             "jordan totient", "coprime mobius layer", "period mean square",
             "mean component", "weighted tail", "transfer discrepancy", "d_n discrepancy",
             "centered sawtooth", "tail attack iii", "tail attack iv",
-            "mean discrepancy growth", "combined tail dashboard", "subperiod discrepancy"
+            "mean discrepancy growth", "combined tail dashboard", "subperiod discrepancy",
+            "rh route pivot", "route pivot", "mean-zero constrained", "constrained gram",
+            "constrained coefficients", "signed cancellation recovery"
         )):
             selected.append("riemann_hypothesis")
         return list(dict.fromkeys(selected))

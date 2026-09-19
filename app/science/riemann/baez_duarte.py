@@ -561,6 +561,32 @@ def equation_registry() -> list[RHEquation]:
             notes=["The RH route remains blocked until the mean and discrepancy doors are both actually proved."],
         ),
         RHEquation(
+            equation_id="rh.route_pivot_signed_transfer",
+            latex=r"T_N=\frac{M_N}{N}+2\int_N^\infty E_N(y)y^{-3}\,dy\quad\text{studied with its sign retained}",
+            description="RH Route Pivot A: recover cancellation in the exact signed transfer integral instead of replacing it by an absolute D_N/N^2 bound.",
+            proof_status=RHProofStatus.CONJECTURAL_LEMMA,
+            dependencies=["uniform signed-transfer cancellation theorem"],
+            source_ids=["internal-rh-route-pivot"],
+            notes=["This stops the Tail Attack sequence and opens a different route rather than renaming the same obstruction."],
+        ),
+        RHEquation(
+            equation_id="rh.route_pivot_mean_zero_constraints",
+            latex=r"\sum_{n\le N}c_n=2,\qquad \sum_{n\le N}\frac{c_n}{n}=0\ \text{(optional)}",
+            description="RH Route Pivot B: enforce mean-zero or normalization constraints directly in the finite Gram optimization.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            source_ids=["internal-rh-route-pivot"],
+            notes=["The constraints are finite algebraic constraints; their asymptotic approximation penalty is a separate unproved question."],
+        ),
+        RHEquation(
+            equation_id="rh.route_pivot_penalty_target",
+            latex=r"\Delta_N^{\mathrm{constrained}}=Q_N(c_N^{\mathrm{constrained}})-d_N^2\longrightarrow0",
+            description="New central RH Route Pivot question after mean-zero constrained coefficients.",
+            proof_status=RHProofStatus.CONJECTURAL_LEMMA,
+            dependencies=["uniform theorem that the constrained approximation penalty tends to zero"],
+            source_ids=["internal-rh-route-pivot"],
+            notes=["If the penalty tends to zero, the route has genuinely changed away from forcing the old mean obstruction."],
+        ),
+        RHEquation(
             equation_id="rh.tail_fixed_n_certificate",
             latex=r"\int_N^C\frac{|R_N(y)|^2}{y^2}dy\le T_N\le\int_N^C\frac{|R_N(y)|^2}{y^2}dy+\frac{B_N^2}{C},\quad B_N=\log N+\sum_{n\le N}|\mu(n)|(\log N-\log n)",
             description="Certified fixed-N tail enclosure from an exact finite window and an unconditional pointwise remainder bound.",
@@ -789,6 +815,30 @@ class RiemannResearchEngine:
             )
         )
 
+        from .rh_route_pivot import rh_route_pivot_snapshot
+        route_pivot_snapshot = rh_route_pivot_snapshot()
+        calculations.append(
+            ScienceCalculation(
+                equation_id="rh.route_pivot_snapshot",
+                inputs={"N": 8},
+                result=route_pivot_snapshot,
+                provenance_class=ProvenanceClass.CONJECTURAL_MATHEMATICS,
+                evidence_status="UNVERIFIED",
+                assumptions=[
+                    "Pivot A signed-transfer cancellation is not proved",
+                    "Pivot B constrained penalty convergence is not proved",
+                    "finite constrained Gram diagnostics are finite-N evidence",
+                ],
+                limitations=[
+                    "This is a route pivot, not Tail Attack VI.",
+                    "No finite constrained penalty sequence can certify the asymptotic theorem.",
+                    "RH remains unsolved unless a uniform route-pivot theorem is proved.",
+                ],
+                source_ids=["sara-rh-route-pivot"],
+                validation_status="CONJECTURAL_LEMMA",
+            )
+        )
+
         false_promotion = gate.evaluate(
             claim="RH proved",
             proof_status=RHProofStatus.NUMERICAL_EVIDENCE,
@@ -866,6 +916,14 @@ class RiemannResearchEngine:
                     "covariance_status": tail_v_snapshot["dependencies"]["covariance"]["status"],
                     "discrepancy_status": tail_v_snapshot["dependencies"]["discrepancy"]["status"],
                     "uniform_tail_status": tail_v_snapshot["uniform_tail_status"],
+                },
+                "rh_route_pivot": {
+                    "enabled": True,
+                    "not_tail_attack_vi": route_pivot_snapshot["not_tail_attack_vi"],
+                    "pivot_a_status": route_pivot_snapshot["pivot_a"]["status"],
+                    "pivot_b_status": route_pivot_snapshot["pivot_b"]["status"],
+                    "central_question": route_pivot_snapshot["pivot_b"]["central_question"],
+                    "rh_proved": route_pivot_snapshot["rh_proved"],
                 },
                 "numerical_snapshot": snapshot.model_dump(mode="json"),
             },
