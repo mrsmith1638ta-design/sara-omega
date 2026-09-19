@@ -74,5 +74,6 @@ def test_existing_callers_can_construct_verdict_without_new_fields():
     )
     assert verdict.request_id is None
     assert verdict.council_trace is None
+    assert verdict.rh_framework == {}
     assert verdict.integrity.durable is False
     assert verdict.supersedes_decision_id is None
