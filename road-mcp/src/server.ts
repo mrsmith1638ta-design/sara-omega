@@ -33,6 +33,11 @@ import {
   type EpistemicEvidenceRecord,
 } from "./epistemicEvidence.js";
 import { buildRoadGateEvidence, ROAD_GATE_EVIDENCE_IDS } from "./roadGateEvidence.js";
+import {
+  loadPinnedSaraVerificationKeys,
+  verifySaraDualKmsSignatures,
+  type SaraAsymmetricAlgorithm,
+} from "./asymmetricEvidence.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -712,6 +717,17 @@ const manifestSchema = {
   releaseVersion: z.string().min(1).max(80).optional(),
 };
 
+const asymmetricEvidenceSchema = {
+  signingDigestB64: z.string().min(4).max(1024),
+  signatures: z.array(
+    z.object({
+      algorithm: z.enum(["Ed25519", "ML-DSA"]),
+      keyId: z.string().min(1).max(2048),
+      signatureB64: z.string().min(4).max(16384),
+    })
+  ).length(2),
+};
+
 export function createRoadServer(): McpServer {
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
@@ -941,6 +957,52 @@ export function createRoadServer(): McpServer {
       return {
         content: [{ type: "text", text: "Loaded ROAD gate evidence." }],
         structuredContent: { status: registry.status, records: registry.records },
+      };
+    }
+  );
+
+  server.registerTool(
+    "verify_sara_execution_evidence",
+    {
+      title: "ROAD verify SARA execution evidence",
+      description:
+        "Verify SARA governance evidence against ROAD-pinned KMS public keys. ROAD never accepts verification keys from the evidence being checked.",
+      inputSchema: asymmetricEvidenceSchema,
+      annotations: { ...readOnly, openWorldHint: false },
+    },
+    async ({ signingDigestB64, signatures }) => {
+      let keys;
+      try {
+        keys = loadPinnedSaraVerificationKeys();
+      } catch (error) {
+        return {
+          content: [{ type: "text", text: "ROAD verification keys are not configured." }],
+          structuredContent: {
+            status: "UNVERIFIED",
+            verified: false,
+            reason: error instanceof Error ? error.message : "verification_keys_unavailable",
+          },
+          isError: true,
+        };
+      }
+
+      const signed = signatures.map((entry) => ({
+        algorithm: entry.algorithm as SaraAsymmetricAlgorithm,
+        keyId: entry.keyId,
+        digestB64: signingDigestB64,
+        signatureB64: entry.signatureB64,
+      }));
+      const result = verifySaraDualKmsSignatures(signed, keys);
+      return {
+        content: [{ type: "text", text: "ROAD checked SARA asymmetric execution evidence." }],
+        structuredContent: {
+          status: result.verified ? "PASS" : "BLOCKED",
+          verified: result.verified,
+          results: result.results,
+          trustBoundary:
+            "ROAD uses only independently pinned public keys and has no SARA KMS signing permission.",
+        },
+        isError: !result.verified,
       };
     }
   );
