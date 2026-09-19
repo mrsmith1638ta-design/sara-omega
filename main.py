@@ -77,6 +77,7 @@ logger = logging.getLogger(__name__)
 OWNER_TOKEN = os.environ.get("OWNER_TOKEN", "")
 GPT_ACTION_TOKEN = os.environ.get("GPT_ACTION_TOKEN", "")
 TEST_TOKEN = os.environ.get("TEST_TOKEN", "")
+RESEARCH_COUNCIL_TOKEN = os.environ.get("SH", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 KILL_SWITCH = os.environ.get("KILL_SWITCH", "false").lower() == "true"
 FEATURE_VISION = os.environ.get("FEATURE_VISION", "false").lower() == "true"
@@ -89,6 +90,7 @@ RATE_LIMITS = {
     "owner": {"requests_per_day": None, "voice_per_day": None, "vision_per_day": None, "max_context": None},
     "action": {"requests_per_day": 500, "voice_per_day": 0, "vision_per_day": 0, "max_context": 50},
     "tester": {"requests_per_day": 200, "voice_per_day": 30, "vision_per_day": 50, "max_context": 50},
+    "research_council": {"requests_per_day": 200, "voice_per_day": 0, "vision_per_day": 0, "max_context": 50},
 }
 
 app = FastAPI(title="SARA OMEGA", version=DISPLAY_VERSION)
@@ -355,6 +357,18 @@ def require_action_role(req: Request) -> str:
     return role
 
 
+def require_gateway_role(req: Request) -> str:
+    """Authorize the shared gateway, including the least-privilege Research Council credential."""
+    role = authorize(req)
+    if role:
+        return role
+    auth = req.headers.get("Authorization", "")
+    expected = f"Bearer {RESEARCH_COUNCIL_TOKEN}" if RESEARCH_COUNCIL_TOKEN else ""
+    if expected and secrets.compare_digest(auth, expected):
+        return "research_council"
+    raise HTTPException(401, "Unauthorized")
+
+
 def ensure_action_ready(operation: str) -> None:
     try:
         FAILSAFE.ensure_ready()
@@ -532,7 +546,12 @@ def _prune_gpt_voice_artifacts(root: Path, now: int) -> None:
 
 @app.post("/gpt/action/gateway")
 async def chatgpt_action_gateway(req: Request, body: GPTActionGatewayRequest):
-    role = require_action_role(req)
+    role = require_gateway_role(req)
+    if role == "research_council":
+        if body.operation != "solve":
+            raise HTTPException(403, "Research Council credential is restricted to governed solve")
+        if body.requested_action:
+            raise HTTPException(403, "Research Council credential has no execution authority")
     ensure_action_ready(body.operation)
 
     identifier = f"gpt-action:{body.session_id or (req.client.host if req.client else 'unknown')}"
@@ -636,16 +655,20 @@ async def chatgpt_action_gateway(req: Request, body: GPTActionGatewayRequest):
     if not query:
         raise HTTPException(400, "query is required for solve")
     problem_context = dict(body.context)
-    problem_context.setdefault("source", "chatgpt_action_gateway")
+    if role == "research_council":
+        problem_context["source"] = "research_council_gateway"
+        problem_context["credential_scope"] = "research_council_read_only"
+    else:
+        problem_context.setdefault("source", "chatgpt_action_gateway")
     problem_context.setdefault("railway_runtime_version", RELEASE_VERSION)
     problem = Problem(
         query=query,
         objective=body.objective,
         requested_action=body.requested_action,
         context=problem_context,
-        council=body.council,
-        actor="chatgpt_action",
-        authority_level=3 if role == "owner" else 1,
+        council=True if role == "research_council" else body.council,
+        actor="research_council_gateway" if role == "research_council" else "chatgpt_action",
+        authority_level=0 if role == "research_council" else (3 if role == "owner" else 1),
     )
     verdict = await gateway_sara.solve(problem)
     chaos = hawkins_chaos.analyze_verdict(verdict, query=query, context=problem_context)
