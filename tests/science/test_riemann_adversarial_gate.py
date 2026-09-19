@@ -48,6 +48,36 @@ def test_finite_tail_certificate_cannot_promote_to_asymptotic_little_o():
     assert any("uniform N-to-infinity" in reason for reason in result.reasons)
 
 
+
+def test_tail_attack_ii_blocks_covariance_only_uniform_tail_claim():
+    result = RHAdversarialGate().evaluate_tail_attack_ii_uniform_claim(
+        "Covariance is O(N), therefore the tail is o(log^2 N).",
+        proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+        covariance_uniform_bound_proved=True,
+        mean_component_uniform_bound_proved=False,
+        cumulative_energy_discrepancy_proved=False,
+        period_to_tail_transfer_proved=False,
+    )
+    assert result.allowed is False
+    assert any("mean-component" in reason for reason in result.reasons)
+    assert any("cumulative-energy discrepancy" in reason for reason in result.reasons)
+    assert any("covariance control alone" in reason for reason in result.reasons)
+
+
+def test_tail_attack_ii_blocks_unproved_mobius_randomness():
+    result = RHAdversarialGate().evaluate_tail_attack_ii_uniform_claim(
+        "Use square-root Mobius cancellation to obtain the uniform tail bound.",
+        proof_status=RHProofStatus.CONJECTURAL_LEMMA,
+        covariance_uniform_bound_proved=True,
+        mean_component_uniform_bound_proved=True,
+        cumulative_energy_discrepancy_proved=True,
+        period_to_tail_transfer_proved=True,
+        assumes_mobius_randomness=True,
+    )
+    assert result.allowed is False
+    assert any("Mobius randomness" in reason for reason in result.reasons)
+
+
 def test_rh_router_activation():
     routed = ScienceRouter().route_text(
         "Analyze the Riemann Hypothesis with Nyman Beurling, Baez-Duarte, Gram matrix and J_N."
