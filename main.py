@@ -57,6 +57,7 @@ from app.madhouse import MadhouseReviewRequest
 from app.memory import ConversationMemory, MemoryStoreError
 from app.models import Problem
 from app.orchestrator import SaraOmega
+from app.rh_global_framework import FRAMEWORK_VERSION as RH_FRAMEWORK_VERSION
 from app.runtime_assurance import RuntimeAssuranceConfigurationError, RuntimeAssuranceRequest
 from app.road_gates import RoadGateAgent, RoadGateReviewRequest
 from app.unified_fusion import health as unified_fusion_health
@@ -460,6 +461,12 @@ def gateway_status() -> Dict[str, Any]:
         "model_sovereignty": model_sovereignty.health(),
         "titan": titan.health(),
         "unified_fusion": unified_fusion_health(),
+        "rh_global_reasoning_framework": {
+            "enabled": True,
+            "version": RH_FRAMEWORK_VERSION,
+            "scope": "every governed solve request plus legacy conversational completion path",
+            "literal_rh_math_only_when_relevant": True,
+        },
         "allowed_operations": list(GPTActionOperation.__args__),
     }
 
