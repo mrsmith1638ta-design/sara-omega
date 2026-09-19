@@ -77,3 +77,45 @@ class RHAdversarialGate:
             formal_certificate=formal_certificate,
             infinite_limit_proved=infinite_limit_proved,
         )
+
+    def evaluate_tail_bound_claim(
+        self,
+        claim: str,
+        *,
+        proof_status: RHProofStatus,
+        formal_certificate: str | None = None,
+    ) -> RHGateDecision:
+        text = claim.strip().lower()
+        reasons: list[str] = []
+
+        hidden_rh_markers = (
+            "assume rh",
+            "assuming rh",
+            "riemann hypothesis is true",
+            "all zeta zeros",
+            "all zeros lie",
+            "critical line",
+        )
+        strong_unproved_markers = (
+            "square-root cancellation",
+            "sqrt cancellation",
+            "lindelof",
+            "lindelöf",
+            "mobius randomness",
+            "random signs",
+            "uncorrelated fractional parts",
+        )
+        theorem_markers = ("therefore rh", "rh proved", "proves rh", "proves the riemann hypothesis")
+
+        if any(marker in text for marker in hidden_rh_markers):
+            reasons.append("hidden RH or zeta-zero assumption cannot support a tail bound")
+        if any(marker in text for marker in strong_unproved_markers) and proof_status != RHProofStatus.FORMAL_PROOF_CERTIFIED:
+            reasons.append("unproved cancellation hypothesis cannot be promoted to a tail theorem")
+        if any(marker in text for marker in theorem_markers) and proof_status != RHProofStatus.FORMAL_PROOF_CERTIFIED:
+            reasons.append("tail-bound claim cannot certify RH without formal proof status")
+        if proof_status == RHProofStatus.FORMAL_PROOF_CERTIFIED and not formal_certificate:
+            reasons.append("formal tail-bound status requires a certificate reference")
+
+        if reasons:
+            return RHGateDecision(False, "BLOCK", reasons)
+        return RHGateDecision(True, "PASS", [])

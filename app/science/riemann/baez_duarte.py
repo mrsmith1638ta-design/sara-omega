@@ -200,6 +200,56 @@ def j_split_snapshot(n: int, cutoff: int) -> dict[str, float | bool]:
     }
 
 
+def tail_attack_snapshot(n: int, cutoff: int, *, sample_count: int = 17) -> dict[str, object]:
+    """Tail Attack I: finite-window tail evidence plus sawtooth diagnostics.
+
+    This is intentionally evidence, not proof: the post-cutoff tail remains
+    uncomputed and no asymptotic estimate is certified here.
+    """
+    if n < 2 or cutoff <= n:
+        raise ValueError("tail_attack_requires_cutoff_gt_n_ge_2")
+    if sample_count < 2:
+        raise ValueError("sample_count_must_be_at_least_2")
+    split = j_split_snapshot(n, cutoff)
+    step = (cutoff - n) / (sample_count - 1)
+    y_values = [float(n) + step * i for i in range(sample_count)]
+    samples = [
+        {"y": y, "theta_y_minus_psi_n": tail_residual_sawtooth(n, y)}
+        for y in y_values
+    ]
+    values = [float(item["theta_y_minus_psi_n"]) for item in samples]
+    mean = sum(values) / len(values)
+    max_abs = max(abs(value) for value in values)
+    rms = math.sqrt(sum(value * value for value in values) / len(values))
+    log2 = math.log(n) ** 2
+    tail_window = float(split["tail_window_N_to_cutoff"])
+    return {
+        "phase": "Tail Attack I",
+        "proof_status": RHProofStatus.NUMERICAL_EVIDENCE.value,
+        "N": n,
+        "cutoff": cutoff,
+        "finite_range_1_to_N": split["finite_range_1_to_N"],
+        "tail_window_N_to_cutoff": tail_window,
+        "tail_window_over_log_squared_N": tail_window / log2 if log2 else math.inf,
+        "tail_beyond_cutoff_uncomputed": True,
+        "sawtooth_identity": r"theta_N*y-psi_N(y)=log N+sum_{n<=N} mu(n)(log N-log n){y/n}",
+        "sawtooth_samples": samples,
+        "sawtooth_sample_mean": mean,
+        "sawtooth_sample_max_abs": max_abs,
+        "tail_window_rms": rms,
+        "candidate_attack_lines": [
+            "bound correlations among fractional-part functions {y/n}",
+            "separate diagonal and off-diagonal averaging in the weighted sawtooth square",
+            "test cancellation claims before promoting them to asymptotic lemmas",
+        ],
+        "limitations": [
+            "finite tail window only",
+            "tail beyond cutoff is not certified",
+            "numerical cancellation cannot prove RH",
+        ],
+    }
+
+
 def truncated_l2_identity(n: int, cutoff: int) -> dict[str, float | bool]:
     log_n = math.log(n)
     theta = theta_n(n)
@@ -390,6 +440,17 @@ def equation_registry() -> list[RHEquation]:
             notes=["This identity does not itself establish the required tail asymptotic."],
         ),
         RHEquation(
+            equation_id="rh.tail_attack_i",
+            latex=r"\int_N^X|\theta_Ny-\psi_N(y)|^2\frac{dy}{y^2}\quad\text{with}\quad\theta_Ny-\psi_N(y)=\log N+\sum_{n\le N}\mu(n)(\log N-\log n)\{y/n\}",
+            description="Tail Attack I finite-window tail diagnostic and sawtooth red-team object.",
+            proof_status=RHProofStatus.NUMERICAL_EVIDENCE,
+            source_ids=["internal-rh-tail-attack"],
+            notes=[
+                "This computes controlled evidence for the y>N tail.",
+                "It does not prove the required asymptotic tail bound.",
+            ],
+        ),
+        RHEquation(
             equation_id="rh.stronger_finite_target",
             latex=r"\int_1^N|\psi(y)-\theta_Ny|^2\frac{dy}{y^2}=O(\log N)",
             description="Earlier stronger finite-range target; useful if proved but stronger than required.",
@@ -509,6 +570,28 @@ class RiemannResearchEngine:
             proof_status=RHProofStatus.NUMERICAL_EVIDENCE,
             finite_n_only=True,
         )
+        tail_attack = tail_attack_snapshot(8, 64)
+        tail_red_team = gate.evaluate_tail_bound_claim(
+            "Assume square-root cancellation in the fractional-part sawtooth tail.",
+            proof_status=RHProofStatus.CONJECTURAL_LEMMA,
+        )
+        calculations.append(
+            ScienceCalculation(
+                equation_id="rh.tail_attack_i_snapshot",
+                inputs={"N": tail_attack["N"], "cutoff": tail_attack["cutoff"]},
+                result=tail_attack,
+                provenance_class=ProvenanceClass.NUMERICAL_MATHEMATICS,
+                evidence_status="SUPPORTED",
+                assumptions=["finite N", "finite cutoff", "sawtooth identity evaluated on a sample grid"],
+                limitations=[
+                    "Tail Attack I is finite-window evidence only.",
+                    "The tail beyond cutoff remains uncomputed.",
+                    "Cancellation hypotheses require independent proof.",
+                ],
+                source_ids=["internal-rh-tail-attack"],
+                validation_status="NUMERICAL_EVIDENCE",
+            )
+        )
         return ScienceAnalysis(
             domain=self.domain,
             summary=(
@@ -535,6 +618,12 @@ class RiemannResearchEngine:
                 },
                 "current_bottleneck": "J_N=o(log^2 N) together with theta_N=O(1)",
                 "bottleneck_split": "J_N = finite Chebyshev range [1,N] + post-N psi_N tail",
+                "tail_attack_i": tail_attack,
+                "tail_bound_red_team": {
+                    "sqrt_cancellation_allowed": tail_red_team.allowed,
+                    "status": tail_red_team.status,
+                    "reasons": tail_red_team.reasons,
+                },
                 "conversation_cross_reference_complete": True,
                 "numerical_snapshot": snapshot.model_dump(mode="json"),
             },

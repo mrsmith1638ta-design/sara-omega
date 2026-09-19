@@ -21,6 +21,30 @@ Every RH object is tagged with exactly one of:
 
 `FORMAL_PROOF_CERTIFIED` is fail-closed: a certificate reference and a proved infinite-limit implication are required. The engine never self-assigns that state.
 
+## Tail Attack I
+
+Tail Attack I focuses SARA on the post-`N` bottleneck:
+
+```text
+J_N = integral_1^N |theta_N y - psi(y)|^2 dy/y^2
+    + integral_N^infinity |theta_N y - psi_N(y)|^2 dy/y^2.
+```
+
+The engine computes a finite tail-window diagnostic:
+
+```text
+integral_N^X |theta_N y - psi_N(y)|^2 dy/y^2
+```
+
+and samples the exact sawtooth identity:
+
+```text
+theta_N*y - psi_N(y)
+  = log N + sum_{n<=N} mu(n)(log N - log n){y/n}.
+```
+
+This lets SARA compare cancellation ideas, fractional-part averaging claims, and proposed upper bounds without calling them proof. The post-cutoff tail remains explicitly uncomputed, and the adversarial gate rejects tail-bound claims that rely on hidden RH assumptions, zeta-zero assumptions, Lindelof-strength input, or unproved square-root cancellation.
+
 ## Nyman-Beurling / Báez-Duarte basis
 
 [

@@ -104,3 +104,7 @@ SARA OMEGA ChatGPT V3.4.0 Riemann Research Engine verification:
 - `python tools/adversarial_gate.py`: PASS, 5/5.
 - The Riemann adversarial gate rejects finite-to-infinite extrapolation, circular RH assumptions, provider consensus as proof, and quantum/spectral interpretation as proof unless `FORMAL_PROOF_CERTIFIED` with a certificate is present.
 - No claim that RH is proved is made by this integration. The live mathematical bottleneck remains an unconditional proof of `theta_N = O(1)` and `J_N = o(log^2 N)`.
+- Tail Attack I added after V3.4.0 fusion: SARA computes a finite post-`N` tail-window diagnostic, samples the exact sawtooth representation, stores the result as `NUMERICAL_EVIDENCE`, and red-teams proposed tail bounds for hidden RH/zeta-zero assumptions and unproved square-root cancellation.
+- `pytest -q tests/science/test_riemann_tail_attack.py`: PASS, 4/4.
+- Expanded Riemann suite: PASS, 36/36.
+- Expanded `pytest -q tests/science`: PASS, 88/88 with existing FastAPI deprecation warnings only.
