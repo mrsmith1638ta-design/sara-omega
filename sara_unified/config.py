@@ -18,6 +18,9 @@ class Settings:
     road_mandatory: bool = False
     sios_mandatory: bool = False
     max_request_bytes: int = 1_000_000
+    governance_enforcement_required: bool = False
+    governance_signing_key: str = ""
+    governance_tenant_id: str = "default"
     voice_enabled: bool = False
     piper_service_url: str = "http://127.0.0.1:5000"
     piper_service_token: str = ""
@@ -52,6 +55,11 @@ class Settings:
             road_mandatory=os.getenv("SARA_ROAD_MANDATORY", "false").lower() == "true",
             sios_mandatory=os.getenv("SARA_SIOS_MANDATORY", "false").lower() == "true",
             max_request_bytes=size,
+            governance_enforcement_required=(
+                os.getenv("SARA_GOVERNANCE_ENFORCEMENT_REQUIRED", "true").lower() == "true"
+            ),
+            governance_signing_key=os.getenv("SARA_GOVERNANCE_SIGNING_KEY", ""),
+            governance_tenant_id=os.getenv("SARA_GOVERNANCE_TENANT_ID", "default"),
             voice_enabled=os.getenv("SARA_VOICE_ENABLED", "false").lower() == "true",
             piper_service_url=os.getenv("SARA_PIPER_SERVICE_URL", cls.piper_service_url),
             piper_service_token=os.getenv("SARA_PIPER_SERVICE_TOKEN", ""),
