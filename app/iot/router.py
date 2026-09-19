@@ -2,9 +2,10 @@ from __future__ import annotations
 import hmac,os
 from fastapi import APIRouter,Header,HTTPException
 from pydantic import BaseModel,Field
-from .models import DeviceRegistrationRequest,IoTError,TelemetryEnvelope
+from .models import DeviceCommandAck,DeviceRegistrationRequest,IoTError,PairingClaimRequest,PairingCodeRequest,TelemetryEnvelope
+from .pairing import PairingRejected,PairingService
 from .service import IoTService
-router=APIRouter(); service=IoTService()
+router=APIRouter(); service=IoTService(); pairing=PairingService(service.store)
 class PrepareCommandRequest(BaseModel):
     action:str=Field(min_length=1,max_length=96); parameters:dict=Field(default_factory=dict,max_length=32); session_id:str=Field(min_length=1,max_length=160); requested_by:str=Field(default='owner',min_length=1,max_length=128)
 class ExecuteCommandRequest(BaseModel):
@@ -17,8 +18,23 @@ def _require_exact_env(auth,env_name,forbidden=()):
 def _require_user(auth):
     supplied=_bearer(auth); allowed=[os.getenv('OWNER_TOKEN','').strip(),os.getenv('GPT_ACTION_TOKEN','').strip()]
     if not supplied or not any(v and hmac.compare_digest(v,supplied) for v in allowed): raise HTTPException(status_code=401,detail='authentication_required')
+def _require_device(device_id,device_secret):
+    if not device_id or not device_secret or not service.store.verify_device_secret(device_id,device_secret): raise HTTPException(status_code=401,detail='device_authentication_rejected')
+    d=service.store.get_device(device_id)
+    if d is None or not d.enabled: raise HTTPException(status_code=401,detail='device_authentication_rejected')
+    return d
 @router.get('/iot/health')
 async def iot_health(): return service.health()
+@router.post('/iot/pairing/codes')
+async def issue_pairing_code(request:PairingCodeRequest,authorization:str|None=Header(default=None)):
+    _require_exact_env(authorization,'SARA_DEVICE_CONTROL_AUTH_TOKEN',('OWNER_TOKEN','GPT_ACTION_TOKEN','TEST_TOKEN','SARA_RAILWAY_CONTROL_AUTH_TOKEN','SARA_SOURCE_CONTROL_AUTH_TOKEN'))
+    try: code=pairing.issue(request.device_class,request.model_prefix,request.ttl_seconds); return {'code':code,'expires_in_seconds':request.ttl_seconds}
+    except PairingRejected as e: raise HTTPException(status_code=400,detail=str(e)) from e
+@router.post('/iot/pairing/claim')
+async def claim_pairing(request:PairingClaimRequest):
+    try:
+        return pairing.claim_android(code=request.code,name=request.name,model=request.model,manufacturer=request.manufacturer,android_version=request.android_version,capabilities=request.capabilities,metrics=request.metrics)
+    except PairingRejected as e: raise HTTPException(status_code=403,detail=str(e)) from e
 @router.post('/iot/devices/register')
 async def register_device(request:DeviceRegistrationRequest,authorization:str|None=Header(default=None)):
     _require_exact_env(authorization,'SARA_DEVICE_CONTROL_AUTH_TOKEN',('OWNER_TOKEN','GPT_ACTION_TOKEN','TEST_TOKEN','SARA_RAILWAY_CONTROL_AUTH_TOKEN','SARA_SOURCE_CONTROL_AUTH_TOKEN'))
@@ -37,6 +53,15 @@ async def ingest_telemetry(envelope:TelemetryEnvelope,x_sara_device_secret:str|N
     try: return service.ingest_telemetry(envelope,x_sara_device_secret or '',x_sara_iot_transport.lower())
     except IoTError as e: raise HTTPException(status_code=403,detail=str(e)) from e
     except ValueError as e: raise HTTPException(status_code=400,detail=str(e)) from e
+@router.get('/iot/device/commands/pending')
+async def pending_device_commands(x_sara_device_id:str|None=Header(default=None),x_sara_device_secret:str|None=Header(default=None)):
+    _require_device(x_sara_device_id or '',x_sara_device_secret or ''); return {'commands':service.store.pending_commands_for_device(x_sara_device_id or '',10)}
+@router.post('/iot/device/commands/{command_id}/ack')
+async def acknowledge_device_command(command_id:str,ack:DeviceCommandAck,x_sara_device_id:str|None=Header(default=None),x_sara_device_secret:str|None=Header(default=None)):
+    device_id=x_sara_device_id or ''; _require_device(device_id,x_sara_device_secret or '')
+    try: return service.store.acknowledge_device_command(device_id,command_id,ack.status,ack.result)
+    except KeyError as e: raise HTTPException(status_code=404,detail='command_not_found') from e
+    except ValueError as e: raise HTTPException(status_code=409,detail=str(e)) from e
 @router.get('/iot/devices/{device_id}/health')
 async def device_health(device_id:str,authorization:str|None=Header(default=None)):
     _require_user(authorization)

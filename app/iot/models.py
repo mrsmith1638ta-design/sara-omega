@@ -42,6 +42,31 @@ class DeviceRegistrationRequest(BaseModel):
     device: DeviceRecord
     telemetry_secret: str = Field(min_length=24,max_length=512)
 
+class PairingCodeRequest(BaseModel):
+    device_class: str = Field(default='android', min_length=1, max_length=64)
+    model_prefix: str | None = Field(default=None, max_length=64)
+    ttl_seconds: int = Field(default=600, ge=60, le=1800)
+
+class PairingClaimRequest(BaseModel):
+    code: str = Field(min_length=16, max_length=96)
+    name: str = Field(min_length=1, max_length=160)
+    model: str = Field(min_length=1, max_length=128)
+    manufacturer: str = Field(min_length=1, max_length=64)
+    android_version: str = Field(min_length=1, max_length=32)
+    capabilities: set[str] = Field(default_factory=set, max_length=32)
+    metrics: set[str] = Field(default_factory=set, max_length=64)
+
+class PairingClaimResponse(BaseModel):
+    device_id: str
+    device_secret: str
+    server_base_url: str
+    accepted_commands: set[str] = Field(default_factory=set)
+    accepted_metrics: set[str] = Field(default_factory=set)
+
+class DeviceCommandAck(BaseModel):
+    status: CommandStatus
+    result: dict[str, Any] = Field(default_factory=dict, max_length=32)
+
 class TelemetryEnvelope(BaseModel):
     device_id: str = Field(min_length=1,max_length=128)
     message_id: str = Field(min_length=8,max_length=160)

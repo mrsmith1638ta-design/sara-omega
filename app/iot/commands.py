@@ -29,6 +29,8 @@ class CommandService:
         if d is None: raise CapabilityUnavailable('device_unavailable')
         self.guard.authorize_control(d,control_token,rec.action)
         if rec.action in d.confirmation_required: self._verify_confirmation(confirmation_token)
+        if d.adapter=='android':
+            return self.store.update_command(command_id,CommandStatus.RESERVED,{'delivery':'DEVICE_POLL'})
         self.store.update_command(command_id,CommandStatus.RESERVED,None)
         intent=DeviceCommandIntent(command_id=rec.command_id,device_id=rec.device_id,action=rec.action,parameters=rec.parameters,session_id=rec.session_id,requested_by=rec.requested_by)
         result=self.adapter_factory(d).execute(intent); payload={'outcome':result.outcome.value,'detail':result.detail,'data':result.data or {}}
