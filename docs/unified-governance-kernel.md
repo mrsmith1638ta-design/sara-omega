@@ -76,3 +76,40 @@ ok, message = IndependentEvidenceVerifier.verify(evidence, signing_key)
 ```
 
 Keep the signing key outside source control and replace HMAC with the deployment's chosen KMS, HSM, or asymmetric signing mechanism when the verifier runs across a separate trust boundary.
+
+## Production Enforcement Boundary
+
+The `sara_unified` runtime places consequential side effects behind
+`ProductionEnforcementBoundary`. Authorization by the API layer is necessary
+but is not sufficient to execute an operation.
+
+For each protected operation the boundary:
+
+1. verifies that the tamper-evident audit chain is intact;
+2. constructs a deterministic `ActionRequest` from the authenticated runtime context;
+3. evaluates identity, capability authority, policy, state transition, provenance,
+   counterfactual risk, human approval, and configured insurance gates;
+4. writes the complete signed `ExecutionEvidence` to the audit ledger;
+5. permits the side effect only when the decision is exactly `ALLOW`.
+
+`DENY`, `ESCALATE`, `QUARANTINE`, a missing production signing key, an
+invalid audit chain, or failure to persist the authorization evidence all block
+execution.
+
+The protected unified-runtime operations are:
+
+- digital-twin canonical mutation;
+- incident creation;
+- recovery execution;
+- voice synthesis/external voice side effects.
+
+Production configuration uses:
+
+- `SARA_GOVERNANCE_ENFORCEMENT_REQUIRED=true` by default when loading from the environment;
+- `SARA_GOVERNANCE_SIGNING_KEY` for the current HMAC evidence signer;
+- `SARA_GOVERNANCE_TENANT_ID` to bind runtime evidence to a tenant context.
+
+The current HMAC key remains a same-trust-domain mechanism. A separate
+asymmetric KMS/HSM-backed signer and public-key ROAD verifier remain the next
+trust-boundary hardening step.
+

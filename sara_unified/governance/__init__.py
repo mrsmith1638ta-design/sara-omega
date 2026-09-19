@@ -1,3 +1,11 @@
+from .enforcement import (
+    DEFAULT_PRODUCTION_POLICY,
+    EnforcementProfile,
+    GovernanceBlocked,
+    GovernanceEnforcementError,
+    GovernanceUnavailable,
+    ProductionEnforcementBoundary,
+)
 from .unified_kernel import (
     ActionRequest,
     ActorIdentity,
@@ -36,4 +44,10 @@ __all__ = [
     "InsuranceValidation",
     "SARAUnifiedGovernanceKernel",
     "StateTransition",
+    "DEFAULT_PRODUCTION_POLICY",
+    "EnforcementProfile",
+    "GovernanceBlocked",
+    "GovernanceEnforcementError",
+    "GovernanceUnavailable",
+    "ProductionEnforcementBoundary",
 ]
