@@ -234,3 +234,62 @@ class RHAdversarialGate:
             return RHGateDecision(False, "BLOCK", list(dict.fromkeys(reasons)))
         return RHGateDecision(True, "PASS", [])
 
+    def evaluate_tail_attack_iv_claim(
+        self,
+        claim: str,
+        *,
+        proof_status: RHProofStatus,
+        mean_bound_sourced: bool = False,
+        mean_target_proved: bool = False,
+        covariance_target_proved: bool = True,
+        discrepancy_target_proved: bool = False,
+        combined_tail_claim: bool = False,
+        assumes_rh: bool = False,
+        assumes_mobius_randomness: bool = False,
+        uses_unsourced_pnt_or_zero_free_bound: bool = False,
+        finite_period_or_subperiod_only: bool = False,
+        formal_certificate: str | None = None,
+    ) -> RHGateDecision:
+        """Fail-closed gate for Tail Attack IV dependency-graph promotion."""
+        text = claim.strip().lower()
+        reasons: list[str] = []
+
+        if assumes_rh:
+            reasons.append("Tail Attack IV cannot assume RH or a zeta-zero-location equivalent")
+        if assumes_mobius_randomness:
+            reasons.append("Tail Attack IV cannot assume Mobius randomness or square-root cancellation")
+        if uses_unsourced_pnt_or_zero_free_bound or not mean_bound_sourced:
+            reasons.append("mean-component claims require an explicit source for imported Mertens/PNT bounds")
+        if not mean_target_proved:
+            reasons.append("the mean dependency A_N^2/N=o(log^2 N) remains unproved")
+        if not covariance_target_proved:
+            reasons.append("the covariance dependency C_N=O(N) must remain proved and attached")
+        if finite_period_or_subperiod_only and not discrepancy_target_proved:
+            reasons.append("finite period/subperiod balancing cannot certify the uniform D_N rate")
+        if not discrepancy_target_proved:
+            reasons.append("the discrepancy dependency D_N/N^2=o(log^2 N) remains unproved")
+        if combined_tail_claim and (not mean_target_proved or not covariance_target_proved or not discrepancy_target_proved):
+            reasons.append("combined weighted-tail promotion requires every dependency to be proved")
+        if proof_status == RHProofStatus.NUMERICAL_EVIDENCE and combined_tail_claim:
+            reasons.append("finite numerical dashboard values cannot certify the asymptotic tail theorem")
+
+        prohibited_markers = (
+            "mobius is random",
+            "möbius is random",
+            "square-root cancellation",
+            "sqrt cancellation",
+            "period average therefore",
+            "subperiods prove",
+            "assuming rh",
+            "all zeros lie on",
+        )
+        if any(marker in text for marker in prohibited_markers):
+            reasons.append("claim contains a prohibited cancellation, zero-location, or finite-period shortcut")
+
+        if proof_status == RHProofStatus.FORMAL_PROOF_CERTIFIED and not formal_certificate:
+            reasons.append("formal Tail Attack IV status requires a certificate reference")
+
+        if reasons:
+            return RHGateDecision(False, "BLOCK", list(dict.fromkeys(reasons)))
+        return RHGateDecision(True, "PASS", [])
+

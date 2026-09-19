@@ -94,6 +94,10 @@ def test_conversation_equations_are_registered():
         "rh.tail_transfer_exact",
         "rh.tail_transfer_error",
         "rh.tail_attack_iii_target",
+        "rh.tail_weighted_mobius_mellin",
+        "rh.tail_discrepancy_period_bound",
+        "rh.tail_iv_dashboard_bound",
+        "rh.tail_attack_iv_target",
         "rh.stronger_finite_target",
         "rh.sufficient_target",
         "rh.sufficient_implication_chain",
@@ -112,6 +116,10 @@ def test_engine_never_self_certifies_rh():
     assert analysis.metadata["tail_attack_iii"]["enabled"] is True
     assert analysis.metadata["tail_attack_iii"]["exact_weighted_transfer_identity"] is True
     assert analysis.metadata["tail_attack_iii"]["uniform_tail_certified"] is False
+    assert analysis.metadata["tail_attack_iv"]["enabled"] is True
+    assert analysis.metadata["tail_attack_iv"]["combined_tail_dashboard"] is True
+    assert analysis.metadata["tail_attack_iv"]["covariance_uniform_status"] == "proved"
+    assert analysis.metadata["tail_attack_iv"]["uniform_tail_status"] == "blocked"
     statuses = {
         item.result.get("proof_status")
         for item in analysis.calculations

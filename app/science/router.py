@@ -27,7 +27,8 @@ class ScienceRouter:
             "theta_n", "psi_n", "j_n", "mellin", "tail attack", "gcd covariance",
             "jordan totient", "coprime mobius layer", "period mean square",
             "mean component", "weighted tail", "transfer discrepancy", "d_n discrepancy",
-            "centered sawtooth", "tail attack iii"
+            "centered sawtooth", "tail attack iii", "tail attack iv",
+            "mean discrepancy growth", "combined tail dashboard", "subperiod discrepancy"
         )):
             selected.append("riemann_hypothesis")
         return list(dict.fromkeys(selected))

@@ -10,6 +10,8 @@ External cross-reference:
 - S. Bettin, J. B. Conrey, D. W. Farmer, *An optimal choice of Dirichlet polynomials for the Nyman-Beurling criterion*, arXiv:1211.5191.
 - Vasyunin/cotangent-sum Gram literature is used only for finite Gram evaluation and is not treated as an RH proof.
 - NIST DLMF, Chapter 24, periodic Bernoulli functions: https://dlmf.nist.gov/24.2.iii
+- Encyclopedia of Mathematics, Wirsing theorems / PNT form M(x)=o(x): https://encyclopediaofmath.org/wiki/Wirsing_theorems
+- E. S. Lee and N. Leong, *New explicit bounds for Mertens function and the reciprocal of the Riemann zeta-function*, arXiv:2208.06141.
 
 ## Proof-status states
 
@@ -716,6 +718,122 @@ The red-team gate rejects all of the following shortcuts:
 - using RH or an RH-equivalent zero-location statement;
 - promoting finite values of (A_N), (D_N), or (T_N) to an asymptotic theorem.
 
+## Tail Attack IV: Mean + Discrepancy Growth Program
+
+Tail Attack IV converts the remaining weighted-tail problem into a live proof-dependency graph:
+
+[
+\boxed{
+T_N
+\le
+\frac{A_N^2}{N}
++
+\frac{C_N}{N}
++
+\frac{D_N}{N^2}.
+}
+]
+
+Each term carries separate finite-(N) and uniform-asymptotic status.
+
+### Mean-component attack
+
+The exact identity is
+
+[
+A_N=
+\log N+
+\frac12\int_1^N\frac{M(t)}{t}\,dt.
+]
+
+SARA stores a sourced comparison ladder rather than silently importing cancellation:
+
+- elementary: (|M(x)|\le x), giving only an O(N)-scale mean bound;
+- Prime Number Theorem: (M(x)=o(x)), established but still insufficient for the Tail Attack IV target;
+- Korobov--Vinogradov/Walfisz zero-free-region scale:
+  [
+  M(x)\ll x\exp\!\left(-c(\log x)^{3/5}(\log\log x)^{-1/5}\right),
+  ]
+  also unconditional, but still not strong enough to establish (A_N=o(\sqrt N\log N)).
+
+If
+
+[
+W(x)=\sum_{n\le x}\mu(n)\log(x/n),
+]
+
+then for (\Re s>1),
+
+[
+\boxed{
+\int_1^\infty W(x)x^{-s-1}\,dx
+=
+\frac{1}{s^2\zeta(s)}.
+}
+]
+
+This makes the mean route explicitly zeta-zero sensitive. Near-square-root bounds are treated as proof-grade dependencies, not routine PNT input.
+
+The current mean target remains
+
+[
+\boxed{
+\frac{A_N^2}{N}=o(\log^2N).
+}
+]
+
+Its uniform dashboard status is BLOCKED until a valid proof is attached.
+
+### Discrepancy attack
+
+Tail Attack IV keeps
+
+[
+E_N(x)=
+\int_N^xR_N(y)^2\,dy-M_N(x-N)
+]
+
+and
+
+[
+D_N=\sup_{x\ge N}|E_N(x)|.
+]
+
+For manageable fixed N, SARA profiles deterministic accumulation over subperiod blocks. These are FINITE_CERTIFIED evidence only.
+
+There is also an unconditional fixed-N fallback:
+
+[
+\boxed{
+D_N\le2L_NM_N,
+\qquad
+L_N=\operatorname{lcm}(1,\ldots,N).
+}
+]
+
+This bound is valid but asymptotically weak because L_N grows rapidly. The engine marks it PROVED but asymptotically_sufficient=false.
+
+The required discrepancy target remains
+
+[
+\boxed{
+\frac{D_N}{N^2}=o(\log^2N).
+}
+]
+
+Its uniform status is CONJECTURAL.
+
+### Combined live dashboard
+
+For tractable finite N, SARA emits component statuses:
+
+- mean A_N^2/N: finite_status=FINITE_CERTIFIED, uniform_status=BLOCKED;
+- covariance C_N/N: finite_status=FINITE_CERTIFIED, uniform_status=PROVED;
+- discrepancy D_N/N^2: finite_status=FINITE_CERTIFIED, uniform_status=CONJECTURAL;
+- combined weighted tail: finite_status=FINITE_CERTIFIED, uniform_status=BLOCKED.
+
+The Tail Attack IV red-team gate blocks unsourced Mertens/PNT/zero-free-region bounds, hidden RH or zeta-zero-location assumptions, Möbius-randomness or square-root-cancellation assumptions, finite subperiod patterns promoted to a uniform D_N rate, and any combined tail theorem while a required dependency remains blocked or conjectural.
+
 ## Numerical runner boundary
 
 The finite runner may compute:
@@ -745,6 +863,9 @@ CI must fail if code permits any of these transitions without formal certificati
 8. period mean-square control -> tail theorem without a proved transfer/discrepancy estimate
 9. finite-period average -> weighted tail without explicit D_N control
 10. unproved PNT-strength or Möbius-randomness input -> mean-component theorem
+11. unsourced Mertens/PNT/zero-free-region estimate -> mean-component theorem
+12. finite subperiod balancing -> uniform discrepancy theorem
+13. combined Tail IV dashboard -> asymptotic tail theorem while any dependency is blocked/conjectural
 
 The runtime truth gate and `tools/riemann_adversarial_gate.py` enforce these boundaries.
 
@@ -781,6 +902,10 @@ The runtime equation registry now includes the full set of RH objects used in th
 - `rh.tail_transfer_exact`
 - `rh.tail_transfer_error`
 - `rh.tail_attack_iii_target`
+- `rh.tail_weighted_mobius_mellin`
+- `rh.tail_discrepancy_period_bound`
+- `rh.tail_iv_dashboard_bound`
+- `rh.tail_attack_iv_target`
 - `rh.stronger_finite_target`
 - `rh.sufficient_target`
 - `rh.sufficient_implication_chain`
