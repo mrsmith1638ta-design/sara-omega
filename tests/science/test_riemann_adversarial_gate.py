@@ -78,6 +78,39 @@ def test_tail_attack_ii_blocks_unproved_mobius_randomness():
     assert any("Mobius randomness" in reason for reason in result.reasons)
 
 
+
+def test_tail_attack_iii_blocks_finite_period_to_tail_shortcut():
+    result = RHAdversarialGate().evaluate_tail_attack_iii_claim(
+        "Finite period therefore period average equals tail.",
+        proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+        covariance_bound_proved=True,
+        mean_component_bound_proved=False,
+        discrepancy_bound_proved=False,
+        weighted_transfer_proved=True,
+        finite_period_only=True,
+    )
+    assert result.allowed is False
+    assert any("finite-period average" in reason for reason in result.reasons)
+    assert any("mean-component target" in reason for reason in result.reasons)
+    assert any("discrepancy target" in reason for reason in result.reasons)
+
+
+def test_tail_attack_iii_blocks_hidden_pnt_strength_and_mobius_randomness():
+    result = RHAdversarialGate().evaluate_tail_attack_iii_claim(
+        "Use square-root cancellation in Mobius to finish the mean component.",
+        proof_status=RHProofStatus.CONJECTURAL_LEMMA,
+        covariance_bound_proved=True,
+        mean_component_bound_proved=True,
+        discrepancy_bound_proved=True,
+        weighted_transfer_proved=True,
+        assumes_mobius_randomness=True,
+        assumes_unproved_pnt_strength=True,
+    )
+    assert result.allowed is False
+    assert any("Mobius randomness" in reason for reason in result.reasons)
+    assert any("PNT-strength" in reason for reason in result.reasons)
+
+
 def test_rh_router_activation():
     routed = ScienceRouter().route_text(
         "Analyze the Riemann Hypothesis with Nyman Beurling, Baez-Duarte, Gram matrix and J_N."
@@ -87,3 +120,7 @@ def test_rh_router_activation():
         "Run Tail Attack II on the gcd covariance and Jordan totient layers."
     )
     assert "riemann_hypothesis" in covariance_routed
+    tail_iii_routed = ScienceRouter().route_text(
+        "Run Tail Attack III on the mean component and weighted tail transfer discrepancy."
+    )
+    assert "riemann_hypothesis" in tail_iii_routed
