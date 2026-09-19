@@ -1,0 +1,84 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SARA-OMEGA governance signing keys. Private keys remain inside AWS KMS HSMs.
+
+Parameters:
+  SignerPrincipalArn:
+    Type: String
+    Description: IAM role or user ARN used only by the isolated SARA signer service.
+
+Resources:
+  SaraGovernanceEd25519Key:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: SARA-OMEGA governance evidence Ed25519 signing authority
+      KeySpec: ECC_NIST_EDWARDS25519
+      KeyUsage: SIGN_VERIFY
+      PendingWindowInDays: 30
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: RootAdministration
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: "*"
+          - Sid: IsolatedSignerUse
+            Effect: Allow
+            Principal:
+              AWS: !Ref SignerPrincipalArn
+            Action:
+              - kms:Sign
+              - kms:Verify
+              - kms:GetPublicKey
+              - kms:DescribeKey
+            Resource: "*"
+
+  SaraGovernanceEd25519Alias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/sara-omega-governance-ed25519
+      TargetKeyId: !Ref SaraGovernanceEd25519Key
+
+  SaraGovernanceMlDsaKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: SARA-OMEGA governance evidence ML-DSA-65 signing authority
+      KeySpec: ML_DSA_65
+      KeyUsage: SIGN_VERIFY
+      PendingWindowInDays: 30
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: RootAdministration
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: "*"
+          - Sid: IsolatedSignerUse
+            Effect: Allow
+            Principal:
+              AWS: !Ref SignerPrincipalArn
+            Action:
+              - kms:Sign
+              - kms:Verify
+              - kms:GetPublicKey
+              - kms:DescribeKey
+            Resource: "*"
+
+  SaraGovernanceMlDsaAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/sara-omega-governance-ml-dsa-65
+      TargetKeyId: !Ref SaraGovernanceMlDsaKey
+
+Outputs:
+  Ed25519KeyArn:
+    Value: !GetAtt SaraGovernanceEd25519Key.Arn
+  MlDsa65KeyArn:
+    Value: !GetAtt SaraGovernanceMlDsaKey.Arn
+  Ed25519Alias:
+    Value: !Ref SaraGovernanceEd25519Alias
+  MlDsa65Alias:
+    Value: !Ref SaraGovernanceMlDsaAlias
