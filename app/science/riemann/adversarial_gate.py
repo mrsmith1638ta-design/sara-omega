@@ -128,3 +128,50 @@ class RHAdversarialGate:
         if reasons:
             return RHGateDecision(False, "BLOCK", reasons)
         return RHGateDecision(True, "PASS", [])
+
+    def evaluate_tail_attack_ii_uniform_claim(
+        self,
+        claim: str,
+        *,
+        proof_status: RHProofStatus,
+        covariance_uniform_bound_proved: bool = False,
+        mean_component_uniform_bound_proved: bool = False,
+        cumulative_energy_discrepancy_proved: bool = False,
+        period_to_tail_transfer_proved: bool = False,
+        assumes_rh: bool = False,
+        assumes_mobius_randomness: bool = False,
+        formal_certificate: str | None = None,
+    ) -> RHGateDecision:
+        """Fail-closed gate for the Tail Attack II covariance route.
+
+        This gate is route-specific. It prevents the proved covariance estimate
+        C_N=O(N) from being silently promoted into a theorem about the weighted
+        tail T_N without the remaining uniform estimates.
+        """
+        text = claim.strip().lower()
+        reasons: list[str] = []
+
+        if assumes_rh:
+            reasons.append("Tail Attack II uniform bound cannot assume RH or an RH-equivalent statement")
+        if assumes_mobius_randomness:
+            reasons.append("Tail Attack II uniform bound cannot assume unproved Mobius randomness or square-root cancellation")
+        if proof_status == RHProofStatus.NUMERICAL_EVIDENCE:
+            reasons.append("finite numerical covariance data cannot certify a uniform N-to-infinity tail bound")
+        if not covariance_uniform_bound_proved:
+            reasons.append("the covariance route requires a proved uniform covariance estimate")
+        if not mean_component_uniform_bound_proved:
+            reasons.append("period mean-square control still requires a proved uniform mean-component estimate")
+        if not cumulative_energy_discrepancy_proved:
+            reasons.append("period statistics do not control the weighted tail without a proved cumulative-energy discrepancy estimate")
+        if not period_to_tail_transfer_proved:
+            reasons.append("a valid period-to-tail transfer must be proved before promoting covariance control to T_N")
+        if "covariance" in text and "therefore" in text and "tail" in text:
+            if not cumulative_energy_discrepancy_proved or not period_to_tail_transfer_proved:
+                reasons.append("covariance control alone does not imply the weighted tail asymptotic")
+        if proof_status == RHProofStatus.FORMAL_PROOF_CERTIFIED and not formal_certificate:
+            reasons.append("formal Tail Attack II status requires a certificate reference")
+
+        if reasons:
+            return RHGateDecision(False, "BLOCK", list(dict.fromkeys(reasons)))
+        return RHGateDecision(True, "PASS", [])
+

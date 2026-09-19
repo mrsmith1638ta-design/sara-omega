@@ -428,6 +428,144 @@ or another cancellation mechanism, can yield a uniform estimate strong enough
 to improve the crude (B_N^2/C) remainder in a way that survives
 (N\to\infty).
 
+## Tail Attack II: gcd covariance analyzer
+
+Tail Attack II rewrites the fixed-(N) covariance
+
+[
+C_N=
+\frac1{12}
+\sum_{m,n\le N}
+a_{m,N}a_{n,N}
+\frac{\gcd(m,n)^2}{mn}
+]
+
+using the Jordan totient identity
+
+[
+\gcd(m,n)^2=
+\sum_{d\mid m,\ d\mid n}J_2(d).
+]
+
+Therefore
+
+[
+\boxed{
+C_N=
+\frac1{12}
+\sum_{d\le N}
+J_2(d)
+\left(
+\sum_{d\mid m\le N}\frac{a_{m,N}}m
+\right)^2.
+}
+]
+
+This is a positive sum of squares. It shows that there is **no cancellation
+between divisor layers**. Any arithmetic cancellation in the original gcd
+double sum occurs inside the layer sums themselves.
+
+Because (a_{m,N}=\mu(m)(\log N-\log m)), nonsquarefree divisor layers vanish.
+For squarefree (d), write
+
+[
+H_d(N/d)=
+\sum_{\substack{k\le N/d\\(k,d)=1}}
+\frac{\mu(k)\log((N/d)/k)}{k}.
+]
+
+Then
+
+[
+\boxed{
+C_N=
+\frac1{12}
+\sum_{\substack{d\le N\\\mu(d)^2=1}}
+\frac{J_2(d)}{d^2}
+H_d(N/d)^2.
+}
+]
+
+The engine verifies the direct gcd sum, the Jordan decomposition, and the
+squarefree/coprime decomposition against each other at finite (N).
+
+An elementary bound requires no RH assumption and no Möbius-randomness
+assumption. Let (L_d=\log(N/d)). Then
+
+[
+|H_d(N/d)|
+\le
+\sum_{k\le N/d}\frac{L_d-\log k}{k}
+\le
+L_d(1+L_d).
+]
+
+Since (J_2(d)/d^2\le1), dyadic grouping gives the explicit uniform estimate
+
+[
+\boxed{
+C_N\le K N,
+\qquad
+K=
+\frac{
+12(\log2)^2+
+104(\log2)^3+
+300(\log2)^4
+}{12}
+<9.14.
+}
+]
+
+So the gcd covariance component itself is now unconditionally controlled by a
+linear bound. This is a real reduction, but **it does not prove the weighted
+tail bound**. The full period mean square also contains the mean component
+
+[
+\left(
+\log N+\frac12\sum_{n\le N}a_{n,N}
+\right)^2,
+]
+
+and a period average does not automatically control the weighted tail starting
+at (y=N).
+
+Tail Attack II therefore records the conditional transfer lemma. If
+
+[
+A_N(x)=\int_N^x R_N(y)^2dy
+\le
+M_N(x-N)+D_N
+\qquad\text{for every }x\ge N,
+]
+
+then integration by parts gives
+
+[
+\boxed{
+T_N
+\le
+\frac{M_N}{N}
++
+\frac{D_N}{N^2}.
+}
+]
+
+The implication is elementary; the required uniform bound on (D_N) is not
+currently proved. The remaining Tail Attack II research gaps are therefore:
+
+- control the period mean component strongly enough;
+- obtain a uniform cumulative-energy discrepancy estimate, or another valid
+  period-to-tail transfer;
+- combine those estimates with the proved covariance (O(N)) bound without
+  importing RH, zeta-zero location, square-root cancellation, or Möbius
+  randomness as an assumption.
+
+The red-team gate explicitly rejects the inference
+
+    C_N = O(N)  therefore  T_N = o(log^2 N)
+
+unless the missing mean-component and period-to-tail estimates are supplied.
+
 ## Numerical runner boundary
 
 The finite runner may compute:
@@ -453,6 +591,8 @@ CI must fail if code permits any of these transitions without formal certificati
 4. a derivation that assumes RH -> proof of RH
 5. spectral/quantum evidence -> theorem certification
 6. symbolic identity alone -> proof of the missing asymptotic limit
+7. covariance O(N) alone -> weighted-tail little-o theorem
+8. period mean-square control -> tail theorem without a proved transfer/discrepancy estimate
 
 The runtime truth gate and `tools/riemann_adversarial_gate.py` enforce these boundaries.
 
@@ -475,6 +615,13 @@ The runtime equation registry now includes the full set of RH objects used in th
 - `rh.j_n`
 - `rh.j_split`
 - `rh.tail_sawtooth`
+- `rh.tail_periodicity`
+- `rh.tail_period_mean_square`
+- `rh.tail_covariance_jordan`
+- `rh.tail_covariance_squarefree_layers`
+- `rh.tail_covariance_linear_bound`
+- `rh.tail_energy_transfer`
+- `rh.tail_attack_ii_target`
 - `rh.stronger_finite_target`
 - `rh.sufficient_target`
 - `rh.sufficient_implication_chain`

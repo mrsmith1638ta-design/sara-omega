@@ -406,6 +406,48 @@ def equation_registry() -> list[RHEquation]:
             notes=["A full-period mean square is a structural identity, not a uniform estimate for the tail beginning at y=N."],
         ),
         RHEquation(
+            equation_id="rh.tail_covariance_jordan",
+            latex=r"C_N=\frac1{12}\sum_{d\le N}J_2(d)\left(\sum_{d\mid m\le N}\frac{a_m}{m}\right)^2",
+            description="Exact Jordan-totient sum-of-squares decomposition of the gcd covariance term.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            source_ids=["internal-rh-tail-attack-ii", "jordan-totient-divisor-identity"],
+            notes=["The decomposition is positive semidefinite; there is no cancellation between divisor layers."],
+        ),
+        RHEquation(
+            equation_id="rh.tail_covariance_squarefree_layers",
+            latex=r"C_N=\frac1{12}\sum_{\substack{d\le N\\\mu(d)^2=1}}\frac{J_2(d)}{d^2}\left(\sum_{\substack{k\le N/d\\(k,d)=1}}\frac{\mu(k)\log((N/d)/k)}{k}\right)^2",
+            description="Equivalent squarefree/coprime Möbius-layer decomposition of the covariance.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            source_ids=["internal-rh-tail-attack-ii"],
+            notes=["All arithmetic cancellation is localized inside the coprime Möbius layer sums."],
+        ),
+        RHEquation(
+            equation_id="rh.tail_covariance_linear_bound",
+            latex=r"C_N\le K N,\qquad K=\frac{12(\log2)^2+104(\log2)^3+300(\log2)^4}{12}<9.14",
+            description="Unconditional uniform linear bound from harmonic domination and dyadic summation.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            source_ids=["internal-rh-tail-attack-ii-proof"],
+            notes=["This controls the covariance component only; it does not by itself prove T_N=o(log^2 N)."],
+        ),
+        RHEquation(
+            equation_id="rh.tail_energy_transfer",
+            latex=r"A_N(x)\le M_N(x-N)+D_N\ \forall x\ge N\Longrightarrow T_N\le\frac{M_N}{N}+\frac{D_N}{N^2}",
+            description="Conditional integration-by-parts transfer from cumulative unweighted tail energy to the weighted tail.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            dependencies=["a proved uniform cumulative-energy discrepancy bound D_N"],
+            source_ids=["internal-rh-tail-attack-ii-calculus"],
+            notes=["The implication is elementary; the required uniform discrepancy estimate is not yet proved."],
+        ),
+        RHEquation(
+            equation_id="rh.tail_attack_ii_target",
+            latex=r"C_N=O(N)\ \text{is proved; remaining: control mean component and }D_N\text{ strongly enough to force }T_N=o(\log^2N)",
+            description="Tail Attack II research target after isolating and bounding the gcd covariance component.",
+            proof_status=RHProofStatus.CONJECTURAL_LEMMA,
+            dependencies=["uniform mean-component control", "uniform cumulative-energy discrepancy control", "valid period-to-tail transfer"],
+            source_ids=["internal-rh-tail-attack-ii"],
+            notes=["No RH or Möbius-randomness assumption may be used to fill the remaining gaps."],
+        ),
+        RHEquation(
             equation_id="rh.tail_fixed_n_certificate",
             latex=r"\int_N^C\frac{|R_N(y)|^2}{y^2}dy\le T_N\le\int_N^C\frac{|R_N(y)|^2}{y^2}dy+\frac{B_N^2}{C},\quad B_N=\log N+\sum_{n\le N}|\mu(n)|(\log N-\log n)",
             description="Certified fixed-N tail enclosure from an exact finite window and an unconditional pointwise remainder bound.",
@@ -544,6 +586,26 @@ class RiemannResearchEngine:
             )
         )
 
+        from .gcd_covariance import tail_attack_ii_snapshot
+        tail_ii_snapshot = tail_attack_ii_snapshot()
+        calculations.append(
+            ScienceCalculation(
+                equation_id="rh.tail_attack_ii_snapshot",
+                inputs={"N": tail_ii_snapshot["n"]},
+                result=tail_ii_snapshot,
+                provenance_class=ProvenanceClass.NUMERICAL_MATHEMATICS,
+                evidence_status="SUPPORTED",
+                assumptions=[
+                    "exact Jordan-totient covariance decomposition",
+                    "elementary harmonic and dyadic covariance bound",
+                    "finite-N diagnostics",
+                ],
+                limitations=list(tail_ii_snapshot["remaining_uniform_gaps"]),
+                source_ids=["sara-rh-tail-attack-ii"],
+                validation_status="NUMERICAL_EVIDENCE",
+            )
+        )
+
         false_promotion = gate.evaluate(
             claim="RH proved",
             proof_status=RHProofStatus.NUMERICAL_EVIDENCE,
@@ -581,6 +643,14 @@ class RiemannResearchEngine:
                     "asymptotic_certified": False,
                     "fixed_n_certificate": True,
                     "period_mean_square_identity": True,
+                },
+                "tail_attack_ii": {
+                    "enabled": True,
+                    "gcd_covariance_jordan_decomposition": True,
+                    "uniform_covariance_linear_bound_proved": True,
+                    "cross_layer_cancellation": False,
+                    "uniform_tail_certified": False,
+                    "remaining_gap": "mean-component plus cumulative-energy discrepancy / period-to-tail transfer",
                 },
                 "numerical_snapshot": snapshot.model_dump(mode="json"),
             },

@@ -47,6 +47,14 @@ def main() -> int:
             claims_asymptotic_limit=True,
             uniform_asymptotic_proved=False,
         ),
+        gate.evaluate_tail_attack_ii_uniform_claim(
+            "Covariance is O(N), therefore the tail is o(log^2 N).",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            covariance_uniform_bound_proved=True,
+            mean_component_uniform_bound_proved=False,
+            cumulative_energy_discrepancy_proved=False,
+            period_to_tail_transfer_proved=False,
+        ),
     ]
     assert all(not item.allowed for item in false_claims)
 
@@ -75,6 +83,7 @@ def main() -> int:
         "symbolic_identities_checked": True,
         "schur_recursion_checked": True,
         "finite_tail_asymptotic_promotion_blocked": True,
+        "tail_attack_ii_covariance_only_promotion_blocked": True,
         "formal_proof_certified": False,
     }, sort_keys=True))
     return 0

@@ -24,7 +24,8 @@ class ScienceRouter:
         if any(token in q for token in (
             "riemann hypothesis", "riemann", "nyman", "beurling", "baez-duarte", "báez-duarte",
             "vasyunin", "mobius", "möbius", "zeta zeros", "gram matrix", "schur complement",
-            "theta_n", "psi_n", "j_n", "mellin"
+            "theta_n", "psi_n", "j_n", "mellin", "tail attack", "gcd covariance",
+            "jordan totient", "coprime mobius layer", "period mean square"
         )):
             selected.append("riemann_hypothesis")
         return list(dict.fromkeys(selected))
