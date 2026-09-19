@@ -34,6 +34,7 @@ import {
 } from "./epistemicEvidence.js";
 import { buildRoadGateEvidence, ROAD_GATE_EVIDENCE_IDS } from "./roadGateEvidence.js";
 import {
+  computeEvidenceDigests,
   loadPinnedSaraVerificationKeys,
   verifySaraDualKmsSignatures,
   type SaraAsymmetricAlgorithm,
@@ -718,7 +719,8 @@ const manifestSchema = {
 };
 
 const asymmetricEvidenceSchema = {
-  signingDigestB64: z.string().min(4).max(1024),
+  unsignedEvidence: z.record(z.unknown()),
+  evidenceHash: z.string().regex(/^[a-fA-F0-9]{64}$/),
   signatures: z.array(
     z.object({
       algorithm: z.enum(["Ed25519", "ML-DSA"]),
@@ -970,7 +972,7 @@ export function createRoadServer(): McpServer {
       inputSchema: asymmetricEvidenceSchema,
       annotations: { ...readOnly, openWorldHint: false },
     },
-    async ({ signingDigestB64, signatures }) => {
+    async ({ unsignedEvidence, evidenceHash, signatures }) => {
       let keys;
       try {
         keys = loadPinnedSaraVerificationKeys();
@@ -986,10 +988,24 @@ export function createRoadServer(): McpServer {
         };
       }
 
+      const digests = computeEvidenceDigests(unsignedEvidence);
+      if (digests.evidenceHash !== evidenceHash.toLowerCase()) {
+        return {
+          content: [{ type: "text", text: "ROAD detected governance evidence hash tampering." }],
+          structuredContent: {
+            status: "BLOCKED",
+            verified: false,
+            reason: "evidence_hash_mismatch",
+            expectedEvidenceHash: digests.evidenceHash,
+          },
+          isError: true,
+        };
+      }
+
       const signed = signatures.map((entry) => ({
         algorithm: entry.algorithm as SaraAsymmetricAlgorithm,
         keyId: entry.keyId,
-        digestB64: signingDigestB64,
+        digestB64: digests.signingDigestB64,
         signatureB64: entry.signatureB64,
       }));
       const result = verifySaraDualKmsSignatures(signed, keys);
