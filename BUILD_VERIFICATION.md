@@ -90,3 +90,17 @@ Non-blocking warnings observed in CI:
 Secrets embedded: no production credentials are intended to be added by the science-fabric or High-Level Truth Gate implementation. The final PR diff must still be inspected before merge.
 
 Live production deployment is a separate release gate and must use the exact verified merged commit.
+
+SARA OMEGA ChatGPT V3.4.0 Riemann Research Engine verification:
+
+- V3.4.0 RH design spec committed: `a2bbc61`.
+- V3.4.0 RH implementation plan committed: `6318357`.
+- Riemann engine implements proof-status labels, Mobius/Selberg arithmetic, Baez-Duarte target encoding, finite Vasyunin/Gram research computations, Mellin scan records, a deterministic RH proof gate, SARA science provider/router integration, registry records, and GitHub validation coverage.
+- `pytest -q tests/science/test_riemann_engine.py`: PASS, 10/10.
+- `pytest -q tests/science/test_riemann_engine.py tests/science/test_riemann_registry_and_adversarial.py`: PASS, 13/13.
+- `pytest -q tests/science/test_registry.py tests/science/test_router_council_integration.py tests/test_router.py`: PASS, 11/11.
+- `pytest -q tests/science`: PASS, 65/65 with existing FastAPI deprecation warnings only.
+- `pytest -q tests/test_omega_adversarial.py tests/test_router.py tests/test_omega_orchestrator.py`: PASS, 21/21.
+- `python tools/adversarial_gate.py`: PASS, 5/5.
+- The Riemann adversarial gate rejects finite-to-infinite extrapolation, circular RH assumptions, provider consensus as proof, and quantum/spectral interpretation as proof unless `FORMAL_PROOF_CERTIFIED` with a certificate is present.
+- No claim that RH is proved is made by this integration. The live mathematical bottleneck remains an unconditional proof of `theta_N = O(1)` and `J_N = o(log^2 N)`.

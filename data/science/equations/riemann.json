@@ -1,0 +1,62 @@
+[
+  {
+    "id": "riemann.baez_duarte_distance",
+    "domain": "riemann_hypothesis",
+    "name": "Baez-Duarte reciprocal approximation distance",
+    "symbolic_form": "d_N=inf_c ||chi_(0,1)-sum_{k<=N} c_k {1/(kx)}||_2",
+    "provenance_class": "MODERN_ENGINEERING_DERIVATION",
+    "source_ids": ["riemann.local.v340_spec"],
+    "variables": {"d_N": "finite reciprocal approximation distance", "c_k": "finite coefficients"},
+    "units": {},
+    "applicability": "Riemann Hypothesis equivalent Nyman-Beurling/Baez-Duarte research route",
+    "limitations": ["Equivalent framework only; finite computations do not prove RH"]
+  },
+  {
+    "id": "riemann.mobius_correction",
+    "domain": "riemann_hypothesis",
+    "name": "Vasyunin Mobius correction residual",
+    "symbolic_form": "r_N=v_N-G_N*(-mu(1),...,-mu(N))^T",
+    "provenance_class": "MODERN_ENGINEERING_DERIVATION",
+    "source_ids": ["riemann.local.v340_spec"],
+    "variables": {"G_N": "Vasyunin Gram matrix", "v_N": "target vector", "mu": "Mobius function"},
+    "units": {},
+    "applicability": "Finite Gram correction research",
+    "limitations": ["Residual structure is numerical or symbolic evidence unless a bound is certified"]
+  },
+  {
+    "id": "riemann.J_N_bottleneck",
+    "domain": "riemann_hypothesis",
+    "name": "Selberg J_N bottleneck",
+    "symbolic_form": "J_N=integral_1^infinity |theta_N*y-psi_N(y)|^2 dy/y^2",
+    "provenance_class": "MODERN_ENGINEERING_DERIVATION",
+    "source_ids": ["riemann.local.v340_spec"],
+    "variables": {"theta_N": "Selberg normalization", "psi_N": "finite arithmetic summatory function"},
+    "units": {},
+    "applicability": "Candidate sufficient target theta_N=O(1), J_N=o(log^2 N)",
+    "limitations": ["Unconditional asymptotic bound is the open bottleneck"]
+  },
+  {
+    "id": "riemann.vasyunin_schur_decrement",
+    "domain": "riemann_hypothesis",
+    "name": "Vasyunin Schur decrement",
+    "symbolic_form": "d_(N+1)^2=d_N^2-t_N^2/s_N",
+    "provenance_class": "MODERN_ENGINEERING_DERIVATION",
+    "source_ids": ["riemann.local.v340_spec"],
+    "variables": {"s_N": "new direction Gram norm", "t_N": "target overlap"},
+    "units": {},
+    "applicability": "Recursive finite approximation analysis",
+    "limitations": ["Identity alone does not prove decrement exhaustion"]
+  },
+  {
+    "id": "riemann.mellin_mode_scan",
+    "domain": "riemann_hypothesis",
+    "name": "Blind Mellin log-frequency scan",
+    "symbolic_form": "F_t(k)=(cos(t log k), sin(t log k))",
+    "provenance_class": "SIMULATION_OR_HYPOTHESIS",
+    "source_ids": ["riemann.local.v340_spec"],
+    "variables": {"t": "Mellin log-frequency", "k": "coefficient index"},
+    "units": {},
+    "applicability": "Finite spectral research evidence",
+    "limitations": ["Frequency coincidences cannot certify RH"]
+  }
+]

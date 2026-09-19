@@ -65,6 +65,8 @@ jobs:
         run: pytest -q tests/test_adaptive_tutor.py
       - name: Production bootstrap tests
         run: pytest -q
+      - name: SARA OMEGA V3.4.0 Riemann research adversarial gate
+        run: pytest -q tests/science/test_riemann_*.py
       - name: Focused adversarial gate
         run: python tools/adversarial_gate.py
       - name: Railway container build

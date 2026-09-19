@@ -169,11 +169,16 @@ class HighLevelTruthGate:
 
     def evaluate_text_claim(self, text: str) -> dict[str, object]:
         normalized = f" {text.strip().lower()} "
+        riemann_proof_claim = any(token in normalized for token in ("riemann hypothesis", " rh ", "zeta")) and any(
+            token in normalized for token in ("proved", "proof", "solved", "qed")
+        )
         universalized = any(marker in normalized for marker in _UNIVERSALIZING_MARKERS)
         historical_overclaim = "great pyramid" in normalized and any(
             token in normalized for token in ("electromagnetic technology", "modern technology", "proves")
         )
-        if historical_overclaim:
+        if riemann_proof_claim:
+            status = "INSUFFICIENT_EVIDENCE"
+        elif historical_overclaim:
             status = "INSUFFICIENT_EVIDENCE"
         elif universalized:
             status = "SYSTEM_DEPENDENT"

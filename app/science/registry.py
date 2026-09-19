@@ -15,8 +15,8 @@ class ScienceRegistry:
     def __init__(self, equations_path: str | Path, sources_path: str | Path):
         self.equations_path = Path(equations_path)
         self.sources_path = Path(sources_path)
-        self.sources = self._load_records(self.sources_path, "source")
-        self.equations = self._load_records(self.equations_path, "equation")
+        self.sources = self._load_many([self.sources_path], "source")
+        self.equations = self._load_many([self.equations_path], "equation")
         self._validate()
 
     @staticmethod
@@ -37,6 +37,16 @@ class ScienceRegistry:
             records[identifier] = record
         return records
 
+    @classmethod
+    def _load_many(cls, paths: list[Path], kind: str) -> dict[str, dict[str, Any]]:
+        merged: dict[str, dict[str, Any]] = {}
+        for path in paths:
+            for identifier, record in cls._load_records(path, kind).items():
+                if identifier in merged:
+                    raise RegistryError(f"duplicate_{kind}_id:{identifier}")
+                merged[identifier] = record
+        return merged
+
     def _validate(self) -> None:
         allowed = {item.value for item in ProvenanceClass}
         for source_id, source in self.sources.items():
@@ -56,7 +66,13 @@ class ScienceRegistry:
     @classmethod
     def default(cls) -> "ScienceRegistry":
         root = Path(__file__).resolve().parents[2]
-        return cls(root / "data/science/equations/core.json", root / "data/science/sources/core.json")
+        registry = cls(root / "data/science/equations/core.json", root / "data/science/sources/core.json")
+        equation_paths = sorted((root / "data/science/equations").glob("*.json"))
+        source_paths = sorted((root / "data/science/sources").glob("*.json"))
+        registry.equations = cls._load_many(equation_paths, "equation")
+        registry.sources = cls._load_many(source_paths, "source")
+        registry._validate()
+        return registry
 
     def get_equation(self, equation_id: str) -> dict[str, Any]:
         try:

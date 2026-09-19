@@ -57,6 +57,7 @@ class SaraOmega:
             "science_maglev_ems": ScienceSpecialist("science_maglev_ems"),
             "science_maglev_eds": ScienceSpecialist("science_maglev_eds"),
             "science_maglev_hts": ScienceSpecialist("science_maglev_hts"),
+            "science_riemann": ScienceSpecialist("science_riemann"),
         }
         self._signed_ledger_error: str | None = None
         if signed_ledger is not None:
