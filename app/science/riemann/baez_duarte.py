@@ -167,6 +167,39 @@ def truncated_j_n(n: int, cutoff: int) -> float:
     return total
 
 
+def finite_range_j_n(n: int) -> float:
+    """Exact J_N contribution on [1,N], where psi_N(y)=Chebyshev psi(y)."""
+    if n < 2:
+        raise ValueError("finite_range_j_requires_n_ge_2")
+    return truncated_j_n(n, n)
+
+
+def tail_residual_sawtooth(n: int, y: float) -> float:
+    """Exact identity for theta_N*y-psi_N(y) in fractional-part form."""
+    if n < 2 or y < 1.0:
+        raise ValueError("tail_residual_requires_n_ge_2_and_y_ge_1")
+    mu = mobius_sieve(n)
+    log_n = math.log(n)
+    return log_n + sum(
+        mu[k] * (log_n - math.log(k)) * ((y / k) - math.floor(y / k))
+        for k in range(1, n + 1)
+    )
+
+
+def j_split_snapshot(n: int, cutoff: int) -> dict[str, float | bool]:
+    """Auditable finite/tail decomposition with only a finite tail window computed."""
+    if n < 2 or cutoff <= n:
+        raise ValueError("j_split_requires_cutoff_gt_n_ge_2")
+    finite = finite_range_j_n(n)
+    through_cutoff = truncated_j_n(n, cutoff)
+    return {
+        "finite_range_1_to_N": finite,
+        "tail_window_N_to_cutoff": through_cutoff - finite,
+        "through_cutoff": through_cutoff,
+        "tail_beyond_cutoff_uncomputed": True,
+    }
+
+
 def truncated_l2_identity(n: int, cutoff: int) -> dict[str, float | bool]:
     log_n = math.log(n)
     theta = theta_n(n)
@@ -272,6 +305,13 @@ def equation_registry() -> list[RHEquation]:
             source_ids=["baez-duarte-family", "bettin-conrey-farmer-context"],
         ),
         RHEquation(
+            equation_id="rh.constructive_residual",
+            latex=r"F_N(x)=\sum_{n\le N}c_n\rho_n(x),\qquad e_N(x)=\chi_{(0,1)}(x)-F_N(x)",
+            description="Constructive Selberg-candidate approximant and residual.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            source_ids=["internal-rh-algebra"],
+        ),
+        RHEquation(
             equation_id="rh.theta",
             latex=r"\theta_N=-\log N\sum_{n\le N}\frac{c_n}{n}=\log N\sum_{n\le N}\frac{\mu(n)}n-\sum_{n\le N}\frac{\mu(n)\log n}{n}",
             description="Theta normalization induced by the Selberg coefficients.",
@@ -293,11 +333,32 @@ def equation_registry() -> list[RHEquation]:
             source_ids=["internal-rh-algebra"],
         ),
         RHEquation(
+            equation_id="rh.mobius_divisor_identity",
+            latex=r"\sum_{n\le y}\mu(n)\left\lfloor\frac yn\right\rfloor=1",
+            description="Classical Möbius divisor identity used in the finite-range reduction.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            source_ids=["mobius-divisor-identities"],
+        ),
+        RHEquation(
+            equation_id="rh.log_mobius_divisor_identity",
+            latex=r"\sum_{n\le y}\mu(n)\log n\left\lfloor\frac yn\right\rfloor=-\psi(y)",
+            description="Log-weighted Möbius divisor identity giving Chebyshev psi.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            source_ids=["mobius-divisor-identities"],
+        ),
+        RHEquation(
             equation_id="rh.finite_psi",
             latex=r"\psi_N(y)=\psi(y)\qquad(1\le y\le N)",
             description="Finite-range reduction to Chebyshev psi using divisor identities.",
             proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
             source_ids=["mobius-divisor-identities"],
+        ),
+        RHEquation(
+            equation_id="rh.finite_range_residual",
+            latex=r"e_N(1/y)=\frac{\theta_Ny-\psi(y)}{\log N}\qquad(1\le y\le N)",
+            description="Finite-range residual after replacing psi_N by Chebyshev psi.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            source_ids=["internal-rh-algebra", "mobius-divisor-identities"],
         ),
         RHEquation(
             equation_id="rh.l2_exact",
@@ -314,6 +375,30 @@ def equation_registry() -> list[RHEquation]:
             source_ids=["internal-rh-reduction"],
         ),
         RHEquation(
+            equation_id="rh.j_split",
+            latex=r"J_N=\int_1^N|\theta_Ny-\psi(y)|^2\frac{dy}{y^2}+\int_N^\infty|\theta_Ny-\psi_N(y)|^2\frac{dy}{y^2}",
+            description="Exact split of the bottleneck into the finite Chebyshev range and post-N tail.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            source_ids=["internal-rh-reduction", "mobius-divisor-identities"],
+        ),
+        RHEquation(
+            equation_id="rh.tail_sawtooth",
+            latex=r"\theta_Ny-\psi_N(y)=\log N+\sum_{n\le N}\mu(n)(\log N-\log n)\left\{\frac yn\right\}",
+            description="Exact fractional-part representation useful for tail analysis.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            source_ids=["internal-rh-algebra"],
+            notes=["This identity does not itself establish the required tail asymptotic."],
+        ),
+        RHEquation(
+            equation_id="rh.stronger_finite_target",
+            latex=r"\int_1^N|\psi(y)-\theta_Ny|^2\frac{dy}{y^2}=O(\log N)",
+            description="Earlier stronger finite-range target; useful if proved but stronger than required.",
+            proof_status=RHProofStatus.CONJECTURAL_LEMMA,
+            dependencies=["unconditional proof of the displayed estimate"],
+            source_ids=["internal-rh-reduction"],
+            notes=["The current sufficient target only requires J_N=o(log^2 N)."],
+        ),
+        RHEquation(
             equation_id="rh.sufficient_target",
             latex=r"\theta_N=O(1)\quad\text{and}\quad J_N=o(\log^2N)",
             description="Sufficient target for this constructive route to force ||e_N||_2 to zero.",
@@ -321,6 +406,15 @@ def equation_registry() -> list[RHEquation]:
             dependencies=["unconditional proof of both asymptotic statements"],
             source_ids=["internal-rh-reduction"],
             notes=["This target is not currently proved by the engine."],
+        ),
+        RHEquation(
+            equation_id="rh.sufficient_implication_chain",
+            latex=r"\theta_N=O(1),\ J_N=o(\log^2N)\Longrightarrow\|e_N\|_2^2\to0\Longrightarrow d_N\to0\Longrightarrow RH",
+            description="Conditional implication chain from the current asymptotic target to RH.",
+            proof_status=RHProofStatus.CONJECTURAL_LEMMA,
+            dependencies=["theta_N=O(1)", "J_N=o(log^2 N)", "Baez-Duarte criterion"],
+            source_ids=["internal-rh-reduction", "baez-duarte-2002"],
+            notes=["The chain is conditional because its two asymptotic hypotheses are not certified."],
         ),
         RHEquation(
             equation_id="rh.baez_duarte_limit",
@@ -439,6 +533,8 @@ class RiemannResearchEngine:
                     "reasons": false_promotion.reasons,
                 },
                 "current_bottleneck": "J_N=o(log^2 N) together with theta_N=O(1)",
+                "bottleneck_split": "J_N = finite Chebyshev range [1,N] + post-N psi_N tail",
+                "conversation_cross_reference_complete": True,
                 "numerical_snapshot": snapshot.model_dump(mode="json"),
             },
         )
