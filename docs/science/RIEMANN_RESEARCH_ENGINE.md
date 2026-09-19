@@ -211,6 +211,45 @@ J_N=
 }.
 ]
 
+The exact Möbius divisor identities stored alongside that reduction are
+
+[
+\sum_{n\le y}\mu(n)\left\lfloor\frac yn\right\rfloor=1
+]
+
+and
+
+[
+\sum_{n\le y}\mu(n)\log n\left\lfloor\frac yn\right\rfloor=-\psi(y).
+]
+
+Therefore the bottleneck splits exactly as
+
+[
+\boxed{
+J_N
+=
+\int_1^N|\theta_Ny-\psi(y)|^2\frac{dy}{y^2}
++
+\int_N^\infty|\theta_Ny-\psi_N(y)|^2\frac{dy}{y^2}
+}.
+]
+
+The post-(N) residual also has the exact fractional-part representation
+
+[
+\boxed{
+\theta_Ny-\psi_N(y)
+=
+\log N
++
+\sum_{n\le N}\mu(n)(\log N-\log n)
+\left\{\frac yn\right\}.
+}
+]
+
+This identity is useful for tail analysis, but it is **not** by itself a sufficient asymptotic bound.
+
 The current sufficient target is
 
 [
@@ -221,7 +260,21 @@ J_N=o(\log^2N)
 }.
 ]
 
-If both asymptotic statements are proved unconditionally, then the displayed norm identity forces (|e_N|_2\to0); the Báez-Duarte criterion would then imply RH. **The engine does not currently contain such a proof.** The pair of asymptotic statements is therefore tagged `CONJECTURAL_LEMMA`.
+The corresponding conditional implication chain is recorded explicitly:
+
+[
+\boxed{
+\theta_N=O(1),\ J_N=o(\log^2N)
+\Longrightarrow
+\|e_N\|_2^2\to0
+\Longrightarrow
+d_N\to0
+\Longrightarrow
+RH.
+}
+]
+
+If both asymptotic statements are proved unconditionally, then the displayed norm identity forces (\|e_N\|_2\to0); the Báez-Duarte criterion would then imply RH. **The engine does not currently contain such a proof.** The two asymptotic statements and the implication chain are therefore fail-closed as `CONJECTURAL_LEMMA` objects until their hypotheses are certified.
 
 The earlier stronger target
 
@@ -258,3 +311,29 @@ CI must fail if code permits any of these transitions without formal certificati
 6. symbolic identity alone -> proof of the missing asymptotic limit
 
 The runtime truth gate and `tools/riemann_adversarial_gate.py` enforce these boundaries.
+
+
+## Conversation cross-reference registry
+
+The runtime equation registry now includes the full set of RH objects used in the current research thread, including:
+
+- `rh.rho_n`
+- `rh.constructive_residual`
+- `rh.selberg_coefficients`
+- `rh.theta`
+- `rh.psi_n`
+- `rh.pointwise_residual`
+- `rh.mobius_divisor_identity`
+- `rh.log_mobius_divisor_identity`
+- `rh.finite_psi`
+- `rh.finite_range_residual`
+- `rh.l2_exact`
+- `rh.j_n`
+- `rh.j_split`
+- `rh.tail_sawtooth`
+- `rh.stronger_finite_target`
+- `rh.sufficient_target`
+- `rh.sufficient_implication_chain`
+- `rh.baez_duarte_limit`
+
+This is the intended integration point for future RH derivations. New calculations must enter through the equation registry and inherit a proof-status label before they are eligible for synthesis.
