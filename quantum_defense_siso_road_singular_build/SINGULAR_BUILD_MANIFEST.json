@@ -1,0 +1,31 @@
+{
+  "classification": "PILOT_CANDIDATE_PRODUCTION_GATES_REQUIRE_LIVE_ATTESTATION_AND_DEPLOYMENT_EVIDENCE",
+  "copied": [
+    "01-sara-nexus-ppsim",
+    "02-sara-security-fabric",
+    "03-sara-global-truth-protocol",
+    "04-sara-evolution-engine",
+    "05-sara-nexus-cipmu",
+    "06-raft-node",
+    "road_fusion",
+    "aws_deploy",
+    "README_V13_DEPLOY.md",
+    "build_one_candidate_v13.sh",
+    "create_pqc_secrets_v13.sh",
+    "v3_staged_overlay_reference"
+  ],
+  "created_at_epoch": 1789447060,
+  "name": "quantum-defense-siso-road-singular-build",
+  "raod_road_gate_basis": "local exact-source SISO gates plus ROAD candidate verification where connector is reachable",
+  "siso_controls": [
+    "fail_closed_consensus",
+    "operation_hmac_authorization",
+    "no_shared_secret_response_material",
+    "attestation_blocks_when_currently_inaccessible",
+    "durable_seal_metadata_store",
+    "no_minimal_fallback_apps",
+    "road_fused_release_gate",
+    "aws_health_endpoints",
+    "claim_policy_grep_controls"
+  ]
+}

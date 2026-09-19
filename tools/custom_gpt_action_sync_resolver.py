@@ -14,7 +14,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 REPORT = ROOT / "custom-gpt-action-sync-report.json"
-DEFAULT_SCHEMA_URL = "https://sara-omega-production.up.railway.app/gpt/action/openapi.yaml"
+DEFAULT_SCHEMA_URL = "https://sara-omega-production-9bcf.up.railway.app/gpt/action/openapi.yaml"
 GITHUB_RUNS_URL = (
     "https://api.github.com/repos/mrsmith1638ta-design/sara-omega/actions/runs"
     "?branch=main&per_page=10"
@@ -72,7 +72,7 @@ def validate_schema_contract(schema: str) -> dict[str, Any]:
     failures = []
     if "openapi: 3.1.0" not in schema:
         failures.append("schema_not_openapi_3_1_0")
-    if "https://sara-omega-production.up.railway.app" not in schema:
+    if "https://sara-omega-production-9bcf.up.railway.app" not in schema:
         failures.append("production_server_missing")
     if "bearerAuth" not in schema or "scheme: bearer" not in schema:
         failures.append("bearer_auth_missing")
@@ -218,7 +218,7 @@ def resolve_sync(schema_url: str = DEFAULT_SCHEMA_URL, include_github: bool = Tr
         },
         "editor_import_package": {
             "openapi_schema_url": schema_url,
-            "action_gateway_url": "https://sara-omega-production.up.railway.app/gpt/action/gateway",
+            "action_gateway_url": "https://sara-omega-production-9bcf.up.railway.app/gpt/action/gateway",
             "required_manual_steps": [
                 "Open the production SARA GPT editor.",
                 "Create or replace the SARA-OMEGA Action.",

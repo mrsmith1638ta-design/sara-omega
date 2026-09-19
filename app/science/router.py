@@ -21,25 +21,10 @@ class ScienceRouter:
             token in q for token in ("egypt", "egyptian", "rhind", "ancient", "historical", "18th century", "eighteenth century", "mathematics")
         ):
             selected.append("historical_nuclear_fusion")
-        if any(
-            token in q
-            for token in (
-                "riemann",
-                "riemann hypothesis",
-                " rh ",
-                "nyman",
-                "baez-duarte",
-                "baez duarte",
-                "vasyunin",
-                "mobius",
-                "möbius",
-                "chebyshev psi",
-                "zeta",
-                "mellin",
-                "dilation hamiltonian",
-                "j_n",
-                "theta_n",
-            )
-        ):
-            selected.append("riemann")
+        if any(token in q for token in (
+            "riemann hypothesis", "riemann", "nyman", "beurling", "baez-duarte", "báez-duarte",
+            "vasyunin", "mobius", "möbius", "zeta zeros", "gram matrix", "schur complement",
+            "theta_n", "psi_n", "j_n", "mellin"
+        )):
+            selected.append("riemann_hypothesis")
         return list(dict.fromkeys(selected))

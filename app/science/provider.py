@@ -10,7 +10,7 @@ from .maglev_ems import EMSMaglevEngine
 from .maglev_eds import EDSMaglevEngine
 from .maglev_hts import HTSMaglevEngine
 from .historical_nuclear_fusion import HistoricalNuclearFusionEngine
-from .riemann.provider import RiemannResearchEngine
+from .riemann import RiemannResearchEngine
 from .truth_gate import HighLevelTruthGate
 
 
@@ -22,6 +22,7 @@ _ENGINES = {
     "science_maglev_eds": EDSMaglevEngine,
     "science_maglev_hts": HTSMaglevEngine,
     "science_historical_nuclear_fusion": HistoricalNuclearFusionEngine,
+    "science_riemann_hypothesis": RiemannResearchEngine,
     "science_riemann": RiemannResearchEngine,
 }
 

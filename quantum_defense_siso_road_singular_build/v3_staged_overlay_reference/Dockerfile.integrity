@@ -1,0 +1,3 @@
+FROM us-central1-docker.pkg.dev/sara-soverigne-modules/sara-quantum-defense/sara-global-truth-protocol-pqc@sha256:896cb1530b954e4dfc842bef6e747b12e2cb293ddb6a7d3616654a354bd037b1
+COPY main_patched_integrity.py /app/main_patched_integrity.py
+CMD ["gunicorn", "--bind", ":8080", "--workers", "1", "--threads", "8", "--worker-class", "gthread", "main_patched_integrity:app"]

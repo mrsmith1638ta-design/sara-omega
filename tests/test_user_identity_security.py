@@ -81,6 +81,15 @@ def test_custom_gpt_schema_uses_oauth_user_gateway_for_personal_memory():
     assert "SARA_RAILWAY_CONTROL_AUTH_TOKEN" not in schema
 
 
+def test_openapi_documents_voice_accessibility_scope_and_routes():
+    schema = Path("chatgpt-gpt-action.yaml").read_text(encoding="utf-8")
+
+    assert "sara.voice.accessibility" in schema
+    assert "/v1/accessibility/voice/jobs:" in schema
+    assert "/v1/accessibility/voice/preferences:" in schema
+    assert "SARA_PIPER_SERVICE_TOKEN" not in schema
+
+
 def test_custom_gpt_schema_does_not_expose_privileged_control_plane():
     schema = Path("chatgpt-gpt-action.yaml").read_text(encoding="utf-8")
     forbidden = (

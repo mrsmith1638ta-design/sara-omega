@@ -26,6 +26,7 @@ for SARA-OMEGA.
 - outcome + lesson recording
 - prior-decision context supplied to semantic synthesis
 - FastAPI service
+- governed Piper voice synthesis with an isolated internal renderer and fixed SARA voice profile
 - enterprise Runtime Assurance API with audit receipts, evidence adapters,
   live module truth and fail-closed claim suppression
 - Madhouse Agent adversarial code critique gate with syntax, logic, security,
@@ -156,3 +157,64 @@ inside `context`: `candidate_id`, `language`, `generated_code`, `requirements`, 
 The supplied module-awareness and SARA-TITAN builds are integrated into SARA Omega as
 internal modules. See `docs/MODULE_AWARENESS_TITAN_INTEGRATION.md` for endpoint coverage,
 attack-vector coverage and the production boundary.
+
+## SARA Piper Voice Synthesis
+
+SARA Unified exposes a governed voice capability using the fixed profile
+`sara_elegant_british_v1`, backed by Piper `en_GB-cori-high`. The product voice direction is a
+British English female presentation with an elegant, calm, articulate professional register.
+
+Voice is disabled by default. SARA core does not install or import the Piper runtime. Instead,
+`POST /v1/voice/synthesize` sends authorized, bounded text to the separately deployed internal
+service under `voice_service/`, and returns WAV audio. `GET /v1/voice/profile` exposes the
+non-sensitive profile metadata.
+
+Enable the core route only after provisioning the private Piper service:
+
+```text
+SARA_VOICE_ENABLED=true
+SARA_PIPER_SERVICE_URL=http://<private-piper-service>:5000
+SARA_PIPER_SERVICE_TOKEN=<shared-random-service-token>
+SARA_VOICE_TIMEOUT_SECONDS=15
+SARA_VOICE_MAX_CHARACTERS=4000
+```
+
+The Piper service separately requires:
+
+```text
+PIPER_MODEL_PATH=/models/en_GB-cori-high.onnx
+SARA_VOICE_SERVICE_TOKEN=<same-shared-random-service-token>
+```
+
+The main SARA audit ledger records only the voice profile ID, character count, and SHA-256 digest
+of synthesized text for this endpoint; it does not store the raw spoken text in the synthesis event.
+See `voice_service/README.md` for model provisioning, container deployment, and licensing-boundary
+notes.
+
+### Voice 1.1 hardening
+
+Voice 1.1 is an owner/internal-only certification surface. Enable it only with
+`SARA_VOICE_1_1_ENABLED=true` after the Voice 1.1 implementation has passed repository tests and
+production acceptance. Public accessibility voice routes remain disabled until a separate Voice 1.1A
+release gate.
+
+### Voice 1.1A accessibility API
+
+Voice 1.1A is a separately certified, limited user-facing accessibility surface. It reuses the
+accepted Voice 1.1 engine but adds OAuth scope `sara.voice.accessibility`, durable owner-granted
+entitlements, server-resolved individual tenants, persistent user and tenant quotas, encrypted
+bounded transcript retention, and authenticated no-store WAV delivery.
+
+It is disabled unless both release gates are true:
+
+```text
+SARA_VOICE_1_1A_ENABLED=true
+SARA_VOICE_ACCESSIBILITY_PUBLIC_ENABLED=true
+```
+
+The OAuth client must allow `sara.voice.accessibility`, and the owner must grant the enrolled user a
+Voice 1.1A entitlement before any user route succeeds. Caller-supplied tenant, model, voice,
+pronunciation, service, and raw Piper control fields are rejected. Disabling either release gate
+returns the entire user-facing surface to `404` without disabling owner-only Voice 1.1.
+
+See `docs/voice-1-1a-production-acceptance.md` for the staged certification and rollback procedure.

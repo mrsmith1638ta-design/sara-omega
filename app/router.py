@@ -18,7 +18,7 @@ SCIENCE_PROVIDER_MAP = {
     "maglev_eds": ("science_maglev_eds", "EDS maglev physics"),
     "maglev_hts": ("science_maglev_hts", "HTS levitation physics"),
     "historical_nuclear_fusion": ("science_historical_nuclear_fusion", "historical mathematics and nuclear decay research"),
-    "riemann": ("science_riemann", "Riemann Hypothesis research"),
+    "riemann_hypothesis": ("science_riemann", "Riemann Hypothesis analytic-number-theory research"),
 }
 
 class OmegaRouter:

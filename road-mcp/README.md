@@ -75,6 +75,28 @@ previously observed live server is the `TEST` gate and the new
 `test-ci-validation` evidence record (see below) — this is the feature this
 change implements, not a reconciliation gap.
 
+## Connector Status
+
+The authoritative connector path for release certification is the permanent
+ROAD connector backed by the Railway ROAD MCP service:
+
+- Service: `sara-omega-road-mcp`
+- Railway project: `495f4e9d-1f63-4511-8a02-a971452e9170`
+- Railway service: `9d5b1dc9-aa3a-433d-b31e-7f9d77957b12`
+- Production endpoint: `https://sara-omega-road-mcp-production.up.railway.app/mcp`
+- Status: authoritative for ROAD release evidence while `/health` is reachable
+  and the permanent connector returns gate evidence.
+
+The older non-permanent `SARA OMEGA ROAD` connector that points at an ephemeral
+Cloudflare tunnel is retired for release certification. If it is still present
+in a local Codex or plugin cache and returns `UNAVAILABLE` or
+`mcp_network_error`, classify that as a connector-operations defect, not as a
+ROAD release-gate failure, provided the permanent connector and Railway ROAD
+MCP service remain healthy. Do not use the retired connector as promotion,
+signing, release, or blocking-dependency authority. Remove it from connector
+configuration where possible, or leave it explicitly marked as retired until
+it is repointed to the Railway ROAD MCP endpoint above.
+
 ## What ROAD does
 
 - Exposes 11 read-only MCP tools over Streamable HTTP at `POST /mcp`
@@ -148,7 +170,27 @@ npm start       # runs dist/server.js, listens on $PORT (default 3000)
 
 `railway.json` configures a Nixpacks build (`npm ci && npm run build`) and
 `npm run start` as the start command, matching the existing Railway service's
-build/start contract. Deploying this tree to the existing ROAD service was
-explicitly out of scope for this change (see the design spec's Task 8) and
-was not performed — this reconstruction only canonicalizes source under
-version control and adds the TEST/CI evidence feature; it does not deploy.
+build/start contract.
+
+On 2026-09-17, ROAD MCP was deployed to the production Railway service from
+this repository after binding `SARA-OMEGA-3.4.0` release-signing and promotion
+authority evidence to the accepted production SHA
+`4524e2dcb1aa063865a253a902ae7adc3bd067c7`, replacing the stale 3.2.1/PR #27
+release-clearing scope while preserving the production SARA runtime capsule.
+
+Later on 2026-09-17, after the governed unified fusion layer was deployed to
+`sara-omega` as Railway deployment `3cb5afac-5b4d-46ed-8145-e302d1740220`,
+ROAD release-signing and promotion authority evidence was rebound to accepted
+production SHA `dec94b279d133641179680b02db0176c07490d9d`. The ROAD MCP
+deployment is a separate service deployment and does not redeploy
+`sara-omega` or `sara-piper-voice`.
+
+SARA-OMEGA 3.4.0 is certified at runtime SHA
+`8f0829d93a0fe4186f70a6225f086b015c7f9c4a`, deployed to `sara-omega` as
+Railway deployment `90c70a0b-a38c-48c8-9b1c-1522d03d079e`.
+
+The release includes the governed unified orchestration layer originally
+introduced at `dec94b2`, plus subsequent certified 3.4.0 lineage additions
+including causal authority and the expert reasoning fabric. ROAD SIGN/RELEASE
+evidence is bound to `8f0829d93a0fe4186f70a6225f086b015c7f9c4a`, not
+`dec94b2`.

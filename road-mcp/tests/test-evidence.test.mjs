@@ -31,12 +31,21 @@ import {
   buildEpistemicEvidence,
   computeEpistemicEvidence,
 } from "../dist/epistemicEvidence.js";
-import { certificationChecks, createApp } from "../dist/server.js";
+import {
+  BUILD_IMPLEMENTATION_EVIDENCE_ID,
+  CANONICAL_RELEASE_VERSION,
+  SECURITY_AUDIT_EVIDENCE_ID,
+  certificationChecks,
+  createApp,
+  loadReleaseClearingEvidence,
+} from "../dist/server.js";
 import { buildRoadGateEvidence, ROAD_GATE_EVIDENCE_IDS } from "../dist/roadGateEvidence.js";
 
 const VALID_SHA = "a".repeat(40);
 const OTHER_SHA = "b".repeat(40);
 const BLOCKING_SHA = "c".repeat(40);
+const SARA_OMEGA_340_SHA = "8f0829d93a0fe4186f70a6225f086b015c7f9c4a";
+const SARA_OMEGA_340_DEPLOYMENT_ID = "90c70a0b-a38c-48c8-9b1c-1522d03d079e";
 
 function attestation(overrides = {}) {
   return {
@@ -211,6 +220,25 @@ test("PASS: ROAD MCP exposes GET /health for Railway healthchecks", async (t) =>
   const body = await response.json();
   assert.equal(body.status, "ok");
   assert.equal(body.service, "sara-omega-road-mcp");
+});
+
+test("SARA-OMEGA 3.4.0 release evidence binds SIGN and RELEASE to the accepted production SHA", () => {
+  assert.equal(CANONICAL_RELEASE_VERSION, "SARA-OMEGA-3.4.0");
+
+  const records = loadReleaseClearingEvidence();
+  const signing = records.find((record) => record.id === "release-signing-evidence");
+  const promotion = records.find((record) => record.id === "promotion-authority-evidence");
+
+  assert.ok(signing);
+  assert.ok(promotion);
+  assert.equal(signing.status, "PASS");
+  assert.equal(promotion.status, "PASS");
+  assert.match(signing.subject, /SARA-OMEGA 3\.4\.0/);
+  assert.match(promotion.subject, /SARA-OMEGA 3\.4\.0/);
+  assert.ok(signing.detail.includes(SARA_OMEGA_340_SHA));
+  assert.ok(promotion.detail.includes(SARA_OMEGA_340_SHA));
+  assert.ok(!signing.detail.includes("SARA ChatGPT Custom 3.2.1"));
+  assert.ok(!promotion.detail.includes("PR #27"));
 });
 
 test("BLOCKED: Madhouse BLOCKED review blocks the adversarial evidence record", async () => {
@@ -483,6 +511,26 @@ function baseRecords(overrides = {}) {
       hash: "x",
       ...overrides,
     },
+    {
+      id: BUILD_IMPLEMENTATION_EVIDENCE_ID,
+      subject: "SARA-OMEGA BUILD implementation evidence",
+      status: overrides.status ?? "UNVERIFIED",
+      evidenceState: overrides.evidenceState ?? "UNVERIFIED",
+      source: "x",
+      checkedAt: "2026-01-01T00:00:00.000Z",
+      detail: "x",
+      hash: "x",
+    },
+    {
+      id: SECURITY_AUDIT_EVIDENCE_ID,
+      subject: "SARA-OMEGA SECURITY audit evidence",
+      status: overrides.status ?? "UNVERIFIED",
+      evidenceState: overrides.evidenceState ?? "UNVERIFIED",
+      source: "x",
+      checkedAt: "2026-01-01T00:00:00.000Z",
+      detail: "x",
+      hash: "x",
+    },
   ];
 }
 
@@ -516,6 +564,38 @@ function baseRecordsWithEpistemic(testOverrides = {}, madhouseOverrides = {}, ep
       detail: "x",
       hash: "x",
       ...epistemicOverrides,
+    },
+  ];
+}
+
+function releaseEvidenceRecords(overrides = {}) {
+  return [
+    {
+      id: "release-signing-evidence",
+      subject: "SARA-OMEGA 3.4.0 release signing evidence",
+      status: "PASS",
+      evidenceState: "VERIFIED",
+      source: "https://sara-omega-production-9bcf.up.railway.app/road/production-acceptance",
+      checkedAt: "2026-09-15T05:04:53.000Z",
+      detail: `SARA-OMEGA 3.4.0 release signing binds GitHub candidate SHA ${SARA_OMEGA_340_SHA}, Railway deployment ${SARA_OMEGA_340_DEPLOYMENT_ID}, production acceptance source SHA ${SARA_OMEGA_340_SHA}, and ROAD release SHA ${SARA_OMEGA_340_SHA}.`,
+      hash: "sara-omega-3.4.0-signing",
+      ...overrides.signing,
+    },
+    {
+      id: "promotion-authority-evidence",
+      subject: "SARA-OMEGA 3.4.0 promotion authority",
+      status: "PASS",
+      evidenceState: "VERIFIED",
+      source: "https://sara-omega-production-9bcf.up.railway.app/road/production-acceptance",
+      checkedAt: "2026-09-15T05:04:53.000Z",
+      detail:
+        `Promotion authority is explicitly scoped to SARA-OMEGA 3.4.0 at ${SARA_OMEGA_340_SHA}; ` +
+        "the release includes the governed unified orchestration layer originally introduced at dec94b2, " +
+        "plus subsequent certified 3.4.0 lineage additions including causal authority and the expert reasoning fabric. " +
+        `ROAD SIGN/RELEASE evidence is bound to ${SARA_OMEGA_340_SHA}, not dec94b2. ` +
+        "This certifies the GPT-native enterprise governance release boundary and does not alter preserved Voice 1.0/1.1 evidence capsules.",
+      hash: "sara-omega-3.4.0-promotion",
+      ...overrides.promotion,
     },
   ];
 }
@@ -579,6 +659,22 @@ test("TEST gate is PASS only when test-ci-validation evidence is PASS, with evid
   const testCheck = checks.find((c) => c.gate === "TEST");
   assert.equal(testCheck.status, "PASS");
   assert.deepEqual(testCheck.evidenceIds, [TEST_CI_EVIDENCE_ID]);
+});
+
+test("BUILD gate is PASS only from dedicated build implementation evidence", () => {
+  const records = baseRecords({ status: "PASS", evidenceState: "VERIFIED" });
+  const checks = certificationChecks(records);
+  const buildCheck = checks.find((c) => c.gate === "BUILD");
+  assert.equal(buildCheck.status, "PASS");
+  assert.deepEqual(buildCheck.evidenceIds, [BUILD_IMPLEMENTATION_EVIDENCE_ID]);
+});
+
+test("SECURITY gate is PASS only from dedicated security audit evidence plus Context.dev evidence", () => {
+  const records = baseRecords({ status: "PASS", evidenceState: "VERIFIED" });
+  const checks = certificationChecks(records);
+  const securityCheck = checks.find((c) => c.gate === "SECURITY");
+  assert.equal(securityCheck.status, "PASS");
+  assert.deepEqual(securityCheck.evidenceIds, [SECURITY_AUDIT_EVIDENCE_ID, "contextdev-authorization"]);
 });
 
 test("TEST gate is UNVERIFIED when test-ci-validation evidence is UNVERIFIED, with evidenceIds=[test-ci-validation]", () => {
@@ -668,6 +764,52 @@ test("EPISTEMIC gate stays UNVERIFIED when the claim audit is absent", () => {
   const check = checks.find((c) => c.gate === "EPISTEMIC");
   assert.equal(check.status, "UNVERIFIED");
   assert.deepEqual(check.evidenceIds, [EPISTEMIC_EVIDENCE_ID]);
+});
+
+test("SIGN and RELEASE pass from accepted production, release signing, and promotion authority evidence", () => {
+  const records = [
+    ...baseRecordsWithEpistemic(
+      { status: "PASS", evidenceState: "VERIFIED" },
+      { status: "PASS", evidenceState: "VERIFIED" },
+      { status: "PASS", evidenceState: "VERIFIED" }
+    ),
+    ...releaseEvidenceRecords(),
+  ];
+  const checks = certificationChecks(records);
+  const signCheck = checks.find((c) => c.gate === "SIGN");
+  const releaseCheck = checks.find((c) => c.gate === "RELEASE");
+
+  assert.equal(signCheck.status, "PASS");
+  assert.deepEqual(signCheck.evidenceIds, ["release-signing-evidence"]);
+  assert.equal(releaseCheck.status, "PASS");
+  assert.deepEqual(releaseCheck.evidenceIds, [
+    "production-attestation",
+    "release-signing-evidence",
+    "promotion-authority-evidence",
+  ]);
+  assert.equal(releaseCheck.releaseEligible, true);
+});
+
+test("RELEASE remains blocked without promotion authority even when ACCEPTANCE and SIGN pass", () => {
+  const records = [
+    ...baseRecordsWithEpistemic(
+      { status: "PASS", evidenceState: "VERIFIED" },
+      { status: "PASS", evidenceState: "VERIFIED" },
+      { status: "PASS", evidenceState: "VERIFIED" }
+    ),
+    ...releaseEvidenceRecords().filter((r) => r.id !== "promotion-authority-evidence"),
+  ];
+  const checks = certificationChecks(records);
+  const signCheck = checks.find((c) => c.gate === "SIGN");
+  const releaseCheck = checks.find((c) => c.gate === "RELEASE");
+
+  assert.equal(signCheck.status, "PASS");
+  assert.equal(releaseCheck.status, "BLOCKED");
+  assert.deepEqual(releaseCheck.evidenceIds, [
+    "production-attestation",
+    "release-signing-evidence",
+    "promotion-authority-evidence",
+  ]);
 });
 
 test("remaining ROAD gates consume exact-SHA gate evidence", async () => {

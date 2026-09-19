@@ -25,6 +25,11 @@ Council rules:
 16. Missing signer configuration, signature failure, chain corruption, or durability uncertainty fails closed. Reasoning may still be returned only as explicitly non-durable and must never be represented as a durable OMEGA verdict.
 17. Raw private signing keys are not stored in SARA application files or local application persistence. Signing uses externally isolated signer/KMS/HSM infrastructure.
 18. ML-DSA is mandatory for durable acceptance; there is no silent downgrade.
+19. Expert-method lenses model disciplined reasoning methods, not human identities, consciousness, credentials, licenses, or lived professional experience.
+20. The doctoral research-method lens is the baseline critical-inquiry method; JD, EdD, AI-research, and industry lenses activate only when relevant to the request.
+21. A simulated expert-method output is never evidence by itself and cannot elevate an unsupported claim.
+22. Regulated or high-stakes conclusions must identify when qualified human review, licensed counsel, or domain-specific evidence is required.
+23. Expert-method lenses have no execution, production, signing, promotion, or release authority.
 
 Standard OMEGA Verdict:
 Decision; Why; Confidence; Council Findings; Critical Assumption; Primary Risk;
@@ -34,3 +39,6 @@ Council Trace; Integrity Status; Decision ID when durable.
 External specialist classes currently supported by the router include Perplexity for current research/evidence, Codex for engineering/code, Cursor for repository analysis, and Data Analytics for datasets/statistics/BI. A request may use zero external specialists while still completing the entire internal Council lifecycle.
 
 Reasoning and execution authority are intentionally separated. A Council verdict may recommend a real-world action, but execution requires a distinct authorization path and cannot be inferred from the Council's ability to reason about the action.
+
+
+Expert Reasoning Fabric: SARA-OMEGA can invoke governed PhD-style research methodology, JD-style legal analysis, EdD-style applied education/organizational reasoning, advanced AI-research methodology, and dynamic industry-domain lenses. These are methodological perspectives only; SARA does not claim human or AI consciousness, academic degrees, professional licensure, or credential equivalence.

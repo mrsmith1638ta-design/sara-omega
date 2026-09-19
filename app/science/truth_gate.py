@@ -47,6 +47,10 @@ _SCOPE_BY_PROVENANCE = {
     ProvenanceClass.ENGINEERING_MODEL: ApplicabilityScope.ARCHITECTURE_SPECIFIC,
     ProvenanceClass.EXPERIMENTAL_TECHNOLOGY: ApplicabilityScope.EXPERIMENTAL_OBSERVATION,
     ProvenanceClass.SIMULATION_OR_HYPOTHESIS: ApplicabilityScope.CONFIGURATION_SPECIFIC,
+    ProvenanceClass.ESTABLISHED_MATHEMATICS: ApplicabilityScope.UNIVERSAL_LAW,
+    ProvenanceClass.NUMERICAL_MATHEMATICS: ApplicabilityScope.EXPERIMENTAL_OBSERVATION,
+    ProvenanceClass.CONJECTURAL_MATHEMATICS: ApplicabilityScope.UNKNOWN,
+    ProvenanceClass.FORMAL_PROOF_CERTIFIED: ApplicabilityScope.UNIVERSAL_LAW,
 }
 
 _CEILING_BY_PROVENANCE = {
@@ -58,6 +62,10 @@ _CEILING_BY_PROVENANCE = {
     ProvenanceClass.ENGINEERING_MODEL: CertaintyLevel.INFERRED,
     ProvenanceClass.EXPERIMENTAL_TECHNOLOGY: CertaintyLevel.SUPPORTED,
     ProvenanceClass.SIMULATION_OR_HYPOTHESIS: CertaintyLevel.INFERRED,
+    ProvenanceClass.ESTABLISHED_MATHEMATICS: CertaintyLevel.VERIFIED,
+    ProvenanceClass.NUMERICAL_MATHEMATICS: CertaintyLevel.SUPPORTED,
+    ProvenanceClass.CONJECTURAL_MATHEMATICS: CertaintyLevel.UNVERIFIED,
+    ProvenanceClass.FORMAL_PROOF_CERTIFIED: CertaintyLevel.VERIFIED,
 }
 
 

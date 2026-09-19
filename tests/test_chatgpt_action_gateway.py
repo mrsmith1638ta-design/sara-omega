@@ -20,6 +20,13 @@ def _gpt_action_auth(monkeypatch):
     return {"Authorization": "Bearer dedicated-gpt-action-token"}
 
 
+def _research_council_auth(monkeypatch):
+    monkeypatch.setattr(main, "KILL_SWITCH", False)
+    monkeypatch.setattr(main, "RESEARCH_COUNCIL_TOKEN", "research-council-token")
+    monkeypatch.setenv("SARA_RUNTIME_ASSURANCE_SECRET", "unit-test-runtime-assurance-secret")
+    return {"Authorization": "Bearer research-council-token"}
+
+
 def test_chatgpt_action_gateway_requires_bearer_token():
     response = client.post("/gpt/action/gateway", json={"operation": "status"})
     assert response.status_code == 401
@@ -42,6 +49,70 @@ def test_dedicated_gpt_action_token_does_not_grant_owner_admin(monkeypatch):
     assert response.status_code == 403
 
 
+def test_research_council_token_is_restricted_to_solve(monkeypatch):
+    response = client.post(
+        "/gpt/action/gateway",
+        headers=_research_council_auth(monkeypatch),
+        json={"operation": "status"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_research_council_token_has_no_execution_authority(monkeypatch):
+    response = client.post(
+        "/gpt/action/gateway",
+        headers=_research_council_auth(monkeypatch),
+        json={
+            "operation": "solve",
+            "query": "Assess this request through the SARA Research Council.",
+            "requested_action": "deploy to production",
+        },
+    )
+
+    assert response.status_code == 403
+
+
+def test_research_council_token_forces_mandatory_council(monkeypatch):
+    response = client.post(
+        "/gpt/action/gateway",
+        headers=_research_council_auth(monkeypatch),
+        json={
+            "operation": "solve",
+            "query": "Analyze data metrics 1 2 3 4.",
+            "council": False,
+            "session_id": "sh-research-council-test",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["operation"] == "solve"
+    assert body["verdict"]["council_trace"]["mandatory"] is True
+    assert body["verdict"]["council_trace"]["completed"] == [
+        "OBSERVE",
+        "MAP",
+        "EVALUATE",
+        "GENERATE",
+        "CROSS_EXAMINE",
+        "STRESS_TEST",
+        "SYNTHESIZE",
+        "GOVERN",
+        "VERDICT",
+        "RECORD",
+    ]
+
+
+def test_research_council_token_does_not_authorize_voice(monkeypatch):
+    response = client.post(
+        "/gpt/action/voice/speak",
+        headers=_research_council_auth(monkeypatch),
+        json={"text": "test"},
+    )
+
+    assert response.status_code == 401
+
+
 def test_chatgpt_action_gateway_reports_runtime_status(monkeypatch):
     response = client.post(
         "/gpt/action/gateway",
@@ -55,6 +126,19 @@ def test_chatgpt_action_gateway_reports_runtime_status(monkeypatch):
     assert body["version"] == "3.2.1"
     assert "fail_closed_claim_suppression" == body["runtime_assurance"]["policy"]
     assert "solve" in body["allowed_operations"]
+    assert body["model_sovereignty"]["module"] == "sara-model-sovereignty"
+    assert body["model_sovereignty"]["agent_model_lifecycle_authority"] is False
+    assert "INV-AI-SELF-01" in body["model_sovereignty"]["invariants"]
+    assert body["enterprise_governance"]["module"] == "sara-enterprise-governance"
+    assert body["enterprise_governance"]["missing_evidence_fails_closed"] is True
+    assert body["enterprise_governance"]["audit_passport_is_not_audit_opinion"] is True
+    assert body["unified_fusion"]["module"] == "sara-unified-fusion"
+    assert body["unified_fusion"]["production_authority"] is False
+    assert body["unified_fusion"]["release_authority"] is False
+    assert body["unified_fusion"]["road_pass_fabrication"] is False
+    assert body["unified_fusion"]["causal_scope_authority"] is True
+    assert body["unified_fusion"]["causal_finality_reconciliation"] is True
+    assert body["unified_fusion"]["transitive_authority_revocation"] is True
 
 
 def test_chatgpt_action_gateway_solves_through_sara_omega(monkeypatch):

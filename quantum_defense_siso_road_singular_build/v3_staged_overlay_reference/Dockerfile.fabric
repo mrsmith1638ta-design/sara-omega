@@ -1,0 +1,3 @@
+FROM us-central1-docker.pkg.dev/sara-soverigne-modules/sara-quantum-defense/sara-security-fabric-pqc@sha256:60dc1a8ae690f6818b08e198b7864193cff434e028be6d8da9544687499d75fb
+COPY main_patched_fabric.py /app/main_patched_fabric.py
+CMD ["gunicorn", "--bind", ":8080", "--workers", "1", "--threads", "8", "--worker-class", "gthread", "main_patched_fabric:app"]

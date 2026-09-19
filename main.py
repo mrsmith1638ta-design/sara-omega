@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import time
 import uuid
 from collections import defaultdict
@@ -40,9 +41,11 @@ from context_dev_resolver import (
 from sara_v32_hardening import BackupError, FailSafeEvent, RuntimeFailSafe
 from app.enterprise_runtime import (
     concentration_governor,
+    enterprise_governance,
     epistemic,
     hawkins_chaos,
     madhouse,
+    model_sovereignty,
     module_awareness,
     router as enterprise_runtime_router,
     runtime_assurance,
@@ -56,6 +59,12 @@ from app.models import Problem
 from app.orchestrator import SaraOmega
 from app.runtime_assurance import RuntimeAssuranceConfigurationError, RuntimeAssuranceRequest
 from app.road_gates import RoadGateAgent, RoadGateReviewRequest
+from app.unified_fusion import health as unified_fusion_health
+from sara_unified.api.schemas import VoiceJobRequest, VoiceSynthesisRequest
+from sara_unified.config import Settings
+from sara_unified.voice.client import PiperVoiceClient, VoiceSynthesisError
+from sara_unified.voice.jobs import VoiceJobManager
+from sara_unified.voice.profile import SARA_VOICE_PROFILE
 
 BASE_VERSION = "2.5.2"
 RELEASE_VERSION = "3.2.1"
@@ -68,6 +77,7 @@ logger = logging.getLogger(__name__)
 OWNER_TOKEN = os.environ.get("OWNER_TOKEN", "")
 GPT_ACTION_TOKEN = os.environ.get("GPT_ACTION_TOKEN", "")
 TEST_TOKEN = os.environ.get("TEST_TOKEN", "")
+RESEARCH_COUNCIL_TOKEN = os.environ.get("SH", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 KILL_SWITCH = os.environ.get("KILL_SWITCH", "false").lower() == "true"
 FEATURE_VISION = os.environ.get("FEATURE_VISION", "false").lower() == "true"
@@ -80,6 +90,7 @@ RATE_LIMITS = {
     "owner": {"requests_per_day": None, "voice_per_day": None, "vision_per_day": None, "max_context": None},
     "action": {"requests_per_day": 500, "voice_per_day": 0, "vision_per_day": 0, "max_context": 50},
     "tester": {"requests_per_day": 200, "voice_per_day": 30, "vision_per_day": 50, "max_context": 50},
+    "research_council": {"requests_per_day": 200, "voice_per_day": 0, "vision_per_day": 0, "max_context": 50},
 }
 
 app = FastAPI(title="SARA OMEGA", version=DISPLAY_VERSION)
@@ -91,6 +102,8 @@ gcp_init_error = GCP_IMPORT_ERROR
 openai_init_error = OPENAI_IMPORT_ERROR
 gateway_sara = SaraOmega()
 road_gate_agent = RoadGateAgent()
+_piper_voice_client: Any | None = None
+_voice_1_1_job_manager: VoiceJobManager | None = None
 
 GPTActionOperation = Literal[
     "status",
@@ -119,6 +132,11 @@ class GPTActionGatewayRequest(BaseModel):
     evidence: list[dict[str, Any]] = Field(default_factory=list)
     fail_closed: bool = True
     council: bool | None = None
+    session_id: str | None = Field(default=None, max_length=256)
+
+
+class GPTActionVoiceSpeakRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
     session_id: str | None = Field(default=None, max_length=256)
 
 
@@ -161,6 +179,44 @@ def get_voice_clients():
         gcp_init_error = type(exc).__name__
         logger.error("Google voice lazy init error: %s", gcp_init_error)
         return None, None
+
+
+def get_piper_voice_client(settings: Settings):
+    global _piper_voice_client
+    if _piper_voice_client is not None:
+        return _piper_voice_client
+    if not settings.piper_service_token.strip():
+        return None
+    _piper_voice_client = PiperVoiceClient(
+        settings.piper_service_url,
+        settings.piper_service_token,
+        timeout_seconds=settings.voice_timeout_seconds,
+    )
+    return _piper_voice_client
+
+
+def require_owner(req: Request) -> None:
+    role = authorize(req)
+    if not role:
+        raise HTTPException(401, "Unauthorized")
+    if role != "owner":
+        raise HTTPException(403, "Owner only")
+
+
+def get_voice_1_1_job_manager(settings: Settings) -> VoiceJobManager | None:
+    global _voice_1_1_job_manager
+    if _voice_1_1_job_manager is not None:
+        return _voice_1_1_job_manager
+    voice_client = get_piper_voice_client(settings)
+    if voice_client is None:
+        return None
+    _voice_1_1_job_manager = VoiceJobManager(
+        voice_client=voice_client,
+        source_commit_sha=os.getenv("SARA_SOURCE_COMMIT_SHA", ""),
+        deployment_id=os.getenv("RAILWAY_DEPLOYMENT_ID", ""),
+        voice_service_url=settings.piper_service_url,
+    )
+    return _voice_1_1_job_manager
 
 
 def get_vision_clients():
@@ -301,6 +357,18 @@ def require_action_role(req: Request) -> str:
     return role
 
 
+def require_gateway_role(req: Request) -> str:
+    """Authorize the shared gateway, including the least-privilege Research Council credential."""
+    role = authorize(req)
+    if role:
+        return role
+    auth = req.headers.get("Authorization", "")
+    expected = f"Bearer {RESEARCH_COUNCIL_TOKEN}" if RESEARCH_COUNCIL_TOKEN else ""
+    if expected and secrets.compare_digest(auth, expected):
+        return "research_council"
+    raise HTTPException(401, "Unauthorized")
+
+
 def ensure_action_ready(operation: str) -> None:
     try:
         FAILSAFE.ensure_ready()
@@ -386,16 +454,104 @@ def gateway_status() -> Dict[str, Any]:
         },
         "module_awareness": module_awareness.count(),
         "concentration_governor": concentration_governor.health(),
+        "enterprise_governance": enterprise_governance.health(),
         "hawkins_chaos": hawkins_chaos.health(),
         "madhouse": madhouse.health(),
+        "model_sovereignty": model_sovereignty.health(),
         "titan": titan.health(),
+        "unified_fusion": unified_fusion_health(),
         "allowed_operations": list(GPTActionOperation.__args__),
     }
 
 
+def _public_base_url(request: Request) -> str:
+    configured = os.getenv("SARA_PUBLIC_BASE_URL", "").strip().rstrip("/")
+    if configured.startswith("https://"):
+        return configured
+    forwarded_host = request.headers.get("x-forwarded-host", "").strip()
+    host = forwarded_host or request.headers.get("host", "").strip()
+    forwarded_proto = request.headers.get("x-forwarded-proto", "").split(",", 1)[0].strip()
+    if host and (forwarded_proto == "https" or host.endswith(".up.railway.app")):
+        return f"https://{host}"
+    return str(request.base_url).rstrip("/")
+
+
+def _gpt_voice_artifact_dir() -> Path:
+    configured = os.getenv("SARA_GPT_VOICE_ARTIFACT_DIR", "").strip()
+    if configured:
+        root = Path(configured).expanduser()
+    else:
+        data_dir = Path(os.getenv("SARA_DATA_DIR", "/data")).expanduser()
+        root = data_dir / "sara-gpt-voice-artifacts"
+    root.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(root, 0o700)
+    except OSError:
+        pass
+    return root
+
+
+def _gpt_voice_artifact_ttl_seconds() -> int:
+    try:
+        raw = int(os.getenv("SARA_GPT_VOICE_ARTIFACT_TTL_SECONDS", "600"))
+    except ValueError:
+        raw = 600
+    return max(60, min(raw, 3600))
+
+
+def _gpt_voice_source_commit_sha() -> str:
+    production = production_acceptance_snapshot()
+    value = str(production.get("source_commit_sha") or "").strip()
+    if re.fullmatch(r"[0-9a-fA-F]{40}", value):
+        return value.lower()
+    railway = os.getenv("RAILWAY_GIT_COMMIT_SHA", "").strip()
+    if re.fullmatch(r"[0-9a-fA-F]{40}", railway):
+        return railway.lower()
+    fallback = os.getenv("SARA_SOURCE_COMMIT_SHA", "").strip()
+    if re.fullmatch(r"[0-9a-fA-F]{40}", fallback):
+        return fallback.lower()
+    return "unknown"
+
+
+def _atomic_bytes(path: Path, payload: bytes) -> None:
+    tmp = path.with_name(f".{path.name}.{secrets.token_urlsafe(8)}.tmp")
+    tmp.write_bytes(payload)
+    os.replace(tmp, path)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
+def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
+    _atomic_bytes(path, encoded)
+
+
+def _prune_gpt_voice_artifacts(root: Path, now: int) -> None:
+    for metadata_path in root.glob("*.json"):
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if int(metadata.get("expires_at_epoch", 0)) >= now:
+            continue
+        artifact_id = metadata_path.stem
+        for path in (metadata_path, root / f"{artifact_id}.wav"):
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+
+
 @app.post("/gpt/action/gateway")
 async def chatgpt_action_gateway(req: Request, body: GPTActionGatewayRequest):
-    role = require_action_role(req)
+    role = require_gateway_role(req)
+    if role == "research_council":
+        if body.operation != "solve":
+            raise HTTPException(403, "Research Council credential is restricted to governed solve")
+        if body.requested_action:
+            raise HTTPException(403, "Research Council credential has no execution authority")
     ensure_action_ready(body.operation)
 
     identifier = f"gpt-action:{body.session_id or (req.client.host if req.client else 'unknown')}"
@@ -499,16 +655,20 @@ async def chatgpt_action_gateway(req: Request, body: GPTActionGatewayRequest):
     if not query:
         raise HTTPException(400, "query is required for solve")
     problem_context = dict(body.context)
-    problem_context.setdefault("source", "chatgpt_action_gateway")
+    if role == "research_council":
+        problem_context["source"] = "research_council_gateway"
+        problem_context["credential_scope"] = "research_council_read_only"
+    else:
+        problem_context.setdefault("source", "chatgpt_action_gateway")
     problem_context.setdefault("railway_runtime_version", RELEASE_VERSION)
     problem = Problem(
         query=query,
         objective=body.objective,
         requested_action=body.requested_action,
         context=problem_context,
-        council=body.council,
-        actor="chatgpt_action",
-        authority_level=3 if role == "owner" else 1,
+        council=True if role == "research_council" else body.council,
+        actor="research_council_gateway" if role == "research_council" else "chatgpt_action",
+        authority_level=0 if role == "research_council" else (3 if role == "owner" else 1),
     )
     verdict = await gateway_sara.solve(problem)
     chaos = hawkins_chaos.analyze_verdict(verdict, query=query, context=problem_context)
@@ -535,6 +695,136 @@ async def chatgpt_action_gateway(req: Request, body: GPTActionGatewayRequest):
         "concentration_governor": concentration,
         "hawkins_chaos": chaos,
     }
+
+
+@app.post("/gpt/action/voice/speak")
+def chatgpt_action_voice_speak(req: Request, body: GPTActionVoiceSpeakRequest):
+    role = require_action_role(req)
+    if role != "action":
+        raise HTTPException(403, "GPT action token required")
+    try:
+        FAILSAFE.ensure_ready()
+    except BackupError as exc:
+        raise HTTPException(503, f"SARA voice action is fail-closed: {type(exc).__name__}") from exc
+
+    identifier = f"gpt-action-voice:{body.session_id or (req.client.host if req.client else 'unknown')}"
+    if not check_rate_limit(identifier, role, "requests"):
+        raise HTTPException(429, f"Daily action limit reached ({RATE_LIMITS[role]['requests_per_day']} per day)")
+
+    settings = Settings.from_env()
+    if not settings.voice_enabled:
+        raise HTTPException(503, "Voice synthesis disabled")
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(422, "Voice text must not be empty")
+    if len(text) > settings.voice_max_characters:
+        raise HTTPException(422, "Voice text exceeds configured character limit")
+
+    voice_client = get_piper_voice_client(settings)
+    if voice_client is None:
+        raise HTTPException(503, "Voice synthesis unavailable")
+    try:
+        audio = voice_client.synthesize(text)
+    except VoiceSynthesisError as exc:
+        raise HTTPException(502, "Voice synthesis failed") from exc
+    if len(audio) <= 44 or not audio.startswith(b"RIFF") or audio[8:12] != b"WAVE":
+        raise HTTPException(502, "Voice synthesis returned invalid WAV audio")
+
+    now = int(time.time())
+    ttl = _gpt_voice_artifact_ttl_seconds()
+    root = _gpt_voice_artifact_dir()
+    _prune_gpt_voice_artifacts(root, now)
+    artifact_id = secrets.token_urlsafe(32)
+    wav_path = root / f"{artifact_id}.wav"
+    metadata_path = root / f"{artifact_id}.json"
+    audio_sha256 = hashlib.sha256(audio).hexdigest()
+    text_sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    source_commit_sha = _gpt_voice_source_commit_sha()
+    expires_at = now + ttl
+    metadata = {
+        "artifact_id": artifact_id,
+        "created_at_epoch": now,
+        "expires_at_epoch": expires_at,
+        "content_type": "audio/wav",
+        "sha256": audio_sha256,
+        "bytes": len(audio),
+        "text_sha256": text_sha256,
+        "text_length": len(text),
+        "profile_id": SARA_VOICE_PROFILE.profile_id,
+        "model_id": SARA_VOICE_PROFILE.model_id,
+        "source_commit_sha": source_commit_sha,
+    }
+    _atomic_bytes(wav_path, audio)
+    _atomic_json(metadata_path, metadata)
+
+    audio_url = f"{_public_base_url(req)}/gpt/action/voice/artifacts/{artifact_id}.wav"
+    audit(
+        "gpt_action_voice_synthesized",
+        {
+            "artifact_id_hash": hashlib.sha256(artifact_id.encode("utf-8")).hexdigest(),
+            "profile_id": SARA_VOICE_PROFILE.profile_id,
+            "character_count": len(text),
+            "text_sha256": text_sha256,
+            "audio_sha256": audio_sha256,
+            "role": role,
+        },
+    )
+    return {
+        "service": "sara-chatgpt-action-voice",
+        "audio_url": audio_url,
+        "artifact": {
+            "id": artifact_id,
+            "url": audio_url,
+            "content_type": "audio/wav",
+            "sha256": audio_sha256,
+            "bytes": len(audio),
+            "expires_at_epoch": expires_at,
+        },
+        "receipt": {
+            "profile_id": SARA_VOICE_PROFILE.profile_id,
+            "model_id": SARA_VOICE_PROFILE.model_id,
+            "text_sha256": text_sha256,
+            "text_length": len(text),
+            "audio_sha256": audio_sha256,
+            "source_commit_sha": source_commit_sha,
+        },
+        "instructions": "Play audio_url for SARA's governed Piper voice response.",
+        "secrets_included": False,
+    }
+
+
+@app.get("/gpt/action/voice/artifacts/{artifact_id}.wav", include_in_schema=False)
+def chatgpt_action_voice_artifact(artifact_id: str):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{32,64}", artifact_id):
+        raise HTTPException(404, "voice artifact not found")
+    root = _gpt_voice_artifact_dir()
+    metadata_path = root / f"{artifact_id}.json"
+    wav_path = root / f"{artifact_id}.wav"
+    if not metadata_path.exists() or not wav_path.exists():
+        raise HTTPException(404, "voice artifact not found")
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise HTTPException(404, "voice artifact not found") from exc
+    if int(metadata.get("expires_at_epoch", 0)) < int(time.time()):
+        for path in (metadata_path, wav_path):
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+        raise HTTPException(404, "voice artifact not found")
+    audio = wav_path.read_bytes()
+    if hashlib.sha256(audio).hexdigest() != metadata.get("sha256"):
+        raise HTTPException(409, "voice artifact integrity mismatch")
+    return Response(
+        audio,
+        media_type="audio/wav",
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": 'inline; filename="sara-omega-voice.wav"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @app.get("/gpt/action/openapi.yaml", include_in_schema=False)
@@ -643,6 +933,8 @@ def health():
             "vision": ENABLE_GCP and FEATURE_VISION,
             "context_dev_policy_gate": True,
             "ats_intelligence": True,
+            "enterprise_governance": True,
+            "model_sovereignty": True,
         },
         "context_dev": CONTEXT_DEV_LICENSE.public_status(),
         "client_state": {
@@ -704,6 +996,107 @@ def context_dev_evaluate(payload: ContextDevEvaluationRequest, req: Request):
         CONTEXT_DEV_LICENSE,
     )
     return decision.as_dict()
+
+
+@app.get("/v1/voice/profile")
+def piper_voice_profile():
+    return SARA_VOICE_PROFILE.public_metadata()
+
+
+@app.post("/v1/voice/synthesize")
+def piper_voice_synthesize(payload: VoiceSynthesisRequest, req: Request):
+    role = authorize(req)
+    if not role:
+        raise HTTPException(401, "Unauthorized")
+    if role != "owner":
+        raise HTTPException(403, "Owner only")
+
+    settings = Settings.from_env()
+    if not settings.voice_enabled:
+        raise HTTPException(503, "Voice synthesis disabled")
+
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(422, "Voice text must not be empty")
+    if len(text) > settings.voice_max_characters:
+        raise HTTPException(422, "Voice text exceeds configured character limit")
+
+    voice_client = get_piper_voice_client(settings)
+    if voice_client is None:
+        raise HTTPException(503, "Voice synthesis unavailable")
+
+    try:
+        audio = voice_client.synthesize(text)
+    except VoiceSynthesisError as exc:
+        raise HTTPException(502, "Voice synthesis failed") from exc
+
+    audit(
+        "piper_voice_synthesized",
+        {
+            "profile_id": SARA_VOICE_PROFILE.profile_id,
+            "character_count": len(text),
+            "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            "role": role,
+        },
+    )
+    return Response(audio, media_type="audio/wav")
+
+
+@app.post("/v1/voice/jobs")
+def create_voice_job(payload: VoiceJobRequest, req: Request):
+    require_owner(req)
+    settings = Settings.from_env()
+    if not settings.voice_1_1_enabled:
+        raise HTTPException(503, "Voice 1.1 disabled")
+    manager = get_voice_1_1_job_manager(settings)
+    if manager is None:
+        raise HTTPException(503, "Voice synthesis unavailable")
+    try:
+        job = manager.create_job(
+            text=payload.text,
+            speech_rate=payload.speech_rate,
+            preserve_transcript=payload.preserve_transcript,
+            return_audio=payload.return_audio,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return job.public_dict(include_transcript=payload.preserve_transcript)
+
+
+@app.get("/v1/voice/jobs/{job_id}")
+def get_voice_job(job_id: str, req: Request):
+    require_owner(req)
+    settings = Settings.from_env()
+    manager = get_voice_1_1_job_manager(settings)
+    if manager is None:
+        raise HTTPException(404, "voice job not found")
+    job = manager.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "voice job not found")
+    return job.public_dict(include_transcript=False)
+
+
+@app.post("/v1/voice/jobs/{job_id}/stop")
+def stop_voice_job(job_id: str, req: Request):
+    require_owner(req)
+    settings = Settings.from_env()
+    manager = get_voice_1_1_job_manager(settings)
+    if manager is None or manager.get_job(job_id) is None:
+        raise HTTPException(404, "voice job not found")
+    return manager.stop_job(job_id).public_dict(include_transcript=False)
+
+
+@app.get("/v1/voice/jobs/{job_id}/receipts")
+def get_voice_job_receipts(job_id: str, req: Request):
+    require_owner(req)
+    settings = Settings.from_env()
+    manager = get_voice_1_1_job_manager(settings)
+    if manager is None:
+        raise HTTPException(404, "voice job not found")
+    job = manager.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "voice job not found")
+    return {"job_id": job_id, "receipts": [receipt.public_dict() for receipt in job.receipts]}
 
 
 @app.get("/metrics")

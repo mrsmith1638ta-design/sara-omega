@@ -2,8 +2,18 @@ from fastapi import APIRouter, HTTPException
 from .ats_intelligence import ATS_PROFILE_VERSION, router as ats_intelligence_router
 
 from .concentration import ConcentrationGovernor, ConcentrationRequest
+from .enterprise_governance import (
+    ENTERPRISE_GOVERNANCE_VERSION,
+    get_service as get_enterprise_governance_service,
+    router as enterprise_governance_router,
+)
 from .hawkins_chaos import HawkinsChaosEngine, HawkinsChaosRequest
 from .madhouse import MadhouseAgent, MadhouseReviewRequest
+from .model_sovereignty import (
+    MODEL_SOVEREIGNTY_VERSION,
+    get_service as get_model_sovereignty_service,
+    router as model_sovereignty_router,
+)
 from .epistemic import EpistemicAgent, EpistemicReviewRequest
 from .module_awareness import (
     HarmonizeRequest,
@@ -27,9 +37,11 @@ from .titan import (
     TitanEngine,
     VoiceEventRequest,
 )
+from .unified_fusion import UNIFIED_FUSION_VERSION, health as unified_fusion_health
 from .iot.router import router as iot_router
 from .user_gateway import router as user_gateway_router
 from .user_identity_http import router as user_identity_router
+from .voice_accessibility_http import router as voice_accessibility_router
 
 router = APIRouter()
 runtime_assurance = RuntimeAssuranceEngine()
@@ -60,11 +72,52 @@ module_awareness.register(
         },
     )
 )
+module_awareness.register(
+    ModuleRecord(
+        service="sara-model-sovereignty",
+        status="integrated",
+        version=MODEL_SOVEREIGNTY_VERSION,
+        metadata={
+            "execution_authority": False,
+            "agent_model_lifecycle_authority": False,
+            "deployment_authority": False,
+            "cryptographic_model_allowlist": True,
+        },
+    )
+)
+module_awareness.register(
+    ModuleRecord(
+        service="sara-enterprise-governance",
+        status="integrated",
+        version=ENTERPRISE_GOVERNANCE_VERSION,
+        metadata={
+            "execution_authority": False,
+            "provider_certification_is_not_sara_certification": True,
+            "missing_evidence_fails_closed": True,
+            "audit_passport_is_not_audit_opinion": True,
+        },
+    )
+)
+module_awareness.register(
+    ModuleRecord(
+        service="sara-unified-fusion",
+        status="integrated",
+        version=UNIFIED_FUSION_VERSION,
+        metadata={
+            "execution_authority": False,
+            "release_authority": False,
+            "road_pass_fabrication": False,
+            "missing_road_evidence_fails_closed": True,
+        },
+    )
+)
 titan = TitanEngine(module_awareness)
 hawkins_chaos = HawkinsChaosEngine()
 concentration_governor = ConcentrationGovernor()
 madhouse = MadhouseAgent()
 epistemic = EpistemicAgent()
+model_sovereignty = get_model_sovereignty_service()
+enterprise_governance = get_enterprise_governance_service()
 
 
 @router.get("/runtime-assurance/health")
@@ -148,6 +201,12 @@ async def epistemic_health(): return epistemic.health()
 async def epistemic_review(request: EpistemicReviewRequest): return epistemic.review(request)
 @router.get("/concentration/health")
 async def concentration_health(): return concentration_governor.health()
+@router.get("/model-sovereignty/summary")
+async def model_sovereignty_summary(): return model_sovereignty.health()
+@router.get("/enterprise-governance/summary")
+async def enterprise_governance_summary(): return enterprise_governance.health()
+@router.get("/unified-fusion/summary")
+async def unified_fusion_summary(): return unified_fusion_health()
 @router.post("/concentration/analyze")
 async def concentration_analyze(request: ConcentrationRequest): return concentration_governor.analyze(request)
 @router.post("/titan/voice/emit")
@@ -187,6 +246,9 @@ async def titan_apex_execute_gate(request: ExecuteGateRequest):
 async def titan_sovereignty_sweep(request: SovereigntySweepRequest): return titan.sovereignty_sweep(request)
 
 router.include_router(ats_intelligence_router)
+router.include_router(enterprise_governance_router)
+router.include_router(model_sovereignty_router)
 router.include_router(iot_router)
 router.include_router(user_identity_router)
 router.include_router(user_gateway_router)
+router.include_router(voice_accessibility_router)

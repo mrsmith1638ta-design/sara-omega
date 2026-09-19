@@ -1,16 +1,32 @@
 # SARA ChatGPT Action Gateway
 
-SARA-OMEGA V3.2.1 exposes one governed Railway Action endpoint for the custom GPT:
+SARA-OMEGA V3.2.1 exposes governed Railway Action endpoints for the custom GPT.
+
+Current production base URL:
 
 ```text
-POST https://sara-omega-production.up.railway.app/gpt/action/gateway
+https://sara-omega-production-9bcf.up.railway.app
+```
+
+Primary gateway:
+
+```text
+POST https://sara-omega-production-9bcf.up.railway.app/gpt/action/gateway
+```
+
+GPT-native voice:
+
+```text
+POST https://sara-omega-production-9bcf.up.railway.app/gpt/action/voice/speak
 ```
 
 The OpenAPI schema is in `chatgpt-gpt-action.yaml` and is also served by the runtime at:
 
 ```text
-https://sara-omega-production.up.railway.app/gpt/action/openapi.yaml
+https://sara-omega-production-9bcf.up.railway.app/gpt/action/openapi.yaml
 ```
+
+The older canonical Railway host may answer public health checks, but the verified authenticated GPT Action target for this deployment is the `-9bcf` host above.
 
 ## GPT Builder Setup
 
@@ -36,6 +52,7 @@ Before sharing the GPT, validate the Action authentication boundary with the ded
 
 - `POST /gpt/action/gateway` with `operation: status` must return HTTP 200.
 - `POST /gpt/action/gateway` with `operation: verify_output` and a known false live-module claim must return `BLOCK`.
+- `POST /gpt/action/voice/speak` with valid text must return HTTP 200 and an HTTPS `audio_url`; fetching that URL must return HTTP 200 with `audio/wav`.
 - Owner/admin endpoints such as `/admin/stats` must return HTTP 403 for the same token.
 
 ## Supported Gateway Operations
@@ -49,6 +66,7 @@ Before sharing the GPT, validate the Action authentication boundary with the ded
 - `titan_health`: TITAN integrated subsystem status.
 - `verify_output`: fail-closed claim verification before ChatGPT repeats generated text.
 - `solve`: routes a user request through SARA governance, authority, module routing, evidence verification, and audit ledger.
+- `saraOmegaSpeakInChat`: generates a short-lived playable governed Piper WAV artifact for text-to-speech inside the SARA GPT chat.
 
 ## Runtime Contract
 

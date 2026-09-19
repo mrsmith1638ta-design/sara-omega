@@ -9,7 +9,7 @@ info:
   title: SARA-OMEGA V3.2.1 Runtime and Governed Action Gateway
   version: 3.2.1
 servers:
-  - url: https://sara-omega-production.up.railway.app
+  - url: https://sara-omega-production-9bcf.up.railway.app
 paths:
   /:
     get:

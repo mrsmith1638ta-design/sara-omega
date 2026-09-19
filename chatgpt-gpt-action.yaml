@@ -4,7 +4,7 @@ info:
   version: 3.2.1
   description: Governed ChatGPT Action access to the live Railway SARA-OMEGA runtime, including OAuth-bound personal continuity, assurance, module truth, concentration control, Hawkins Chaos, TITAN health, fail-closed solving, and sanitized Context.dev authorization state.
 servers:
-  - url: https://sara-omega-production.up.railway.app
+  - url: https://sara-omega-production-9bcf.up.railway.app
 paths:
   /:
     get:
@@ -155,6 +155,56 @@ paths:
           description: SARA action gateway daily request limit reached
         '503':
           description: Runtime is fail-closed or a required assurance component is unavailable
+  /gpt/action/voice/speak:
+    post:
+      operationId: saraOmegaSpeakInChat
+      summary: Generate a playable governed SARA voice response for this GPT chat
+      description: Uses the shared GPT Action bearer credential to synthesize text with SARA's governed Piper voice and returns a short-lived playable WAV audio artifact plus non-secret receipt metadata. This does not use OWNER_TOKEN and does not expose the private Piper service.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GPTActionVoiceSpeakRequest'
+      responses:
+        '200':
+          description: Playable SARA voice artifact and digest-bound receipt
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - audio_url
+                  - artifact
+                  - receipt
+                  - secrets_included
+                properties:
+                  audio_url:
+                    type: string
+                    format: uri
+                    description: Short-lived URL ChatGPT can present as SARA's playable WAV voice response.
+                  artifact:
+                    type: object
+                    additionalProperties: true
+                  receipt:
+                    type: object
+                    additionalProperties: true
+                  secrets_included:
+                    type: boolean
+        '401':
+          description: Missing or invalid GPT Action bearer token
+        '403':
+          description: OWNER_TOKEN or another non-action credential was supplied
+        '422':
+          description: Strict text validation failed
+        '429':
+          description: Daily GPT Action request limit reached
+        '502':
+          description: Piper synthesis failed safely
+        '503':
+          description: Voice synthesis or fail-safe dependency is unavailable
   /gpt/user/gateway:
     post:
       operationId: saraOmegaUserGateway
@@ -184,7 +234,158 @@ paths:
           description: Required OAuth scope is not present
         '503':
           description: Identity persistence, encrypted memory, or fail-safe checkpointing is unavailable
+  /v1/accessibility/voice/jobs:
+    post:
+      operationId: createSaraAccessibilityVoiceJob
+      summary: Read bounded text with the governed SARA voice
+      description: Requires a SARA OAuth access token with sara.voice.accessibility and a current server-side entitlement. Tenant identity is resolved by SARA and cannot be supplied by the caller.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoiceAccessibilityJobRequest'
+      responses:
+        '200':
+          description: Completed governed voice job with digest-bound segment metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          description: Missing, invalid, expired, or revoked OAuth access token
+        '403':
+          description: Required scope or active entitlement is absent
+        '404':
+          description: Voice 1.1A release gate is closed
+        '409':
+          description: User or tenant concurrency limit reached
+        '422':
+          description: Strict request validation failed
+        '429':
+          description: User or tenant usage limit reached
+        '502':
+          description: Isolated voice renderer failed safely
+        '503':
+          description: Required identity, persistence, fail-safe, or voice dependency is unavailable
+  /v1/accessibility/voice/jobs/{jobId}:
+    get:
+      operationId: getSaraAccessibilityVoiceJob
+      summary: Get an owned accessibility voice job
+      description: Requires sara.voice.accessibility. Missing and non-owned jobs both return 404.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VoiceJobId'
+      responses:
+        '200':
+          description: Private no-store job metadata
+        '404':
+          description: Job is absent or not owned by the authenticated user and tenant
+  /v1/accessibility/voice/jobs/{jobId}/stop:
+    post:
+      operationId: stopSaraAccessibilityVoiceJob
+      summary: Stop an owned accessibility voice job
+      description: Idempotently prevents later sentence synthesis when the owned job can still be stopped.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VoiceJobId'
+      responses:
+        '200':
+          description: Private no-store stopped job metadata
+        '404':
+          description: Job is absent or not owned by the authenticated user and tenant
+  /v1/accessibility/voice/jobs/{jobId}/segments/{segmentId}/audio:
+    get:
+      operationId: getSaraAccessibilityVoiceSegmentAudio
+      summary: Fetch one owned WAV segment
+      description: Returns authenticated audio with Cache-Control private, no-store. No durable public audio URL is created.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VoiceJobId'
+        - name: segmentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Governed WAV audio segment
+          content:
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Segment is absent or not owned by the authenticated user and tenant
+  /v1/accessibility/voice/jobs/{jobId}/receipts:
+    get:
+      operationId: getSaraAccessibilityVoiceReceipts
+      summary: Fetch digest-bound receipts for an owned job
+      description: Returns Voice 1.1 receipts and a Voice 1.1A ownership-envelope digest without raw user or tenant identifiers.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VoiceJobId'
+      responses:
+        '200':
+          description: Private no-store receipt metadata
+        '404':
+          description: Receipts are absent or not owned by the authenticated user and tenant
+  /v1/accessibility/voice/jobs/{jobId}/transcript:
+    get:
+      operationId: getSaraAccessibilityVoiceTranscript
+      summary: Fetch an explicitly preserved owned transcript
+      description: Returns an encrypted-at-rest transcript only before its bounded retention deadline, with Cache-Control private, no-store.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/VoiceJobId'
+      responses:
+        '200':
+          description: Private no-store transcript
+        '404':
+          description: Transcript is absent, expired, disabled, or not owned
+  /v1/accessibility/voice/preferences:
+    get:
+      operationId: getSaraAccessibilityVoicePreferences
+      summary: Get bounded accessibility voice preferences
+      description: Requires sara.voice.accessibility and a current entitlement.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Private no-store preferences
+    put:
+      operationId: putSaraAccessibilityVoicePreferences
+      summary: Set bounded accessibility voice preferences
+      description: Accepts only certified speech-rate presets and bounded transcript retention choices.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoiceAccessibilityPreferencesRequest'
+      responses:
+        '200':
+          description: Updated private no-store preferences
+        '422':
+          description: Strict preference validation failed
 components:
+  parameters:
+    VoiceJobId:
+      name: jobId
+      in: path
+      required: true
+      schema:
+        type: string
   securitySchemes:
     bearerAuth:
       type: http
@@ -283,3 +484,50 @@ components:
           type: string
           maxLength: 256
           description: The session id is a conversation thread identifier only; the authenticated SARA OAuth user identity owns cross-chat continuity.
+    GPTActionVoiceSpeakRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          description: Text that SARA should speak back inside the GPT chat. The response returns a playable governed Piper WAV artifact.
+        session_id:
+          type: string
+          maxLength: 256
+          description: Optional conversation identifier for bounded rate-limit grouping.
+    VoiceAccessibilityJobRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        speech_rate:
+          type: string
+          enum: [slower, normal, faster]
+        preserve_transcript:
+          type: boolean
+          default: false
+    VoiceAccessibilityPreferencesRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - speech_rate
+        - preserve_transcript
+        - transcript_retention_seconds
+      properties:
+        speech_rate:
+          type: string
+          enum: [slower, normal, faster]
+        preserve_transcript:
+          type: boolean
+        transcript_retention_seconds:
+          type: integer
+          enum: [0, 900, 3600, 86400]
