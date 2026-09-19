@@ -5,7 +5,7 @@
   "description": "ROAD: headless MCP server for SARA OMEGA CHAT GPT custom. Read-only roadmap, gate-evidence, and certification tools. Never renders UI; never manufactures PASS.",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=24.6.0"
   },
   "main": "dist/server.js",
   "scripts": {

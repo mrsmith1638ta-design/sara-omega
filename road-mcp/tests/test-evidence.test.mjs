@@ -846,3 +846,133 @@ test("remaining ROAD gates consume exact-SHA gate evidence", async () => {
   assert.deepEqual(records.map((record) => record.id), Object.values(ROAD_GATE_EVIDENCE_IDS));
   assert.ok(records.every((record) => record.status === "PASS" && record.evidenceState === "VERIFIED"));
 });
+
+test("ROAD verifies SARA Ed25519 and ML-DSA signatures using public keys only", async () => {
+  const { generateKeyPairSync, sign } = await import("node:crypto");
+  const {
+    publicKeyFingerprint,
+    verifySaraDualKmsSignatures,
+  } = await import("../dist/asymmetricEvidence.js");
+
+  const digest = Buffer.alloc(64, 0x4b);
+  const digestB64 = digest.toString("base64");
+  const cases = [
+    ["Ed25519", "ed25519", "arn:aws:kms:us-east-1:123:key/ed"],
+    ["ML-DSA", "ml-dsa-65", "arn:aws:kms:us-east-1:123:key/ml"],
+  ];
+
+  const signed = [];
+  const keys = [];
+  for (const [algorithm, nodeType, keyId] of cases) {
+    const { publicKey, privateKey } = generateKeyPairSync(nodeType);
+    const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+    signed.push({
+      algorithm,
+      keyId,
+      digestB64,
+      signatureB64: sign(null, digest, privateKey).toString("base64"),
+    });
+    keys.push({
+      algorithm,
+      keyId,
+      publicKeyPem,
+      publicKeySha256: publicKeyFingerprint(publicKeyPem),
+    });
+  }
+
+  const result = verifySaraDualKmsSignatures(signed, keys);
+  assert.equal(result.verified, true);
+  assert.equal(result.results.Ed25519.reason, "signature_valid");
+  assert.equal(result.results["ML-DSA"].reason, "signature_valid");
+});
+
+test("ROAD rejects tampered SARA evidence without any signing authority", async () => {
+  const { generateKeyPairSync, sign } = await import("node:crypto");
+  const {
+    publicKeyFingerprint,
+    verifySaraKmsSignature,
+  } = await import("../dist/asymmetricEvidence.js");
+
+  const digest = Buffer.alloc(64, 0x53);
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+  const record = {
+    algorithm: "Ed25519",
+    keyId: "arn:aws:kms:us-east-1:123:key/ed",
+    publicKeyPem,
+    publicKeySha256: publicKeyFingerprint(publicKeyPem),
+  };
+  const signature = sign(null, digest, privateKey);
+
+  const valid = verifySaraKmsSignature(
+    {
+      algorithm: "Ed25519",
+      keyId: record.keyId,
+      digestB64: digest.toString("base64"),
+      signatureB64: signature.toString("base64"),
+    },
+    record,
+  );
+  assert.equal(valid.verified, true);
+
+  const tampered = Buffer.from(digest);
+  tampered[0] ^= 0xff;
+  const invalid = verifySaraKmsSignature(
+    {
+      algorithm: "Ed25519",
+      keyId: record.keyId,
+      digestB64: tampered.toString("base64"),
+      signatureB64: signature.toString("base64"),
+    },
+    record,
+  );
+  assert.equal(invalid.verified, false);
+  assert.equal(invalid.reason, "signature_invalid");
+
+  const wrongFingerprint = verifySaraKmsSignature(
+    {
+      algorithm: "Ed25519",
+      keyId: record.keyId,
+      digestB64: digest.toString("base64"),
+      signatureB64: signature.toString("base64"),
+    },
+    { ...record, publicKeySha256: "0".repeat(64) },
+  );
+  assert.equal(wrongFingerprint.verified, false);
+  assert.equal(wrongFingerprint.reason, "public_key_fingerprint_mismatch");
+});
+
+test("ROAD canonical evidence hashing matches the Python governance kernel", async () => {
+  const { computeEvidenceDigests } = await import("../dist/asymmetricEvidence.js");
+  const evidence = {
+    evidence_version: "1.0",
+    issued_at: "2026-09-19T15:00:00+00:00",
+    request_id: "req-1",
+    decision: "ALLOW",
+    policy_id: "p",
+    policy_version: "1",
+    gate_results: [
+      {
+        name: "identity",
+        status: "PASS",
+        reason: "ok",
+        evidence: { b: 2, a: 1 },
+      },
+    ],
+    risk_score: 0.1,
+    risk_factors: { production: 0.1 },
+    request_digest: "abc",
+    previous_evidence_hash: null,
+  };
+
+  const digests = computeEvidenceDigests(evidence);
+  assert.equal(
+    digests.evidenceHash,
+    "3fdb5909ba82af7a6a8af20667dfd154ae251fc975a4e2a1d9c9992738c20aca",
+  );
+  assert.equal(
+    digests.signingDigestB64,
+    "1Tfg9FVMgpyuwvMLEn3PiRscry7/ks/qbDwQMXS7zh28FBqliH3J8FNWSeXGPoX1c8UAlAOHtcnxMwuEX6YxtQ==",
+  );
+});
+

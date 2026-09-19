@@ -13,6 +13,7 @@ import secrets
 import uuid
 from typing import Any, Mapping, Optional
 
+from .asymmetric_signing import EvidenceSigner
 from .unified_kernel import (
     ActionRequest,
     ActorIdentity,
@@ -119,6 +120,7 @@ class ProductionEnforcementBoundary:
         audit: Any,
         *,
         signing_key: bytes | None,
+        evidence_signer: EvidenceSigner | None = None,
         required: bool,
         tenant_id: str,
         policy: GovernancePolicy | None = None,
@@ -128,15 +130,23 @@ class ProductionEnforcementBoundary:
         self.tenant_id = tenant_id.strip() or "default"
         self.policy = policy or DEFAULT_PRODUCTION_POLICY
         self._kernel: SARAUnifiedGovernanceKernel | None = None
+        self._evidence_signer = evidence_signer
         self._configuration_error: str | None = None
 
-        if signing_key:
+        if evidence_signer is not None:
+            try:
+                self._kernel = SARAUnifiedGovernanceKernel(
+                    evidence_signer=evidence_signer
+                )
+            except Exception as exc:
+                self._configuration_error = type(exc).__name__
+        elif signing_key:
             try:
                 self._kernel = SARAUnifiedGovernanceKernel(signing_key)
             except Exception as exc:
                 self._configuration_error = type(exc).__name__
         elif required:
-            self._configuration_error = "missing_signing_key"
+            self._configuration_error = "missing_asymmetric_signing_authority"
         else:
             # Local/test runtimes still cross the same enforcement code path.
             # The ephemeral key is intentionally non-portable and never claimed
@@ -148,9 +158,18 @@ class ProductionEnforcementBoundary:
         if self._kernel is None:
             return False
         try:
-            return bool(self.audit.verify())
+            if not bool(self.audit.verify()):
+                return False
         except Exception:
             return False
+        if self._evidence_signer is not None:
+            ready = getattr(self._evidence_signer, "ready", None)
+            if callable(ready):
+                try:
+                    return bool(ready())
+                except Exception:
+                    return False
+        return True
 
     def authorize(
         self,
@@ -232,12 +251,21 @@ class ProductionEnforcementBoundary:
             metadata=dict(metadata or {}),
         )
 
-        evidence = self._kernel.evaluate(
-            request,
-            self.policy,
-            insurance_policy=insurance_policy,
-            insurance_requirements=insurance_requirements,
-        )
+        try:
+            evidence = self._kernel.evaluate(
+                request,
+                self.policy,
+                insurance_policy=insurance_policy,
+                insurance_requirements=insurance_requirements,
+            )
+        except Exception as exc:
+            self._record_fail_closed(
+                action=profile.action,
+                reason=f"signing_or_governance_error:{type(exc).__name__}",
+            )
+            raise GovernanceUnavailable(
+                "governance signing authority or decision engine unavailable"
+            ) from exc
 
         # Persist the complete signed decision before any side effect. If this
         # write fails, the operation is not allowed to execute.
@@ -284,6 +312,16 @@ class ProductionEnforcementBoundary:
             "request_digest": evidence.request_digest,
             "previous_evidence_hash": evidence.previous_evidence_hash,
             "evidence_hash": evidence.evidence_hash,
+            "signing_digest_b64": evidence.signing_digest_b64,
+            "signatures": [
+                {
+                    "algorithm": item.algorithm,
+                    "key_id": item.key_id,
+                    "signature_b64": item.signature_b64,
+                    "backend": item.backend,
+                }
+                for item in evidence.signatures
+            ],
             "signature": evidence.signature,
         }
 
