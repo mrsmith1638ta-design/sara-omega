@@ -87,6 +87,13 @@ def test_conversation_equations_are_registered():
         "rh.tail_covariance_linear_bound",
         "rh.tail_energy_transfer",
         "rh.tail_attack_ii_target",
+        "rh.tail_centered_decomposition",
+        "rh.tail_mean_mertens",
+        "rh.tail_period_energy_components",
+        "rh.tail_discrepancy",
+        "rh.tail_transfer_exact",
+        "rh.tail_transfer_error",
+        "rh.tail_attack_iii_target",
         "rh.stronger_finite_target",
         "rh.sufficient_target",
         "rh.sufficient_implication_chain",
@@ -102,6 +109,9 @@ def test_engine_never_self_certifies_rh():
     assert analysis.metadata["tail_attack_ii"]["enabled"] is True
     assert analysis.metadata["tail_attack_ii"]["uniform_covariance_linear_bound_proved"] is True
     assert analysis.metadata["tail_attack_ii"]["uniform_tail_certified"] is False
+    assert analysis.metadata["tail_attack_iii"]["enabled"] is True
+    assert analysis.metadata["tail_attack_iii"]["exact_weighted_transfer_identity"] is True
+    assert analysis.metadata["tail_attack_iii"]["uniform_tail_certified"] is False
     statuses = {
         item.result.get("proof_status")
         for item in analysis.calculations
