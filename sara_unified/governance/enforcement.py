@@ -70,7 +70,7 @@ class GovernanceBlocked(GovernanceEnforcementError):
         status_code = {
             Decision.DENY: 403,
             Decision.RESTRICT: 403,
-            Decision.ESCALATE: 409,
+            Decision.ESCALATE: 403,
             Decision.QUARANTINE: 423,
         }.get(evidence.decision, 403)
         super().__init__(
