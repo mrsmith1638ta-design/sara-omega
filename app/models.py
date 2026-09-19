@@ -164,6 +164,7 @@ class Verdict(BaseModel):
     providers_used: list[str] = Field(default_factory=list)
     science_analyses: list[dict[str, Any]] = Field(default_factory=list)
     truth_gate_decisions: list[dict[str, Any]] = Field(default_factory=list)
+    rh_framework: dict[str, Any] = Field(default_factory=dict)
     decision_id: str | None = None
     request_id: str | None = None
     council_trace: CouncilTrace | None = None

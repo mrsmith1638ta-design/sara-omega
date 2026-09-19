@@ -22,6 +22,7 @@ from .providers.data_analytics import DataAnalyticsSpecialist
 from .science.models import ScienceClaim
 from .science.provider import ScienceSpecialist
 from .science.truth_gate import HighLevelTruthGate
+from .rh_global_framework import RHGlobalReasoningFramework
 
 
 class SaraOmega:
@@ -37,6 +38,7 @@ class SaraOmega:
         signed_ledger: Any | None = None,
         judge: Any | None = None,
         providers: dict[str, Any] | None = None,
+        rh_framework: Any | None = None,
     ):
         self.governance = governance or GovernanceEngine(os.getenv("SARA_POLICY_FILE", "./config/policies.json"))
         self.authority = authority or AuthorityEngine()
@@ -46,6 +48,7 @@ class SaraOmega:
         self.history_ledger = history_ledger or DecisionLedger()
         self.judge = judge or OpenAIJudge()
         self.truth_gate = HighLevelTruthGate()
+        self.rh_framework = rh_framework or RHGlobalReasoningFramework()
         self.providers = providers or {
             "perplexity": PerplexitySpecialist(),
             "codex": CodexSpecialist(),
@@ -193,7 +196,17 @@ class SaraOmega:
         )
 
         mapped = self.problem_engine.map(p)
-        self._complete(trace, CouncilStage.MAP, metadata={"unknown_count": len(mapped.unknowns)})
+        rh_frame = self.rh_framework.initialize(p, mapped)
+        self._complete(
+            trace,
+            CouncilStage.MAP,
+            metadata={
+                "unknown_count": len(mapped.unknowns),
+                "rh_framework": rh_frame.get("framework_version"),
+                "rh_framework_universal": bool(rh_frame.get("applied_to_every_request")),
+                "literal_rh_math": bool(rh_frame.get("literal_rh_math")),
+            },
+        )
 
         preliminary_governance = self.governance.evaluate(p)
         self._complete(
@@ -239,6 +252,14 @@ class SaraOmega:
 
         stress_findings = self.verifier.stress_test(claims, cross_findings)
         challenges = [*cross_findings, *stress_findings]
+        rh_frame = self.rh_framework.finalize_evidence(
+            rh_frame,
+            claims=claims,
+            results=results,
+            challenges=challenges,
+            science_analyses=science_analyses,
+            governance=preliminary_governance,
+        )
         self._complete(
             trace,
             CouncilStage.STRESS_TEST,
@@ -276,6 +297,8 @@ class SaraOmega:
                     "rule": "Science outputs are advisory evidence only; preserve provenance classes and never promote reconstruction or consensus to verified fact.",
                     "execution_authority": False,
                 },
+                "rh_global_reasoning_framework": rh_frame,
+                "rh_framework_instruction": self.rh_framework.instruction(rh_frame),
                 "claims": [c.model_dump() for c in claims],
                 "cross_examination": [item.model_dump() for item in cross_findings],
                 "stress_test": [item.model_dump() for item in stress_findings],
@@ -358,6 +381,13 @@ class SaraOmega:
                 providers_used=[r.provider for r in usable],
                 science_analyses=science_analyses,
                 truth_gate_decisions=final_truth_record,
+                rh_framework=self.rh_framework.annotate_outcome(
+                    rh_frame,
+                    decision=str(semantic.get("decision", "Insufficient evidence")),
+                    confidence=confidence,
+                    truth_gate=final_truth_gate,
+                    governance=final_governance,
+                ),
             )
         else:
             verdict = self._fallback_verdict(
@@ -366,6 +396,13 @@ class SaraOmega:
                 claims=claims,
                 challenges=challenges,
                 truth_gate_decisions=final_truth_record,
+            )
+            verdict.rh_framework = self.rh_framework.annotate_outcome(
+                rh_frame,
+                decision=verdict.decision,
+                confidence=verdict.confidence,
+                truth_gate=final_truth_gate,
+                governance=final_governance,
             )
 
         if final_governance.disposition == Disposition.ESCALATE:
@@ -384,6 +421,7 @@ class SaraOmega:
             "specialist_results": [r.model_dump() for r in results],
             "science_analyses": science_analyses,
             "truth_gate_decisions": final_truth_record,
+            "rh_framework": verdict.rh_framework,
             "challenges": [item.model_dump() for item in challenges],
             "verdict": verdict.model_dump(exclude={"decision_id", "integrity"}),
         }
