@@ -85,6 +85,10 @@ jobs:
         run: pytest -q
       - name: Focused adversarial gate
         run: python tools/adversarial_gate.py
+      - name: Riemann research engine tests
+        run: pytest -q tests/science/test_riemann_*.py
+      - name: Riemann false-proof adversarial gate
+        run: python tools/riemann_adversarial_gate.py
       - name: Railway container build
         run: docker build --pull -t sara-omega:v3.2.1 .
       - name: Piper voice service container build
