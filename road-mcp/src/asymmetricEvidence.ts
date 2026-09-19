@@ -37,6 +37,35 @@ function decodeBase64Strict(value: string, field: string): Buffer {
   return decoded;
 }
 
+
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => canonicalize(item));
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(record).sort()) {
+      out[key] = canonicalize(record[key]);
+    }
+    return out;
+  }
+  return value;
+}
+
+export function canonicalEvidenceJson(evidence: Record<string, unknown>): string {
+  return JSON.stringify(canonicalize(evidence));
+}
+
+export function computeEvidenceDigests(evidence: Record<string, unknown>): {
+  evidenceHash: string;
+  signingDigestB64: string;
+} {
+  const canonical = Buffer.from(canonicalEvidenceJson(evidence), "utf8");
+  return {
+    evidenceHash: createHash("sha256").update(canonical).digest("hex"),
+    signingDigestB64: createHash("sha512").update(canonical).digest("base64"),
+  };
+}
+
 export function publicKeyFingerprint(publicKeyPem: string): string {
   const key = createPublicKey(publicKeyPem);
   const der = key.export({ format: "der", type: "spki" });
