@@ -35,6 +35,8 @@ class RHAdversarialGate:
         assumes_rh: bool = False,
         finite_n_only: bool = False,
         spectral_or_quantum_only: bool = False,
+        claims_asymptotic_limit: bool = False,
+        uniform_asymptotic_proved: bool = False,
     ) -> RHGateDecision:
         text = claim.strip().lower()
         attempts_proof_promotion = any(marker in text for marker in _PROOF_LANGUAGE)
@@ -52,6 +54,13 @@ class RHAdversarialGate:
             reasons.append("an unproved lemma cannot certify RH")
         if proof_status == RHProofStatus.SYMBOLIC_IDENTITY and attempts_proof_promotion:
             reasons.append("a symbolic identity is not by itself a proof of the required limit")
+        if claims_asymptotic_limit:
+            if finite_n_only:
+                reasons.append("finite-N tail certification cannot establish a uniform N-to-infinity asymptotic")
+            if proof_status == RHProofStatus.NUMERICAL_EVIDENCE:
+                reasons.append("numerical tail evidence cannot certify an asymptotic little-o statement")
+            if not uniform_asymptotic_proved:
+                reasons.append("asymptotic promotion requires a proved uniform N-to-infinity estimate")
         if proof_status == RHProofStatus.FORMAL_PROOF_CERTIFIED:
             if not formal_certificate:
                 reasons.append("formal proof status requires a non-empty certificate reference")
