@@ -448,6 +448,60 @@ def equation_registry() -> list[RHEquation]:
             notes=["No RH or Möbius-randomness assumption may be used to fill the remaining gaps."],
         ),
         RHEquation(
+            equation_id="rh.tail_centered_decomposition",
+            latex=r"R_N(y)=A_N+S_N(y),\quad A_N=\log N+\frac12\sum_{n\le N}\mu(n)(\log N-\log n),\quad S_N(y)=\sum_{n\le N}a_n\left(\left\{\frac yn\right\}-\frac12\right)",
+            description="Exact decomposition into the period mean component and centered sawtooth residual.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            source_ids=["internal-rh-tail-attack-iii"],
+        ),
+        RHEquation(
+            equation_id="rh.tail_mean_mertens",
+            latex=r"A_N=\log N+\frac12\int_1^N\frac{M(t)}{t}\,dt,\qquad M(t)=\sum_{n\le t}\mu(n)",
+            description="Exact partial-summation form exposing the Möbius summatory quantity governing the mean component.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            source_ids=["internal-rh-tail-attack-iii-partial-summation"],
+            notes=["This identity does not assume a cancellation rate for M(t)."],
+        ),
+        RHEquation(
+            equation_id="rh.tail_period_energy_components",
+            latex=r"M_N=A_N^2+C_N",
+            description="Exact period-energy decomposition into mean contribution and centered covariance.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            source_ids=["internal-rh-tail-attack-iii"],
+        ),
+        RHEquation(
+            equation_id="rh.tail_discrepancy",
+            latex=r"E_N(x)=\int_N^xR_N(y)^2\,dy-M_N(x-N),\qquad D_N=\sup_{x\ge N}|E_N(x)|",
+            description="Cumulative-energy discrepancy relative to the exact full-period mean.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            source_ids=["internal-rh-tail-attack-iii"],
+            notes=["For fixed N, E_N is periodic with period lcm(1,...,N)."],
+        ),
+        RHEquation(
+            equation_id="rh.tail_transfer_exact",
+            latex=r"T_N=\frac{M_N}{N}+2\int_N^\infty\frac{E_N(y)}{y^3}\,dy",
+            description="Exact integration-by-parts transfer from cumulative period-energy discrepancy to the weighted tail.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            source_ids=["internal-rh-tail-attack-iii-calculus"],
+        ),
+        RHEquation(
+            equation_id="rh.tail_transfer_error",
+            latex=r"\left|T_N-\frac{M_N}{N}\right|\le\frac{D_N}{N^2}",
+            description="Exact fixed-N transfer error bound obtained from the discrepancy supremum.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            source_ids=["internal-rh-tail-attack-iii-calculus"],
+            notes=["A useful asymptotic conclusion still requires a uniform bound on D_N."],
+        ),
+        RHEquation(
+            equation_id="rh.tail_attack_iii_target",
+            latex=r"\frac{A_N^2}{N}=o(\log^2N),\qquad \frac{D_N}{N^2}=o(\log^2N)",
+            description="Tail Attack III sufficient targets after the covariance contribution C_N/N is reduced to O(1).",
+            proof_status=RHProofStatus.CONJECTURAL_LEMMA,
+            dependencies=["A_N=o(sqrt(N) log N) or equivalent", "D_N=o(N^2 log^2 N) or a sharper transfer theorem"],
+            source_ids=["internal-rh-tail-attack-iii"],
+            notes=["No hidden PNT-strength, RH-strength, or Möbius-randomness assumption is accepted."],
+        ),
+        RHEquation(
             equation_id="rh.tail_fixed_n_certificate",
             latex=r"\int_N^C\frac{|R_N(y)|^2}{y^2}dy\le T_N\le\int_N^C\frac{|R_N(y)|^2}{y^2}dy+\frac{B_N^2}{C},\quad B_N=\log N+\sum_{n\le N}|\mu(n)|(\log N-\log n)",
             description="Certified fixed-N tail enclosure from an exact finite window and an unconditional pointwise remainder bound.",
@@ -606,6 +660,27 @@ class RiemannResearchEngine:
             )
         )
 
+        from .tail_attack_iii import tail_attack_iii_snapshot
+        tail_iii_snapshot = tail_attack_iii_snapshot()
+        calculations.append(
+            ScienceCalculation(
+                equation_id="rh.tail_attack_iii_snapshot",
+                inputs={"N": tail_iii_snapshot["n"]},
+                result=tail_iii_snapshot,
+                provenance_class=ProvenanceClass.NUMERICAL_MATHEMATICS,
+                evidence_status="SUPPORTED",
+                assumptions=[
+                    "exact centered residual decomposition",
+                    "exact fixed-N period energy",
+                    "exact integration-by-parts transfer identity",
+                    "finite-N discrepancy computation",
+                ],
+                limitations=list(tail_iii_snapshot["remaining_uniform_gaps"]),
+                source_ids=["sara-rh-tail-attack-iii"],
+                validation_status="NUMERICAL_EVIDENCE",
+            )
+        )
+
         false_promotion = gate.evaluate(
             claim="RH proved",
             proof_status=RHProofStatus.NUMERICAL_EVIDENCE,
@@ -651,6 +726,16 @@ class RiemannResearchEngine:
                     "cross_layer_cancellation": False,
                     "uniform_tail_certified": False,
                     "remaining_gap": "mean-component plus cumulative-energy discrepancy / period-to-tail transfer",
+                },
+                "tail_attack_iii": {
+                    "enabled": True,
+                    "centered_residual_decomposition": True,
+                    "mertens_mean_identity": True,
+                    "exact_weighted_transfer_identity": True,
+                    "fixed_n_discrepancy_certificate": True,
+                    "mean_uniform_target_certified": False,
+                    "discrepancy_uniform_target_certified": False,
+                    "uniform_tail_certified": False,
                 },
                 "numerical_snapshot": snapshot.model_dump(mode="json"),
             },

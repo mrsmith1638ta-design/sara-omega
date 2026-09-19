@@ -55,6 +55,15 @@ def main() -> int:
             cumulative_energy_discrepancy_proved=False,
             period_to_tail_transfer_proved=False,
         ),
+        gate.evaluate_tail_attack_iii_claim(
+            "Finite period therefore period average equals tail.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            covariance_bound_proved=True,
+            mean_component_bound_proved=False,
+            discrepancy_bound_proved=False,
+            weighted_transfer_proved=True,
+            finite_period_only=True,
+        ),
     ]
     assert all(not item.allowed for item in false_claims)
 
@@ -84,6 +93,7 @@ def main() -> int:
         "schur_recursion_checked": True,
         "finite_tail_asymptotic_promotion_blocked": True,
         "tail_attack_ii_covariance_only_promotion_blocked": True,
+        "tail_attack_iii_period_to_tail_shortcut_blocked": True,
         "formal_proof_certified": False,
     }, sort_keys=True))
     return 0

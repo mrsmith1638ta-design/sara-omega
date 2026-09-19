@@ -175,3 +175,62 @@ class RHAdversarialGate:
             return RHGateDecision(False, "BLOCK", list(dict.fromkeys(reasons)))
         return RHGateDecision(True, "PASS", [])
 
+    def evaluate_tail_attack_iii_claim(
+        self,
+        claim: str,
+        *,
+        proof_status: RHProofStatus,
+        covariance_bound_proved: bool = True,
+        mean_component_bound_proved: bool = False,
+        discrepancy_bound_proved: bool = False,
+        weighted_transfer_proved: bool = True,
+        assumes_rh: bool = False,
+        assumes_mobius_randomness: bool = False,
+        assumes_unproved_pnt_strength: bool = False,
+        finite_period_only: bool = False,
+        formal_certificate: str | None = None,
+    ) -> RHGateDecision:
+        """Fail-closed gate for mean-component plus weighted-tail transfer claims."""
+        text = claim.strip().lower()
+        reasons: list[str] = []
+
+        if assumes_rh:
+            reasons.append("Tail Attack III cannot assume RH or an RH-equivalent statement")
+        if assumes_mobius_randomness:
+            reasons.append("Tail Attack III cannot assume unproved Mobius randomness or square-root cancellation")
+        if assumes_unproved_pnt_strength:
+            reasons.append("Tail Attack III cannot smuggle in an unproved PNT-strength cancellation estimate")
+        if not covariance_bound_proved:
+            reasons.append("Tail Attack III requires the Tail Attack II covariance bound")
+        if not weighted_transfer_proved:
+            reasons.append("period energy cannot be identified with the weighted tail without a proved transfer identity")
+        if finite_period_only and not discrepancy_bound_proved:
+            reasons.append("a finite-period average cannot certify the weighted tail without an explicit transfer-discrepancy bound")
+        if not mean_component_bound_proved:
+            reasons.append("the mean-component target A_N^2/N=o(log^2 N) remains unproved")
+        if not discrepancy_bound_proved:
+            reasons.append("the discrepancy target D_N/N^2=o(log^2 N) remains unproved")
+        if proof_status == RHProofStatus.NUMERICAL_EVIDENCE:
+            reasons.append("finite numerical Tail Attack III data cannot certify an N-to-infinity little-o theorem")
+
+        hidden_shortcuts = (
+            "mobius is random",
+            "möbius is random",
+            "random signs",
+            "square-root cancellation",
+            "sqrt cancellation",
+            "finite period therefore",
+            "period average equals tail",
+            "assume prime number theorem error",
+            "assuming rh",
+        )
+        if any(marker in text for marker in hidden_shortcuts):
+            reasons.append("claim contains a prohibited hidden cancellation or period-to-tail shortcut")
+
+        if proof_status == RHProofStatus.FORMAL_PROOF_CERTIFIED and not formal_certificate:
+            reasons.append("formal Tail Attack III status requires a certificate reference")
+
+        if reasons:
+            return RHGateDecision(False, "BLOCK", list(dict.fromkeys(reasons)))
+        return RHGateDecision(True, "PASS", [])
+

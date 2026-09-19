@@ -566,6 +566,156 @@ The red-team gate explicitly rejects the inference
 
 unless the missing mean-component and period-to-tail estimates are supplied.
 
+## Tail Attack III: mean component + weighted-tail transfer
+
+Tail Attack III starts from the exact centered decomposition
+
+[
+\boxed{
+R_N(y)=A_N+S_N(y)
+}
+]
+
+with
+
+[
+A_N=
+\log N+
+\frac12
+\sum_{n\le N}\mu(n)(\log N-\log n)
+]
+
+and
+
+[
+S_N(y)=
+\sum_{n\le N}
+a_{n,N}
+\left(
+\left\{\frac yn\right\}-\frac12
+\right).
+]
+
+The mean component also has the exact partial-summation form
+
+[
+\boxed{
+A_N=
+\log N+
+\frac12
+\int_1^N
+\frac{M(t)}{t}\,dt,
+\qquad
+M(t)=\sum_{n\le t}\mu(n).
+}
+]
+
+This identity exposes the precise Möbius summatory quantity that must be
+controlled. The engine does not insert any unproved cancellation estimate for
+(M(t)).
+
+The full-period energy is now tracked component-by-component:
+
+[
+\boxed{
+M_N=A_N^2+C_N.
+}
+]
+
+Tail Attack II already supplies the unconditional covariance bound
+
+[
+C_N=O(N).
+]
+
+Therefore the covariance contribution to (M_N/N) is only (O(1)), which is
+(o(\log^2 N)). The remaining mean-component target is
+
+[
+\boxed{
+\frac{A_N^2}{N}=o(\log^2N),
+}
+]
+
+equivalently
+
+[
+A_N=o(\sqrt N\log N).
+]
+
+Tail Attack III next defines the cumulative-energy discrepancy
+
+[
+E_N(x)=
+\int_N^xR_N(y)^2\,dy
+-
+M_N(x-N).
+]
+
+For fixed (N), both (R_N^2) and (E_N) are periodic with period
+(L_N=\operatorname{lcm}(1,\ldots,N)). Define
+
+[
+D_N=\sup_{x\ge N}|E_N(x)|.
+]
+
+Integration by parts gives the exact weighted-tail transfer identity
+
+[
+\boxed{
+T_N=
+\frac{M_N}{N}
++
+2\int_N^\infty
+\frac{E_N(y)}{y^3}\,dy.
+}
+]
+
+Hence
+
+[
+\boxed{
+\left|
+T_N-\frac{M_N}{N}
+\right|
+\le
+\frac{D_N}{N^2}.
+}
+]
+
+For modest fixed (N), SARA computes (D_N) over one full period. On each unit
+interval, extrema of (E_N) can occur only at endpoints or where
+
+[
+R_N(y)^2=M_N.
+]
+
+This yields a reproducible fixed-(N) periodic-transfer certificate without
+identifying the period average with the weighted tail.
+
+After the Tail Attack II covariance reduction, the remaining Tail Attack III
+uniform targets are
+
+[
+\boxed{
+\frac{A_N^2}{N}=o(\log^2N),
+\qquad
+\frac{D_N}{N^2}=o(\log^2N).
+}
+]
+
+If both hold, then the post-(N) weighted tail satisfies the required little-o
+bound. These estimates are **not currently certified**.
+
+The red-team gate rejects all of the following shortcuts:
+
+- treating a finite-period average as the weighted tail;
+- omitting the explicit discrepancy term (D_N);
+- assuming Möbius randomness or square-root cancellation;
+- inserting an unproved PNT-strength cancellation estimate;
+- using RH or an RH-equivalent zero-location statement;
+- promoting finite values of (A_N), (D_N), or (T_N) to an asymptotic theorem.
+
 ## Numerical runner boundary
 
 The finite runner may compute:
@@ -593,6 +743,8 @@ CI must fail if code permits any of these transitions without formal certificati
 6. symbolic identity alone -> proof of the missing asymptotic limit
 7. covariance O(N) alone -> weighted-tail little-o theorem
 8. period mean-square control -> tail theorem without a proved transfer/discrepancy estimate
+9. finite-period average -> weighted tail without explicit D_N control
+10. unproved PNT-strength or Möbius-randomness input -> mean-component theorem
 
 The runtime truth gate and `tools/riemann_adversarial_gate.py` enforce these boundaries.
 
@@ -622,6 +774,13 @@ The runtime equation registry now includes the full set of RH objects used in th
 - `rh.tail_covariance_linear_bound`
 - `rh.tail_energy_transfer`
 - `rh.tail_attack_ii_target`
+- `rh.tail_centered_decomposition`
+- `rh.tail_mean_mertens`
+- `rh.tail_period_energy_components`
+- `rh.tail_discrepancy`
+- `rh.tail_transfer_exact`
+- `rh.tail_transfer_error`
+- `rh.tail_attack_iii_target`
 - `rh.stronger_finite_target`
 - `rh.sufficient_target`
 - `rh.sufficient_implication_chain`
