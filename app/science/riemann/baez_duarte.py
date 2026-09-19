@@ -390,6 +390,30 @@ def equation_registry() -> list[RHEquation]:
             notes=["This identity does not itself establish the required tail asymptotic."],
         ),
         RHEquation(
+            equation_id="rh.tail_periodicity",
+            latex=r"R_N(y+L_N)=R_N(y),\qquad R_N(y)=\theta_Ny-\psi_N(y),\quad L_N=\operatorname{lcm}(1,\ldots,N)",
+            description="Exact periodicity of the fixed-N tail residual induced by the fractional-part representation.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            source_ids=["internal-rh-tail-attack-i"],
+            notes=["The period grows rapidly with N and does not by itself imply the required asymptotic tail bound."],
+        ),
+        RHEquation(
+            equation_id="rh.tail_period_mean_square",
+            latex=r"M_N=\left(\log N+\frac12\sum_{n\le N}a_n\right)^2+\frac1{12}\sum_{m,n\le N}a_ma_n\frac{\gcd(m,n)^2}{mn},\quad a_n=\mu(n)(\log N-\log n)",
+            description="Exact full-period mean square of the fixed-N residual using centered periodic Bernoulli/sawtooth covariance.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            source_ids=["internal-rh-tail-attack-i", "periodic-bernoulli-covariance"],
+            notes=["A full-period mean square is a structural identity, not a uniform estimate for the tail beginning at y=N."],
+        ),
+        RHEquation(
+            equation_id="rh.tail_fixed_n_certificate",
+            latex=r"\int_N^C\frac{|R_N(y)|^2}{y^2}dy\le T_N\le\int_N^C\frac{|R_N(y)|^2}{y^2}dy+\frac{B_N^2}{C},\quad B_N=\log N+\sum_{n\le N}|\mu(n)|(\log N-\log n)",
+            description="Certified fixed-N tail enclosure from an exact finite window and an unconditional pointwise remainder bound.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            source_ids=["internal-rh-tail-attack-i"],
+            notes=["This certificate is finite-N only and cannot certify T_N=o(log^2 N)."],
+        ),
+        RHEquation(
             equation_id="rh.stronger_finite_target",
             latex=r"\int_1^N|\psi(y)-\theta_Ny|^2\frac{dy}{y^2}=O(\log N)",
             description="Earlier stronger finite-range target; useful if proved but stronger than required.",
@@ -504,6 +528,22 @@ class RiemannResearchEngine:
             )
         )
 
+        from .tail_attack import tail_attack_snapshot
+        tail_snapshot = tail_attack_snapshot()
+        calculations.append(
+            ScienceCalculation(
+                equation_id="rh.tail_attack_i_snapshot",
+                inputs={"N": tail_snapshot["n"], "cutoff": tail_snapshot["cutoff"]},
+                result=tail_snapshot,
+                provenance_class=ProvenanceClass.NUMERICAL_MATHEMATICS,
+                evidence_status="SUPPORTED",
+                assumptions=["finite N", "finite cutoff", "exact symbolic tail identities"],
+                limitations=list(tail_snapshot["limitations"]),
+                source_ids=["sara-rh-tail-attack-i"],
+                validation_status="NUMERICAL_EVIDENCE",
+            )
+        )
+
         false_promotion = gate.evaluate(
             claim="RH proved",
             proof_status=RHProofStatus.NUMERICAL_EVIDENCE,
@@ -536,6 +576,12 @@ class RiemannResearchEngine:
                 "current_bottleneck": "J_N=o(log^2 N) together with theta_N=O(1)",
                 "bottleneck_split": "J_N = finite Chebyshev range [1,N] + post-N psi_N tail",
                 "conversation_cross_reference_complete": True,
+                "tail_attack_i": {
+                    "enabled": True,
+                    "asymptotic_certified": False,
+                    "fixed_n_certificate": True,
+                    "period_mean_square_identity": True,
+                },
                 "numerical_snapshot": snapshot.model_dump(mode="json"),
             },
         )
