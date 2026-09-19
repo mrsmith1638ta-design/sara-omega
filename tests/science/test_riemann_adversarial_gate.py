@@ -111,6 +111,42 @@ def test_tail_attack_iii_blocks_hidden_pnt_strength_and_mobius_randomness():
     assert any("PNT-strength" in reason for reason in result.reasons)
 
 
+
+def test_tail_attack_iv_blocks_unsourced_mean_and_finite_discrepancy_promotion():
+    result = RHAdversarialGate().evaluate_tail_attack_iv_claim(
+        "Use the period data to finish the tail theorem.",
+        proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+        mean_bound_sourced=False,
+        mean_target_proved=False,
+        covariance_target_proved=True,
+        discrepancy_target_proved=False,
+        combined_tail_claim=True,
+        finite_period_or_subperiod_only=True,
+    )
+    assert result.allowed is False
+    assert any("explicit source" in reason for reason in result.reasons)
+    assert any("mean dependency" in reason for reason in result.reasons)
+    assert any("finite period/subperiod" in reason for reason in result.reasons)
+    assert any("combined weighted-tail promotion" in reason for reason in result.reasons)
+
+
+def test_tail_attack_iv_blocks_hidden_rh_and_mobius_randomness():
+    result = RHAdversarialGate().evaluate_tail_attack_iv_claim(
+        "Assuming RH and square-root cancellation, the dashboard is complete.",
+        proof_status=RHProofStatus.CONJECTURAL_LEMMA,
+        mean_bound_sourced=True,
+        mean_target_proved=True,
+        covariance_target_proved=True,
+        discrepancy_target_proved=True,
+        combined_tail_claim=True,
+        assumes_rh=True,
+        assumes_mobius_randomness=True,
+    )
+    assert result.allowed is False
+    assert any("cannot assume RH" in reason for reason in result.reasons)
+    assert any("Mobius randomness" in reason for reason in result.reasons)
+
+
 def test_rh_router_activation():
     routed = ScienceRouter().route_text(
         "Analyze the Riemann Hypothesis with Nyman Beurling, Baez-Duarte, Gram matrix and J_N."
@@ -124,3 +160,7 @@ def test_rh_router_activation():
         "Run Tail Attack III on the mean component and weighted tail transfer discrepancy."
     )
     assert "riemann_hypothesis" in tail_iii_routed
+    tail_iv_routed = ScienceRouter().route_text(
+        "Run Tail Attack IV mean and discrepancy growth dashboard."
+    )
+    assert "riemann_hypothesis" in tail_iv_routed
