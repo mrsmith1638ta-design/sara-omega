@@ -9,6 +9,7 @@ External cross-reference:
 - L. Báez-Duarte, *A strengthening of the Nyman-Beurling criterion for the Riemann Hypothesis*, arXiv:math/0202141.
 - S. Bettin, J. B. Conrey, D. W. Farmer, *An optimal choice of Dirichlet polynomials for the Nyman-Beurling criterion*, arXiv:1211.5191.
 - Vasyunin/cotangent-sum Gram literature is used only for finite Gram evaluation and is not treated as an RH proof.
+- NIST DLMF, Chapter 24, periodic Bernoulli functions: https://dlmf.nist.gov/24.2.iii
 
 ## Proof-status states
 
@@ -307,6 +308,125 @@ The earlier stronger target
 ]
 
 is retained as a potentially useful stronger estimate, but it is not required by the present reduction.
+
+## Tail Attack I
+
+Tail Attack I focuses only on the post-(N) term
+
+[
+T_N=
+\int_N^\infty
+|R_N(y)|^2\frac{dy}{y^2},
+\qquad
+R_N(y)=\theta_Ny-\psi_N(y).
+]
+
+From the exact sawtooth representation,
+
+[
+R_N(y)
+=
+\log N+
+\sum_{n\le N}a_{n,N}\left\{\frac yn\right\},
+\qquad
+a_{n,N}=\mu(n)(\log N-\log n),
+]
+
+SARA records the exact fixed-(N) periodicity
+
+[
+\boxed{
+R_N(y+L_N)=R_N(y),
+\qquad
+L_N=\operatorname{lcm}(1,\ldots,N).
+}
+]
+
+Writing each sawtooth as its centered periodic Bernoulli component plus (1/2),
+the full-period mean square is
+
+[
+\boxed{
+M_N
+=
+\left(
+\log N+\frac12\sum_{n\le N}a_{n,N}
+\right)^2
++
+\frac1{12}
+\sum_{m,n\le N}
+a_{m,N}a_{n,N}
+\frac{\gcd(m,n)^2}{mn}.
+}
+]
+
+This is an exact structural identity for fixed (N). It is **not** by itself a
+bound on the weighted tail beginning at (y=N), because (L_N) grows rapidly.
+
+Tail Attack I also defines
+
+[
+B_N
+=
+\log N+
+\sum_{n\le N}|a_{n,N}|,
+]
+
+so the fractional-part representation gives the unconditional pointwise bound
+
+[
+|R_N(y)|\le B_N.
+]
+
+For any integer cutoff (C>N), the existing unit-interval integrator computes
+
+[
+W_{N,C}
+=
+\int_N^C |R_N(y)|^2\frac{dy}{y^2}
+]
+
+exactly up to floating-point evaluation of the closed forms, and the remaining
+tail obeys
+
+[
+0\le
+\int_C^\infty|R_N(y)|^2\frac{dy}{y^2}
+\le
+\frac{B_N^2}{C}.
+]
+
+Therefore SARA emits the finite-(N) certificate
+
+[
+\boxed{
+W_{N,C}
+\le T_N
+\le
+W_{N,C}+\frac{B_N^2}{C}.
+}
+]
+
+This is useful for reproducible fixed-(N) research and for falsifying proposed
+tail estimates. It does **not** establish (T_N=o(\log^2N)). The proof gate
+explicitly blocks promotion from finite tail certificates to a uniform
+(N\to\infty) asymptotic statement.
+
+Current Tail Attack I outputs include:
+
+- exact residual period;
+- exact full-period mean-square formula;
+- direct small-(N) period validation;
+- unconditional pointwise residual bound;
+- exact finite tail window;
+- certified remainder upper bound;
+- normalized finite-(N) upper bound versus (\log^2N);
+- an explicit `asymptotic_certified=false` field.
+
+The next research question is whether the Möbius-weighted gcd quadratic form,
+or another cancellation mechanism, can yield a uniform estimate strong enough
+to improve the crude (B_N^2/C) remainder in a way that survives
+(N\to\infty).
 
 ## Numerical runner boundary
 

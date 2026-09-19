@@ -1,29 +1,65 @@
 import math
 
+from app.science.riemann.baez_duarte import tail_residual_sawtooth
 from app.science.riemann.adversarial_gate import RHAdversarialGate
-from app.science.riemann.baez_duarte import RiemannResearchEngine, equation_registry, tail_attack_snapshot
 from app.science.riemann.models import RHProofStatus
+from app.science.riemann.tail_attack import (
+    certified_tail_interval,
+    direct_period_mean_square,
+    period_mean_square,
+    pointwise_tail_residual_bound,
+    residual_period,
+    tail_attack_snapshot,
+)
 
 
-def test_tail_attack_snapshot_tracks_finite_tail_window_and_sawtooth_samples():
-    snapshot = tail_attack_snapshot(8, 32, sample_count=9)
-
-    assert snapshot["phase"] == "Tail Attack I"
-    assert snapshot["proof_status"] == RHProofStatus.NUMERICAL_EVIDENCE.value
-    assert snapshot["N"] == 8
-    assert snapshot["cutoff"] == 32
-    assert snapshot["tail_window_N_to_cutoff"] >= 0.0
-    assert snapshot["tail_beyond_cutoff_uncomputed"] is True
-    assert len(snapshot["sawtooth_samples"]) == 9
-    assert math.isfinite(snapshot["tail_window_rms"])
+def test_tail_residual_is_periodic_for_fixed_n():
+    for n in (4, 6, 8):
+        period = residual_period(n)
+        for y in (float(n), float(n) + 0.25, float(n) + 3.75, 2.5 * n):
+            left = tail_residual_sawtooth(n, y)
+            right = tail_residual_sawtooth(n, y + period)
+            assert math.isclose(left, right, rel_tol=1e-11, abs_tol=1e-11)
 
 
-def test_tail_attack_equation_is_registered_as_research_not_proof():
-    equations = {item.equation_id: item for item in equation_registry()}
+def test_period_mean_square_formula_matches_direct_validation():
+    for n in (3, 4, 5, 6, 8):
+        formula = period_mean_square(n)
+        direct = direct_period_mean_square(n)
+        assert math.isclose(formula, direct, rel_tol=2e-10, abs_tol=2e-10)
 
-    tail_attack = equations["rh.tail_attack_i"]
-    assert tail_attack.proof_status == RHProofStatus.NUMERICAL_EVIDENCE
-    assert "does not prove" in " ".join(tail_attack.notes).lower()
+
+def test_pointwise_bound_dominates_sampled_tail_residual():
+    for n in (4, 8, 12):
+        bound = pointwise_tail_residual_bound(n)
+        period = residual_period(n)
+        for j in range(80):
+            y = n + (j + 0.37) * max(1.0, period / 40.0)
+            assert abs(tail_residual_sawtooth(n, y)) <= bound + 1e-10
+
+
+def test_certified_tail_interval_is_ordered_and_finite_n_only():
+    cert = certified_tail_interval(8, 128)
+    assert cert.certified_lower_bound >= 0.0
+    assert cert.certified_upper_bound >= cert.certified_lower_bound
+    assert cert.remainder_upper_bound > 0.0
+    assert cert.proof_status == "NUMERICAL_EVIDENCE"
+    assert cert.asymptotic_certified is False
+
+
+def test_larger_cutoff_reduces_crude_remainder_bound():
+    a = certified_tail_interval(8, 64)
+    b = certified_tail_interval(8, 256)
+    assert b.remainder_upper_bound < a.remainder_upper_bound
+
+
+def test_tail_attack_snapshot_preserves_proof_boundary():
+    snapshot = tail_attack_snapshot(8, 128)
+    assert snapshot["phase"] == "TAIL_ATTACK_I"
+    assert snapshot["asymptotic_certified"] is False
+    assert snapshot["certificate"]["asymptotic_certified"] is False
+    assert snapshot["proof_status"] == "NUMERICAL_EVIDENCE"
+    assert "fixed-N certified enclosure" in snapshot["limitations"][1]
 
 
 def test_tail_bound_red_team_rejects_hidden_RH_and_sqrt_cancellation():
@@ -42,13 +78,3 @@ def test_tail_bound_red_team_rejects_hidden_RH_and_sqrt_cancellation():
     )
     assert sqrt_cancellation.allowed is False
     assert any("cancellation" in reason.lower() for reason in sqrt_cancellation.reasons)
-
-
-def test_engine_exposes_tail_attack_i_metadata_without_certifying_RH():
-    analysis = RiemannResearchEngine().analyze_text("Run Tail Attack I on the RH J_N tail.")
-
-    assert analysis.metadata["tail_attack_i"]["phase"] == "Tail Attack I"
-    assert analysis.metadata["formal_proof_certified"] is False
-    assert analysis.metadata["tail_attack_i"]["proof_status"] == RHProofStatus.NUMERICAL_EVIDENCE.value
-    assert any(item.equation_id == "rh.tail_attack_i_snapshot" for item in analysis.calculations)
-

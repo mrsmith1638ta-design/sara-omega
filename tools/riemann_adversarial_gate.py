@@ -40,6 +40,13 @@ def main() -> int:
             proof_status=RHProofStatus.NUMERICAL_EVIDENCE,
             spectral_or_quantum_only=True,
         ),
+        gate.evaluate(
+            claim="The tail satisfies T_N=o(log^2 N).",
+            proof_status=RHProofStatus.NUMERICAL_EVIDENCE,
+            finite_n_only=True,
+            claims_asymptotic_limit=True,
+            uniform_asymptotic_proved=False,
+        ),
     ]
     assert all(not item.allowed for item in false_claims)
 
@@ -67,6 +74,7 @@ def main() -> int:
         "spectral_quantum_only_certification_blocked": True,
         "symbolic_identities_checked": True,
         "schur_recursion_checked": True,
+        "finite_tail_asymptotic_promotion_blocked": True,
         "formal_proof_certified": False,
     }, sort_keys=True))
     return 0
