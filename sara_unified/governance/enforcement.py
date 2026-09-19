@@ -130,6 +130,7 @@ class ProductionEnforcementBoundary:
         self.tenant_id = tenant_id.strip() or "default"
         self.policy = policy or DEFAULT_PRODUCTION_POLICY
         self._kernel: SARAUnifiedGovernanceKernel | None = None
+        self._evidence_signer = evidence_signer
         self._configuration_error: str | None = None
 
         if evidence_signer is not None:
@@ -157,9 +158,18 @@ class ProductionEnforcementBoundary:
         if self._kernel is None:
             return False
         try:
-            return bool(self.audit.verify())
+            if not bool(self.audit.verify()):
+                return False
         except Exception:
             return False
+        if self._evidence_signer is not None:
+            ready = getattr(self._evidence_signer, "ready", None)
+            if callable(ready):
+                try:
+                    return bool(ready())
+                except Exception:
+                    return False
+        return True
 
     def authorize(
         self,
@@ -241,12 +251,21 @@ class ProductionEnforcementBoundary:
             metadata=dict(metadata or {}),
         )
 
-        evidence = self._kernel.evaluate(
-            request,
-            self.policy,
-            insurance_policy=insurance_policy,
-            insurance_requirements=insurance_requirements,
-        )
+        try:
+            evidence = self._kernel.evaluate(
+                request,
+                self.policy,
+                insurance_policy=insurance_policy,
+                insurance_requirements=insurance_requirements,
+            )
+        except Exception as exc:
+            self._record_fail_closed(
+                action=profile.action,
+                reason=f"signing_or_governance_error:{type(exc).__name__}",
+            )
+            raise GovernanceUnavailable(
+                "governance signing authority or decision engine unavailable"
+            ) from exc
 
         # Persist the complete signed decision before any side effect. If this
         # write fails, the operation is not allowed to execute.
