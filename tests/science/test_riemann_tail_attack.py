@@ -57,4 +57,4 @@ def test_tail_attack_snapshot_preserves_proof_boundary():
     assert snapshot["asymptotic_certified"] is False
     assert snapshot["certificate"]["asymptotic_certified"] is False
     assert snapshot["proof_status"] == "NUMERICAL_EVIDENCE"
-    assert "finite-N certified enclosure" in snapshot["limitations"][1]
+    assert "fixed-N certified enclosure" in snapshot["limitations"][1]
