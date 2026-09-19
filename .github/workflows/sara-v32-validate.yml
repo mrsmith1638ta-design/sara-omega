@@ -97,7 +97,7 @@ jobs:
         run: docker build --pull -f voice_service/Dockerfile -t sara-piper-voice:1.0.0 .
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
       - name: ROAD MCP validation
         working-directory: road-mcp
         run: |
