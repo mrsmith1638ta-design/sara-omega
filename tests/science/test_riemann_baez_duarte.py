@@ -80,6 +80,13 @@ def test_conversation_equations_are_registered():
         "rh.j_n",
         "rh.j_split",
         "rh.tail_sawtooth",
+        "rh.tail_periodicity",
+        "rh.tail_period_mean_square",
+        "rh.tail_covariance_jordan",
+        "rh.tail_covariance_squarefree_layers",
+        "rh.tail_covariance_linear_bound",
+        "rh.tail_energy_transfer",
+        "rh.tail_attack_ii_target",
         "rh.stronger_finite_target",
         "rh.sufficient_target",
         "rh.sufficient_implication_chain",
@@ -92,6 +99,9 @@ def test_engine_never_self_certifies_rh():
     assert analysis.metadata["rh_status"] == "UNSOLVED"
     assert analysis.metadata["formal_proof_certified"] is False
     assert analysis.metadata["proof_promotion_gate"]["false_promotion_allowed"] is False
+    assert analysis.metadata["tail_attack_ii"]["enabled"] is True
+    assert analysis.metadata["tail_attack_ii"]["uniform_covariance_linear_bound_proved"] is True
+    assert analysis.metadata["tail_attack_ii"]["uniform_tail_certified"] is False
     statuses = {
         item.result.get("proof_status")
         for item in analysis.calculations
