@@ -502,6 +502,38 @@ def equation_registry() -> list[RHEquation]:
             notes=["No hidden PNT-strength, RH-strength, or Möbius-randomness assumption is accepted."],
         ),
         RHEquation(
+            equation_id="rh.tail_weighted_mobius_mellin",
+            latex=r"W(x)=\sum_{n\le x}\mu(n)\log(x/n),\qquad \int_1^\infty W(x)x^{-s-1}\,dx=\frac{1}{s^2\zeta(s)}\quad(\Re s>1)",
+            description="Exact Mellin transform exposing the zeta-zero sensitivity of the mean-component route.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            source_ids=["internal-rh-tail-attack-iv", "dirichlet-series-1-over-zeta"],
+            notes=["Near-square-root growth claims for W or A_N are proof-grade dependencies and cannot be imported as generic PNT cancellation."],
+        ),
+        RHEquation(
+            equation_id="rh.tail_discrepancy_period_bound",
+            latex=r"D_N\le 2L_NM_N,\qquad L_N=\operatorname{lcm}(1,\ldots,N)",
+            description="Elementary fixed-N deterministic discrepancy bound over one residual period.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            source_ids=["internal-rh-tail-attack-iv"],
+            notes=["The bound is asymptotically weak because L_N grows rapidly."],
+        ),
+        RHEquation(
+            equation_id="rh.tail_iv_dashboard_bound",
+            latex=r"T_N\le\frac{A_N^2}{N}+\frac{C_N}{N}+\frac{D_N}{N^2}",
+            description="Component-wise weighted-tail upper bound used by the Tail Attack IV proof-dependency dashboard.",
+            proof_status=RHProofStatus.SYMBOLIC_IDENTITY,
+            source_ids=["internal-rh-tail-attack-iii-calculus", "internal-rh-tail-attack-iv"],
+        ),
+        RHEquation(
+            equation_id="rh.tail_attack_iv_target",
+            latex=r"\frac{A_N^2}{N}=o(\log^2N),\quad \frac{C_N}{N}=O(1),\quad \frac{D_N}{N^2}=o(\log^2N)",
+            description="Tail Attack IV dependency graph: covariance is proved; mean and discrepancy remain proof obligations.",
+            proof_status=RHProofStatus.CONJECTURAL_LEMMA,
+            dependencies=["mean-component growth theorem", "Tail Attack II covariance bound", "uniform discrepancy growth theorem"],
+            source_ids=["internal-rh-tail-attack-iv"],
+            notes=["The combined tail theorem remains blocked until every dependency is proved."],
+        ),
+        RHEquation(
             equation_id="rh.tail_fixed_n_certificate",
             latex=r"\int_N^C\frac{|R_N(y)|^2}{y^2}dy\le T_N\le\int_N^C\frac{|R_N(y)|^2}{y^2}dy+\frac{B_N^2}{C},\quad B_N=\log N+\sum_{n\le N}|\mu(n)|(\log N-\log n)",
             description="Certified fixed-N tail enclosure from an exact finite window and an unconditional pointwise remainder bound.",
@@ -681,6 +713,31 @@ class RiemannResearchEngine:
             )
         )
 
+        from .tail_attack_iv import tail_attack_iv_snapshot
+        tail_iv_snapshot = tail_attack_iv_snapshot()
+        calculations.append(
+            ScienceCalculation(
+                equation_id="rh.tail_attack_iv_snapshot",
+                inputs={"N": tail_iv_snapshot["dashboard"]["n"]},
+                result=tail_iv_snapshot,
+                provenance_class=ProvenanceClass.NUMERICAL_MATHEMATICS,
+                evidence_status="SUPPORTED",
+                assumptions=[
+                    "sourced external Mertens/PNT comparison ladder",
+                    "Tail Attack II covariance theorem",
+                    "fixed-N discrepancy and subperiod diagnostics",
+                    "Tail Attack III weighted-transfer inequality",
+                ],
+                limitations=[
+                    "Known unconditional Mertens bounds do not reach the required mean-component scale.",
+                    "Finite period/subperiod balancing does not certify a uniform discrepancy asymptotic.",
+                    "The combined weighted-tail asymptotic remains blocked.",
+                ],
+                source_ids=["sara-rh-tail-attack-iv"],
+                validation_status="NUMERICAL_EVIDENCE",
+            )
+        )
+
         false_promotion = gate.evaluate(
             claim="RH proved",
             proof_status=RHProofStatus.NUMERICAL_EVIDENCE,
@@ -736,6 +793,17 @@ class RiemannResearchEngine:
                     "mean_uniform_target_certified": False,
                     "discrepancy_uniform_target_certified": False,
                     "uniform_tail_certified": False,
+                },
+                "tail_attack_iv": {
+                    "enabled": True,
+                    "program": "Mean + Discrepancy Growth Program",
+                    "mertens_bound_catalog": True,
+                    "subperiod_discrepancy_analyzer": True,
+                    "combined_tail_dashboard": True,
+                    "covariance_uniform_status": "proved",
+                    "mean_uniform_status": "blocked",
+                    "discrepancy_uniform_status": "conjectural",
+                    "uniform_tail_status": "blocked",
                 },
                 "numerical_snapshot": snapshot.model_dump(mode="json"),
             },
