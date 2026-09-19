@@ -942,3 +942,37 @@ test("ROAD rejects tampered SARA evidence without any signing authority", async 
   assert.equal(wrongFingerprint.reason, "public_key_fingerprint_mismatch");
 });
 
+test("ROAD canonical evidence hashing matches the Python governance kernel", async () => {
+  const { computeEvidenceDigests } = await import("../dist/asymmetricEvidence.js");
+  const evidence = {
+    evidence_version: "1.0",
+    issued_at: "2026-09-19T15:00:00+00:00",
+    request_id: "req-1",
+    decision: "ALLOW",
+    policy_id: "p",
+    policy_version: "1",
+    gate_results: [
+      {
+        name: "identity",
+        status: "PASS",
+        reason: "ok",
+        evidence: { b: 2, a: 1 },
+      },
+    ],
+    risk_score: 0.1,
+    risk_factors: { production: 0.1 },
+    request_digest: "abc",
+    previous_evidence_hash: null,
+  };
+
+  const digests = computeEvidenceDigests(evidence);
+  assert.equal(
+    digests.evidenceHash,
+    "3fdb5909ba82af7a6a8af20667dfd154ae251fc975a4e2a1d9c9992738c20aca",
+  );
+  assert.equal(
+    digests.signingDigestB64,
+    "1Tfg9FVMgpyuwvMLEn3PiRscry7/ks/qbDwQMXS7zh28FBqliH3J8FNWSeXGPoX1c8UAlAOHtcnxMwuEX6YxtQ==",
+  );
+});
+
