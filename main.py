@@ -840,11 +840,25 @@ def think(session_id: str, text: str, role: str = "tester") -> str:
     if not client:
         return "AI not configured. Set OPENAI_API_KEY."
     try:
+        cleaned_text = clean_text(text, 1000)
+        legacy_problem = Problem(
+            query=cleaned_text,
+            context={"source": "legacy_think", "session_id": clean_text(session_id, 128)},
+            actor=role,
+            authority_level=0,
+        )
+        legacy_map = gateway_sara.problem_engine.map(legacy_problem)
+        rh_frame = gateway_sara.rh_framework.initialize(legacy_problem, legacy_map)
+
         ctx = list(SESSION.get(session_id) or CONVERSATION_MEMORY.load(session_id))
-        ctx.append({"role": "user", "content": clean_text(text, 1000)})
+        ctx.append({"role": "user", "content": cleaned_text})
         max_context = get_max_context(role)
         ctx = ctx[-max_context:] if max_context else ctx
-        response = client.chat.completions.create(model="gpt-4o-mini", messages=ctx, temperature=0.6, max_tokens=500)
+        messages = [
+            {"role": "system", "content": gateway_sara.rh_framework.instruction(rh_frame)},
+            *ctx,
+        ]
+        response = client.chat.completions.create(model="gpt-4o-mini", messages=messages, temperature=0.6, max_tokens=500)
         answer = response.choices[0].message.content or ""
         ctx.append({"role": "assistant", "content": answer})
         failsafe_checkpoint(
@@ -862,6 +876,9 @@ def think(session_id: str, text: str, role: str = "tester") -> str:
                 "role": role,
                 "epistemic_status": "UNVERIFIED",
                 "execution_authority": False,
+                "rh_framework_version": rh_frame.get("framework_version"),
+                "rh_framework_universal": bool(rh_frame.get("applied_to_every_request")),
+                "literal_rh_math": bool(rh_frame.get("literal_rh_math")),
             },
         )
         return answer
