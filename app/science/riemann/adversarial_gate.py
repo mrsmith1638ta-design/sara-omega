@@ -293,3 +293,66 @@ class RHAdversarialGate:
             return RHGateDecision(False, "BLOCK", list(dict.fromkeys(reasons)))
         return RHGateDecision(True, "PASS", [])
 
+    def evaluate_tail_attack_v_claim(
+        self,
+        claim: str,
+        *,
+        proof_status: RHProofStatus,
+        mean_obstruction_resolved: bool = False,
+        discrepancy_growth_proved: bool = False,
+        covariance_bound_proved: bool = True,
+        combined_tail_claim: bool = False,
+        uses_zero_structure_shortcut: bool = False,
+        assumes_rh: bool = False,
+        assumes_mobius_randomness: bool = False,
+        finite_discrepancy_only: bool = False,
+        formal_certificate: str | None = None,
+    ) -> RHGateDecision:
+        """Fail-closed gate for Tail Attack V mean-obstruction promotion."""
+        text = claim.strip().lower()
+        reasons: list[str] = []
+
+        if assumes_rh:
+            reasons.append("Tail Attack V cannot assume RH while auditing an RH-sensitive obstruction")
+        if assumes_mobius_randomness:
+            reasons.append("Tail Attack V cannot assume Mobius randomness or square-root cancellation")
+        if uses_zero_structure_shortcut:
+            reasons.append("zero-structure shortcuts require a proof-grade certificate, not a heuristic")
+        if not mean_obstruction_resolved:
+            reasons.append("the mean obstruction A_N=o(sqrt(N) log N) remains unresolved")
+        if not discrepancy_growth_proved:
+            reasons.append("the discrepancy growth theorem D_N/N^2=o(log^2 N) remains unproved")
+        if not covariance_bound_proved:
+            reasons.append("Tail Attack V still depends on the Tail Attack II covariance theorem")
+        if finite_discrepancy_only and not discrepancy_growth_proved:
+            reasons.append("finite discrepancy diagnostics cannot certify a uniform discrepancy theorem")
+        if combined_tail_claim and (
+            not mean_obstruction_resolved
+            or not discrepancy_growth_proved
+            or not covariance_bound_proved
+        ):
+            reasons.append("combined Tail Attack V promotion requires mean, covariance, and discrepancy dependencies to be proved")
+        if proof_status == RHProofStatus.NUMERICAL_EVIDENCE and combined_tail_claim:
+            reasons.append("finite Tail Attack V diagnostics cannot certify the asymptotic tail theorem")
+
+        prohibited_markers = (
+            "mobius is random",
+            "möbius is random",
+            "square-root cancellation",
+            "sqrt cancellation",
+            "near-square-root follows",
+            "zeta zero structure",
+            "assuming rh",
+            "therefore rh",
+            "rh follows",
+        )
+        if any(marker in text for marker in prohibited_markers):
+            reasons.append("claim contains a prohibited mean-obstruction or proof-promotion shortcut")
+
+        if proof_status == RHProofStatus.FORMAL_PROOF_CERTIFIED and not formal_certificate:
+            reasons.append("formal Tail Attack V status requires a certificate reference")
+
+        if reasons:
+            return RHGateDecision(False, "BLOCK", list(dict.fromkeys(reasons)))
+        return RHGateDecision(True, "PASS", [])
+

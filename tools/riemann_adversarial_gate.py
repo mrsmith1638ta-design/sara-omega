@@ -74,6 +74,14 @@ def main() -> int:
             combined_tail_claim=True,
             finite_period_or_subperiod_only=True,
         ),
+        gate.evaluate_tail_attack_v_claim(
+            "The near-square-root mean bound follows from zeta zero structure, so RH follows.",
+            proof_status=RHProofStatus.CONJECTURAL_LEMMA,
+            mean_obstruction_resolved=False,
+            discrepancy_growth_proved=False,
+            combined_tail_claim=True,
+            uses_zero_structure_shortcut=True,
+        ),
     ]
     assert all(not item.allowed for item in false_claims)
 
@@ -105,6 +113,7 @@ def main() -> int:
         "tail_attack_ii_covariance_only_promotion_blocked": True,
         "tail_attack_iii_period_to_tail_shortcut_blocked": True,
         "tail_attack_iv_dependency_promotion_blocked": True,
+        "tail_attack_v_mean_obstruction_promotion_blocked": True,
         "formal_proof_certified": False,
     }, sort_keys=True))
     return 0

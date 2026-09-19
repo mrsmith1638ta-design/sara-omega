@@ -834,6 +834,57 @@ For tractable finite N, SARA emits component statuses:
 
 The Tail Attack IV red-team gate blocks unsourced Mertens/PNT/zero-free-region bounds, hidden RH or zeta-zero-location assumptions, Möbius-randomness or square-root-cancellation assumptions, finite subperiod patterns promoted to a uniform D_N rate, and any combined tail theorem while a required dependency remains blocked or conjectural.
 
+## Tail Attack V: Mean Obstruction Audit + Discrepancy Growth Search
+
+Tail Attack V does not claim that RH is closer by assertion. It hardens the live proof boundary exposed by Tail Attack IV.
+
+The mean side is audited as
+
+[
+\boxed{
+A_N=o(\sqrt N\log N)
+}
+]
+
+or equivalently
+
+[
+\boxed{
+\frac{A_N^2}{N}=o(\log^2N).
+}
+]
+
+SARA marks this dependency as BLOCKED and RH-sensitive because the exact weighted Mobius transform is
+
+[
+\int_1^\infty
+\left(\sum_{n\le x}\mu(n)\log\frac{x}{n}\right)x^{-s-1}\,dx
+=
+\frac{1}{s^2\zeta(s)}
+\qquad(\Re s>1).
+]
+
+That denominator means near-square-root mean control is not treated as ordinary random-looking Mobius cancellation. It is a proof-grade dependency until someone proves it without assuming RH or an RH-equivalent zero-location statement.
+
+The discrepancy side remains
+
+[
+\boxed{
+\frac{D_N}{N^2}=o(\log^2N).
+}
+]
+
+Tail Attack V keeps finite subperiod and fixed-period diagnostics, but their uniform status remains CONJECTURAL. Finite balancing patterns are allowed as search evidence only.
+
+The Tail Attack V dependency graph is therefore:
+
+- mean obstruction: BLOCKED;
+- covariance: PROVED by Tail Attack II;
+- discrepancy growth: CONJECTURAL;
+- combined weighted-tail theorem: BLOCKED.
+
+Tail Attack V's red-team gate blocks zeta-zero shortcuts, near-square-root Mobius assumptions, finite discrepancy promotion, and any combined tail theorem until the mean obstruction and discrepancy-growth theorem are both actually proved.
+
 ## Numerical runner boundary
 
 The finite runner may compute:
@@ -866,6 +917,8 @@ CI must fail if code permits any of these transitions without formal certificati
 11. unsourced Mertens/PNT/zero-free-region estimate -> mean-component theorem
 12. finite subperiod balancing -> uniform discrepancy theorem
 13. combined Tail IV dashboard -> asymptotic tail theorem while any dependency is blocked/conjectural
+14. zero-structure or near-square-root mean shortcut -> Tail V mean theorem without proof-grade certification
+15. Tail V mean audit + finite discrepancy diagnostics -> combined weighted-tail theorem
 
 The runtime truth gate and `tools/riemann_adversarial_gate.py` enforce these boundaries.
 
@@ -906,6 +959,9 @@ The runtime equation registry now includes the full set of RH objects used in th
 - `rh.tail_discrepancy_period_bound`
 - `rh.tail_iv_dashboard_bound`
 - `rh.tail_attack_iv_target`
+- `rh.tail_v_mean_obstruction_audit`
+- `rh.tail_v_discrepancy_growth_search`
+- `rh.tail_attack_v_target`
 - `rh.stronger_finite_target`
 - `rh.sufficient_target`
 - `rh.sufficient_implication_chain`

@@ -108,3 +108,11 @@ SARA OMEGA ChatGPT V3.4.0 Riemann Research Engine verification:
 - `pytest -q tests/science/test_riemann_tail_attack.py`: PASS, 4/4.
 - Expanded Riemann suite: PASS, 36/36.
 - Expanded `pytest -q tests/science`: PASS, 88/88 with existing FastAPI deprecation warnings only.
+
+Tail Attack V verification:
+
+- Tail Attack V adds the mean-obstruction audit and discrepancy-growth search, preserving the dependency graph: mean BLOCKED, covariance PROVED, discrepancy CONJECTURAL, combined tail BLOCKED.
+- `pytest -q tests/science/test_riemann_tail_attack_v.py`: PASS, 4/4.
+- Expanded Riemann suite via discovered `tests/science/test_riemann_*.py`: PASS.
+- `python tools/riemann_adversarial_gate.py`: PASS and includes `tail_attack_v_mean_obstruction_promotion_blocked=true`.
+- Full `pytest -q`: PASS at 100% with existing FastAPI/Starlette deprecation warnings only.

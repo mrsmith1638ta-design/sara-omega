@@ -147,6 +147,21 @@ def test_tail_attack_iv_blocks_hidden_rh_and_mobius_randomness():
     assert any("Mobius randomness" in reason for reason in result.reasons)
 
 
+def test_tail_attack_v_blocks_mean_obstruction_shortcut():
+    result = RHAdversarialGate().evaluate_tail_attack_v_claim(
+        "The near-square-root follows from zeta zero structure, so RH follows.",
+        proof_status=RHProofStatus.CONJECTURAL_LEMMA,
+        mean_obstruction_resolved=False,
+        discrepancy_growth_proved=False,
+        combined_tail_claim=True,
+        uses_zero_structure_shortcut=True,
+    )
+    assert result.allowed is False
+    assert any("mean obstruction" in reason for reason in result.reasons)
+    assert any("zero-structure" in reason for reason in result.reasons)
+    assert any("combined Tail Attack V promotion" in reason for reason in result.reasons)
+
+
 def test_rh_router_activation():
     routed = ScienceRouter().route_text(
         "Analyze the Riemann Hypothesis with Nyman Beurling, Baez-Duarte, Gram matrix and J_N."
@@ -164,3 +179,7 @@ def test_rh_router_activation():
         "Run Tail Attack IV mean and discrepancy growth dashboard."
     )
     assert "riemann_hypothesis" in tail_iv_routed
+    tail_v_routed = ScienceRouter().route_text(
+        "Run Tail Attack V mean obstruction audit and discrepancy growth search."
+    )
+    assert "riemann_hypothesis" in tail_v_routed

@@ -534,6 +534,33 @@ def equation_registry() -> list[RHEquation]:
             notes=["The combined tail theorem remains blocked until every dependency is proved."],
         ),
         RHEquation(
+            equation_id="rh.tail_v_mean_obstruction_audit",
+            latex=r"A_N=o(\sqrt N\log N)\quad\text{is a proof-grade mean obstruction because }\int_1^\infty W(x)x^{-s-1}\,dx=\frac1{s^2\zeta(s)}",
+            description="Tail Attack V audit that classifies the required mean-component bound as zeta-zero sensitive rather than routine Mobius cancellation.",
+            proof_status=RHProofStatus.CONJECTURAL_LEMMA,
+            dependencies=["classification of the near-square-root mean target without assuming RH"],
+            source_ids=["internal-rh-tail-attack-v"],
+            notes=["This audit blocks using the mean target as an unstated RH-equivalent shortcut."],
+        ),
+        RHEquation(
+            equation_id="rh.tail_v_discrepancy_growth_search",
+            latex=r"\frac{D_N}{N^2}=o(\log^2N)\quad\text{requires a uniform discrepancy theorem, not finite subperiod evidence}",
+            description="Tail Attack V discrepancy-growth search target after finite-period diagnostics are kept in their finite-certified lane.",
+            proof_status=RHProofStatus.CONJECTURAL_LEMMA,
+            dependencies=["uniform discrepancy-growth theorem or sharper weighted-tail transfer"],
+            source_ids=["internal-rh-tail-attack-v"],
+            notes=["Finite subperiod balancing remains useful evidence but cannot certify the asymptotic theorem."],
+        ),
+        RHEquation(
+            equation_id="rh.tail_attack_v_target",
+            latex=r"\text{Mean obstruction resolved}+\text{covariance proved}+\text{discrepancy growth proved}\Longrightarrow T_N=o(\log^2N)",
+            description="Tail Attack V dependency graph: mean obstruction audit plus discrepancy-growth search.",
+            proof_status=RHProofStatus.CONJECTURAL_LEMMA,
+            dependencies=["mean obstruction theorem", "Tail Attack II covariance theorem", "uniform discrepancy-growth theorem"],
+            source_ids=["internal-rh-tail-attack-v"],
+            notes=["The RH route remains blocked until the mean and discrepancy doors are both actually proved."],
+        ),
+        RHEquation(
             equation_id="rh.tail_fixed_n_certificate",
             latex=r"\int_N^C\frac{|R_N(y)|^2}{y^2}dy\le T_N\le\int_N^C\frac{|R_N(y)|^2}{y^2}dy+\frac{B_N^2}{C},\quad B_N=\log N+\sum_{n\le N}|\mu(n)|(\log N-\log n)",
             description="Certified fixed-N tail enclosure from an exact finite window and an unconditional pointwise remainder bound.",
@@ -738,6 +765,30 @@ class RiemannResearchEngine:
             )
         )
 
+        from .tail_attack_v import tail_attack_v_snapshot
+        tail_v_snapshot = tail_attack_v_snapshot()
+        calculations.append(
+            ScienceCalculation(
+                equation_id="rh.tail_attack_v_snapshot",
+                inputs={"N": 8},
+                result=tail_v_snapshot,
+                provenance_class=ProvenanceClass.CONJECTURAL_MATHEMATICS,
+                evidence_status="UNVERIFIED",
+                assumptions=[
+                    "Tail Attack II covariance theorem remains attached",
+                    "mean obstruction is not resolved",
+                    "uniform discrepancy-growth theorem is not proved",
+                ],
+                limitations=[
+                    "The mean obstruction may be RH-equivalent or otherwise zero-sensitive.",
+                    "Finite discrepancy diagnostics cannot prove the uniform D_N rate.",
+                    "Tail Attack V is an audit and search program, not an RH proof.",
+                ],
+                source_ids=["sara-rh-tail-attack-v"],
+                validation_status="CONJECTURAL_LEMMA",
+            )
+        )
+
         false_promotion = gate.evaluate(
             claim="RH proved",
             proof_status=RHProofStatus.NUMERICAL_EVIDENCE,
@@ -804,6 +855,17 @@ class RiemannResearchEngine:
                     "mean_uniform_status": "blocked",
                     "discrepancy_uniform_status": "conjectural",
                     "uniform_tail_status": "blocked",
+                },
+                "tail_attack_v": {
+                    "enabled": True,
+                    "program": tail_v_snapshot["program"],
+                    "mean_obstruction_audit": True,
+                    "discrepancy_growth_search": True,
+                    "mean_status": tail_v_snapshot["dependencies"]["mean"]["status"],
+                    "mean_rh_equivalence_risk": tail_v_snapshot["dependencies"]["mean"]["risk"],
+                    "covariance_status": tail_v_snapshot["dependencies"]["covariance"]["status"],
+                    "discrepancy_status": tail_v_snapshot["dependencies"]["discrepancy"]["status"],
+                    "uniform_tail_status": tail_v_snapshot["uniform_tail_status"],
                 },
                 "numerical_snapshot": snapshot.model_dump(mode="json"),
             },

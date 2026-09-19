@@ -98,6 +98,9 @@ def test_conversation_equations_are_registered():
         "rh.tail_discrepancy_period_bound",
         "rh.tail_iv_dashboard_bound",
         "rh.tail_attack_iv_target",
+        "rh.tail_v_mean_obstruction_audit",
+        "rh.tail_v_discrepancy_growth_search",
+        "rh.tail_attack_v_target",
         "rh.stronger_finite_target",
         "rh.sufficient_target",
         "rh.sufficient_implication_chain",
@@ -120,6 +123,12 @@ def test_engine_never_self_certifies_rh():
     assert analysis.metadata["tail_attack_iv"]["combined_tail_dashboard"] is True
     assert analysis.metadata["tail_attack_iv"]["covariance_uniform_status"] == "proved"
     assert analysis.metadata["tail_attack_iv"]["uniform_tail_status"] == "blocked"
+    assert analysis.metadata["tail_attack_v"]["enabled"] is True
+    assert analysis.metadata["tail_attack_v"]["program"] == "Mean Obstruction Audit + Discrepancy Growth Search"
+    assert analysis.metadata["tail_attack_v"]["mean_status"] == "blocked"
+    assert analysis.metadata["tail_attack_v"]["mean_rh_equivalence_risk"] == "HIGH"
+    assert analysis.metadata["tail_attack_v"]["discrepancy_status"] == "conjectural"
+    assert analysis.metadata["tail_attack_v"]["uniform_tail_status"] == "blocked"
     statuses = {
         item.result.get("proof_status")
         for item in analysis.calculations
