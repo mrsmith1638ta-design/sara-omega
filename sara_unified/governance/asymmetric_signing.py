@@ -57,6 +57,31 @@ class DualKmsSignerClient:
         self.require_kms_backend = require_kms_backend
         self._client = client
 
+
+    def ready(self) -> bool:
+        try:
+            if self._client is not None:
+                response = self._client.get(f"{self.base_url}/health")
+            else:
+                response = httpx.get(
+                    f"{self.base_url}/health",
+                    timeout=self.timeout_seconds,
+                    follow_redirects=False,
+                )
+            if response.status_code != 200:
+                return False
+            body = response.json()
+        except Exception:
+            return False
+        if not isinstance(body, dict) or body.get("ok") is not True:
+            return False
+        if self.require_kms_backend and body.get("backend") != "aws-kms":
+            return False
+        if self.require_kms_backend and body.get("private_key_exportable") is not False:
+            return False
+        key_ids = body.get("key_ids")
+        return key_ids == [self.ed25519_key_id, self.ml_dsa_key_id]
+
     def _post(self, payload: dict[str, str]) -> dict[str, Any]:
         headers = {"Authorization": f"Bearer {self.bearer_token}"}
         if self._client is not None:
